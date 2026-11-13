@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Zephyr Music Server · Hi-Fi 机群唯一下发源</title>
+<meta name="description" content="Zephyr Music Server：一台 x86 Linux 服务端统一管理数十至数百台 Hi-Fi 终端。签名制品仓库、BOM 期望态、灰度下发、播放门控、席位授权与全量审计。纯 Go、无 CGO、SQLite 单文件、内嵌控制台。">
+<meta name="theme-color" content="#07090d">
+<link rel="canonical" href="https://zephyr.hk/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Zephyr Music Server">
+<meta property="og:title" content="Zephyr Music Server · Hi-Fi 机群唯一下发源">
+<meta property="og:description" content="签名制品仓库 · BOM 期望态 · 灰度下发 · 播放门控 · 席位授权 · 全量审计。纯 Go，无 CGO，SQLite 单文件，内嵌控制台。">
+<meta property="og:url" content="https://zephyr.hk/">
+<meta property="og:image" content="https://zephyr.hk/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<a class="skip" href="#main">跳到主内容</a>
+
+<div class="bg-layer" aria-hidden="true">
+  <div class="aurora a1"></div>
+  <div class="aurora a2"></div>
+  <div class="aurora a3"></div>
+  <div class="beam"></div>
+  <div class="grain"></div>
+</div>
+
+<header class="nav" id="nav">
+  <div class="nav-in">
+    <a class="brand" href="#top" aria-label="Zephyr Music Server 首页">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32" width="30" height="30"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffd479"/><stop offset="1" stop-color="#f6a821"/></linearGradient></defs><rect x="1.2" y="1.2" width="29.6" height="29.6" rx="9" fill="none" stroke="url(#bm)" stroke-width="1.6"/><path d="M7 20.5V11.5M11.5 23V9M16 25.5V6.5M20.5 23V9M25 20.5V11.5" stroke="url(#bm)" stroke-width="2.1" stroke-linecap="round"/></svg>
+      </span>
+      <span class="brand-txt">
+        <b>ZEPHYR</b>
+        <i>MUSIC SERVER</i>
+      </span>
+    </a>
+    <nav class="links" id="nav-links" aria-label="页面导航">
+      <a href="#features" data-spy="features">能力</a>
+      <a href="#architecture" data-spy="architecture">架构</a>
+      <a href="#security" data-spy="security">安全</a>
+      <a href="#demo" data-spy="demo">演示</a>
+      <a href="#install" data-spy="install">安装</a>
+      <a href="#specs" data-spy="specs">规格</a>
+      <a href="#faq" data-spy="faq">FAQ</a>
+    </nav>
+    <div class="nav-act">
+      <button class="snd" id="snd" type="button" aria-pressed="true" title="声音总开关：一键静音全部声音">
+        <span class="snd-ico" aria-hidden="true"></span><span id="snd-txt">声音 开</span>
+      </button>
+      <a class="btn gold sm" href="https://github.com/Eyebright/zephyr-music-server" target="_blank" rel="noopener">
+        <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+        GitHub
+      </a>
+      <button class="burger" id="burger" type="button" aria-label="展开导航" aria-expanded="false"><span></span><span></span><span></span></button>
+    </div>
+  </div>
+  <div class="nav-prog" id="nav-prog" aria-hidden="true"></div>
+</header>
+
+<main id="main">
+
+<!-- ══════════ HERO ══════════ -->
+<section class="hero" id="top">
+  <canvas id="hero-cv" aria-hidden="true"></canvas>
+  <div class="hero-in">
+    <div class="hero-copy">
+      <div class="eyebrow rv" style="--d:0ms"><span class="dot"></span>SINGLE SOURCE OF TRUTH · 唯一下发源</div>
+      <h1 class="rv" style="--d:70ms">把整片机群<br><span class="grad-warm">收敛到一台服务端</span></h1>
+      <p class="lede rv" style="--d:150ms">
+        Zephyr Music Server 用一台 x86 Linux 主机统一管理数十至数百台 Hi-Fi 终端：
+        签名制品仓库、BOM 期望态、灰度下发、播放门控、席位授权与全量审计。
+        <b>纯 Go，无 CGO，SQLite 单文件，控制台内嵌在二进制里。</b>
+      </p>
+      <div class="hero-cta rv" style="--d:230ms">
+        <a class="btn gold" href="#install">立即部署<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M3 8h10M9 4l4 4-4 4"/></svg></a>
+        <a class="btn line" href="#demo">操纵机群演示</a>
+        <a class="btn ghost" href="https://github.com/Eyebright/zephyr-music-server/releases/tag/v0.2.0" target="_blank" rel="noopener">v0.2.0 下载</a>
+      </div>
+      <ul class="hero-chips rv" style="--d:310ms">
+        <li><b>0</b>CGO 依赖</li>
+        <li><b>3</b>终端架构</li>
+        <li><b>126</b>冒烟断言</li>
+        <li><b>MIT</b>开源许可</li>
+      </ul>
+    </div>
+    <aside class="hero-panel rv" style="--d:380ms" aria-label="实时机群概览">
+      <div class="hp-top">
+        <span class="hp-t">FLEET · 实时概览</span>
+        <span class="hp-live"><i></i>LIVE</span>
+      </div>
+      <div class="hp-kpis">
+        <div class="hp-k"><b id="hp-online">—</b><span>在线终端</span></div>
+        <div class="hp-k"><b id="hp-play">—</b><span>正在播放</span></div>
+        <div class="hp-k"><b id="hp-jobs">—</b><span>下发任务</span></div>
+      </div>
+      <div class="hp-spec" id="hp-spec" aria-hidden="true"></div>
+      <div class="hp-rows" id="hp-rows"></div>
+      <div class="hp-foot">交互演示 · 本地模拟数据，非真实机群</div>
+    </aside>
+  </div>
+  <a class="scroll-hint" href="#features" aria-label="向下滚动"><span></span></a>
+</section>
+
+<!-- ══════════ MARQUEE ══════════ -->
+<div class="marquee" aria-hidden="true">
+  <div class="mq-track" id="mq-track"></div>
+</div>
+
+<!-- ══════════ FEATURES ══════════ -->
+<section class="sec" id="features">
+  <div class="wrap">
+    <header class="sec-h rv">
+      <span class="kicker">01 · CAPABILITIES</span>
+      <h2>七个域，<span class="grad-cool">全部真实实现</span></h2>
+      <p>不是路线图，不是占位。以下每一项都在仓库里有对应的 Go 代码、API 路由与端到端冒烟断言。</p>
+    </header>
+    <div class="bento">
+      <article class="cell big rv" data-hue="amber">
+        <div class="cell-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2 3 6.5v11L12 22l9-4.5v-11L12 2Z"/><path d="M3 6.5 12 11l9-4.5M12 11v11"/></svg></div>
+        <h3>下发核心</h3>
+        <p>应用目录与多架构制品仓库，入库强制 GPG 验签。BOM 期望态支持草稿、校验、发布、导入、导出与历史回滚；任务状态机贯穿预检到验证，失败自动回滚。</p>
+        <ul class="ticks">
+          <li>制品入库 enforce 验签，未签名直接拒绝</li>
+          <li>BOM 版本历史完整保留，可回滚到任意已发布版本</li>
+          <li>播放门控：播放中绝不中断，等空闲再动服务</li>
+          <li>10 段任务状态机 + 失败回滚链</li>
+        </ul>
+        <div class="pipeline" id="feat-pipeline" aria-label="任务状态机"></div>
+      </article>
+      <article class="cell rv" data-hue="cyan">
+        <div class="cell-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4M7 8h6M7 11h10"/></svg></div>
+        <h3>终端生命周期</h3>
+        <p>一次性注册令牌（TTL 可选）、三步添加向导、终端配置面板，以及注销后的撤销恢复。</p>
+        <ul class="ticks"><li>别名 · 房间 · 期望 BOM · DAC 仲裁</li><li>播放保护 · 维护窗口 · 离线阈值</li><li>注销 + 撤销恢复，误操作可回退</li></ul>
+      </article>
+      <article class="cell rv" data-hue="magenta">
+        <div class="cell-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Z"/><path d="m9 12 2 2 4-4"/></svg></div>
+        <h3>授权与许可</h3>
+        <p>离线签名许可证激活，席位实时占用统计，逐终端授权与撤销。</p>
+        <ul class="ticks"><li>许可证离线签发，服务端只验签</li><li>下发前许可证 + 授权双门禁</li><li>席位占用可视化，超额即时拦截</li></ul>
+      </article>
+      <article class="cell rv" data-hue="green">
+        <div class="cell-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 18V9M9 18V5M14 18v-7M19 18v-4"/><path d="M2 21h20"/></svg></div>
+        <h3>运维与诊断</h3>
+        <p>远程 apt 检查与升级走独立命令通道；mDNS / SSDP / 多播网络诊断；内核待重启告警。</p>
+        <ul class="ticks"><li>灰度发布按环推进，环内未完成禁止推进</li><li>系统升级受播放保护双侧拦截</li><li>网络诊断定位发现协议故障</li></ul>
+      </article>
+      <article class="cell rv" data-hue="violet">
+        <div class="cell-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="8" cy="12" r="4"/><path d="M12 12h9M17 12v3M20 12v2"/></svg></div>
+        <h3>安全信任根</h3>
+        <p>离线主密钥、受控签名子密钥、服务端公钥信任根三层分工，密钥导入与信任根导出。</p>
+        <ul class="ticks"><li>服务端永不持有私钥</li><li>终端本地控制台变更需节点密钥</li><li>全量审计 + CSV / JSON 导出</li></ul>
+      </article>
+      <article class="cell rv" data-hue="blue">
+        <div class="cell-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></div>
+        <h3>可观测</h3>
+        <p>总览 KPI 与服务端消耗、终端资源与 DAC 占用、告警铃铛抽屉、终端控制台反向代理。</p>
+        <ul class="ticks"><li>告警确认 · 解决 · 主动扫描</li><li>核心服务监控融合进服务端消耗</li><li>反向代理直达终端本地控制台</li></ul>
+      </article>
+      <article class="cell wide rv" data-hue="amber">
+        <div class="cell-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10v4M10 10v4M14 10v4M18 10v4"/></svg></div>
+        <h3>终端 Agent</h3>
+        <p>注册、心跳、快照；任务执行覆盖 apt、dpkg、配置渲染与 systemd 单元白名单；DAC 仲裁执行与播放保护本地门禁；自带本地控制台（服务、系统更新、网络诊断、电源）。以 root 运行，但每个动作都被白名单与开关约束。</p>
+        <div class="agent-tags"><span>amd64</span><span>arm64</span><span>armhf</span><span>systemd 白名单</span><span>ALLOW_POWER</span><span>ALLOW_LOCAL</span><span>节点密钥门禁</span></div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ ARCHITECTURE ══════════ -->
+<section class="sec alt" id="architecture">
+  <div class="wrap">
+    <header class="sec-h rv">
+      <span class="kicker">02 · ARCHITECTURE</span>
+      <h2>签名链决定<span class="grad-warm">谁能下发</span></h2>
+      <p>制品从离线签名主机进入仓库，服务端只持公钥信任根，终端只接受通过验签的期望态。</p>
+    </header>
+    <div class="arch">
+      <div class="arch-sticky">
+        <div class="arch-card rv">
+          <svg class="arch-svg" viewBox="0 0 460 520" role="img" aria-label="签名与下发架构图">
+            <defs>
+              <linearGradient id="gA" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffd479"/><stop offset="1" stop-color="#f6a821"/></linearGradient>
+              <linearGradient id="gC" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#34d3eb"/><stop offset="1" stop-color="#9b8cff"/></linearGradient>
+              <linearGradient id="gG" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#46e08a"/><stop offset="1" stop-color="#34d3eb"/></linearGradient>
+              <filter id="glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+            </defs>
+            <g class="arch-node" data-step="0">
+              <rect x="130" y="14" width="200" height="62" rx="12"/>
+              <text x="230" y="40" class="an-t">离线主密钥</text>
+              <text x="230" y="60" class="an-s">OFFLINE MASTER · 永不联网</text>
+            </g>
+            <path class="arch-link" id="al0" d="M230 76 V116" />
+            <g class="arch-node" data-step="1">
+              <rect x="130" y="116" width="200" height="62" rx="12"/>
+              <text x="230" y="142" class="an-t">签名子密钥</text>
+              <text x="230" y="162" class="an-s">受控签名主机 · 离线/CI 构建</text>
+            </g>
+            <path class="arch-link" id="al1" d="M230 178 V218"/>
+            <g class="arch-node" data-step="2">
+              <rect x="106" y="218" width="248" height="70" rx="12"/>
+              <text x="230" y="245" class="an-t">服务端 · 公钥信任根</text>
+              <text x="230" y="266" class="an-s">制品仓库 + BOM + 任务 + 授权</text>
+            </g>
+            <path class="arch-link" id="al2" d="M230 288 V326"/>
+            <g class="arch-node" data-step="3">
+              <rect x="106" y="326" width="248" height="62" rx="12"/>
+              <text x="230" y="352" class="an-t">enforce 验签门禁</text>
+              <text x="230" y="372" class="an-s">未签名制品拒绝入库 / 拒绝下发</text>
+            </g>
+            <path class="arch-link" id="al3" d="M230 388 V414 M110 414 H350 M110 414 V440 M230 414 V440 M350 414 V440"/>
+            <g class="arch-node leaf" data-step="4">
+              <rect x="52" y="440" width="116" height="58" rx="11"/>
+              <text x="110" y="466" class="an-t">树莓派</text><text x="110" y="484" class="an-s">arm64 / armhf</text>
+            </g>
+            <g class="arch-node leaf" data-step="4">
+              <rect x="172" y="440" width="116" height="58" rx="11"/>
+              <text x="230" y="466" class="an-t">x86 小主机</text><text x="230" y="484" class="an-s">amd64</text>
+            </g>
+            <g class="arch-node leaf" data-step="4">
+              <rect x="292" y="440" width="116" height="58" rx="11"/>
+              <text x="350" y="466" class="an-t">播放终端</text><text x="350" y="484" class="an-s">DAC 仲裁</text>
+            </g>
+            <circle class="pkt" r="4"><animateMotion dur="2.6s" repeatCount="indefinite" keyPoints="0;1" keyTimes="0;1" calcMode="linear"><mpath href="#al0"/></animateMotion></circle>
+            <circle class="pkt c2" r="4"><animateMotion dur="2.6s" begin="0.5s" repeatCount="indefinite"><mpath href="#al1"/></animateMotion></circle>
+            <circle class="pkt c3" r="4"><animateMotion dur="2.2s" begin="1s" repeatCount="indefinite"><mpath href="#al2"/></animateMotion></circle>
+          </svg>
+        </div>
+      </div>
+      <ol class="arch-steps">
+        <li class="rv" data-astep="0"><span class="as-n">01</span><div><h4>主密钥离线</h4><p>主密钥保存在不联网的介质上，只用于签发子密钥与许可证。它从不进入服务端，也不进入 CI。</p></div></li>
+        <li class="rv" data-astep="1"><span class="as-n">02</span><div><h4>子密钥签名</h4><p>构建在离线主机或 CI 完成，签名子密钥对制品出具分离签名。服务端不做在线构建，也不做二进制补丁——那会破坏签名链。</p></div></li>
+        <li class="rv" data-astep="2"><span class="as-n">03</span><div><h4>服务端只持公钥</h4><p>服务端导入公钥作为信任根，负责仓库、BOM 期望态、任务编排、席位授权与审计。私钥泄露面被压缩到签名主机一处。</p></div></li>
+        <li class="rv" data-astep="3"><span class="as-n">04</span><div><h4>enforce 双门禁</h4><p>入库与下发都验签。生产必须 <code>enforce</code>；<code>dev</code> 仅用于本地联调。下发前还要过许可证与终端授权两道门。</p></div></li>
+        <li class="rv" data-astep="4"><span class="as-n">05</span><div><h4>终端受约束执行</h4><p>Agent 以 root 运行，但动作被 systemd 单元白名单、<code>ALLOW_POWER</code> / <code>ALLOW_LOCAL</code> 与节点密钥三重约束。播放保护在服务端与终端双侧执行。</p></div></li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ SECURITY ══════════ -->
+<section class="sec" id="security">
+  <div class="wrap">
+    <header class="sec-h rv">
+      <span class="kicker">03 · SECURITY</span>
+      <h2>把门禁<span class="grad-cool">亲手拨一遍</span></h2>
+      <p>下面是真实门禁逻辑的可交互复刻：切换签名模式与播放保护，看制品与任务如何被放行或拦截。</p>
+    </header>
+    <div class="gate-grid">
+      <div class="gate-card rv">
+        <div class="gc-h"><h3>制品入库门禁</h3><span class="pill" id="gate-mode-pill">enforce</span></div>
+        <div class="gc-ctrl">
+          <label class="sw"><input type="checkbox" id="gate-enforce" checked><span class="sw-t"></span><span class="sw-l">强制验签 <code>enforce</code></span></label>
+          <label class="sw"><input type="checkbox" id="gate-signed" checked><span class="sw-t"></span><span class="sw-l">制品带分离签名 <code>.asc</code></span></label>
+          <label class="sw"><input type="checkbox" id="gate-trusted" checked><span class="sw-t"></span><span class="sw-l">签名出自已导入信任根</span></label>
+        </div>
+        <button class="btn gold block" id="gate-submit" type="button">上传制品入库</button>
+        <div class="gate-out" id="gate-out" role="status" aria-live="polite"></div>
+      </div>
+      <div class="gate-card rv">
+        <div class="gc-h"><h3>下发播放门控</h3><span class="pill cyan" id="gate-play-pill">空闲</span></div>
+        <div class="gc-ctrl">
+          <label class="sw"><input type="checkbox" id="gate-playgate" checked><span class="sw-t"></span><span class="sw-l">播放门控 <code>PLAY_GATE</code></span></label>
+          <label class="sw"><input type="checkbox" id="gate-playing"><span class="sw-t"></span><span class="sw-l">终端正在播放</span></label>
+          <label class="sw"><input type="checkbox" id="gate-authorized" checked><span class="sw-t"></span><span class="sw-l">终端已授权且席位充足</span></label>
+        </div>
+        <button class="btn line block" id="gate-deliver" type="button">向该终端下发 BOM</button>
+        <div class="gate-out" id="gate-out2" role="status" aria-live="polite"></div>
+      </div>
+      <div class="gate-card facts rv">
+        <h3>不变量</h3>
+        <ul class="facts-list">
+          <li><b>服务端永不持有私钥</b><span>只导入公钥信任根；密钥导入接口拒绝 PRIVATE KEY BLOCK。</span></li>
+          <li><b>许可证离线签发</b><span>服务端只验签与统计席位，不生成许可证。</span></li>
+          <li><b>Agent 动作白名单</b><span>systemd 单元白名单 + ALLOW_POWER / ALLOW_LOCAL + 节点密钥。</span></li>
+          <li><b>播放保护双侧执行</b><span>服务端拦截下发与升级，终端本地控制台同样拦截停服务与关机。</span></li>
+          <li><b>全量审计</b><span>每次变更落审计，支持 CSV / JSON 导出。</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ DEMO ══════════ -->
+<section class="sec alt" id="demo">
+  <div class="wrap">
+    <header class="sec-h rv">
+      <span class="kicker">04 · LIVE SIMULATION</span>
+      <h2>亲手操纵<span class="grad-warm">一整片机群</span></h2>
+      <p>下面这台机群完全由你驱动：改数量、改播放比例、改心跳与遥测、改灰度环、改签名模式与门控，画面立刻响应。点任意终端看详情，按「开始灰度下发」跑完整任务链。</p>
+    </header>
+    <div class="demo">
+      <div class="demo-ctrl" id="demo-ctrl" aria-label="机群参数控制台">
+        <div class="dc-h"><span class="dc-t">CONTROL DECK</span><span class="dc-sub">13 项实时参数</span></div>
+        <div class="dc-body">
+          <div class="ctl"><label for="c-count">终端数量 <output id="o-count">18</output></label><input type="range" id="c-count" min="4" max="48" step="1" value="18"></div>
+          <div class="ctl"><label for="c-seats">授权席位 <output id="o-seats">16</output></label><input type="range" id="c-seats" min="4" max="48" step="1" value="16"></div>
+          <div class="ctl"><label for="c-play">播放中占比 <output id="o-play">35%</output></label><input type="range" id="c-play" min="0" max="100" step="1" value="35"></div>
+          <div class="ctl"><label for="c-hb">心跳周期 <output id="o-hb">15s</output></label><input type="range" id="c-hb" min="5" max="60" step="1" value="15"></div>
+          <div class="ctl"><label for="c-speed">遥测速率 <output id="o-speed">1.0×</output></label><input type="range" id="c-speed" min="20" max="300" step="5" value="100"></div>
+          <div class="ctl"><label for="c-off">离线阈值 <output id="o-off">45s</output></label><input type="range" id="c-off" min="15" max="180" step="5" value="45"></div>
+          <div class="ctl"><label for="c-glow">辉光强度 <output id="o-glow">60</output></label><input type="range" id="c-glow" min="0" max="100" step="1" value="60"></div>
+          <div class="ctl"><label for="c-size">节点尺寸 <output id="o-size">1.0×</output></label><input type="range" id="c-size" min="60" max="180" step="5" value="100"></div>
+          <div class="ctl"><label for="c-orbit">轨道扩散 <output id="o-orbit">50</output></label><input type="range" id="c-orbit" min="0" max="100" step="1" value="50"></div>
+          <div class="ctl"><label for="c-links">链路显示 <output id="o-links">开</output></label><input type="range" id="c-links" min="0" max="1" step="1" value="1"></div>
+          <div class="ctl stepper"><label id="l-rings">灰度环数</label><div class="stp"><button type="button" id="ring-dec" aria-label="减少灰度环">−</button><output id="o-rings">3</output><button type="button" id="ring-inc" aria-label="增加灰度环">+</button></div></div>
+          <div class="ctl"><label for="c-mode">签名模式</label><select id="c-mode"><option value="enforce" selected>enforce · 强制验签</option><option value="dev">dev · 跳过验签</option></select></div>
+          <div class="ctl"><label for="c-theme">信号配色</label><select id="c-theme"><option value="amber" selected>琥珀 · 电子管暖光</option><option value="cyan">信号青 · 冷链路</option><option value="magenta">品红 · 母带室</option><option value="green">酸绿 · 监听台</option></select></div>
+          <div class="ctl toggles">
+            <label class="sw sm"><input type="checkbox" id="c-playgate" checked><span class="sw-t"></span><span class="sw-l">播放门控</span></label>
+            <label class="sw sm"><input type="checkbox" id="c-grid"><span class="sw-t"></span><span class="sw-l">参考网格</span></label>
+            <label class="sw sm"><input type="checkbox" id="c-ghost"><span class="sw-t"></span><span class="sw-l">幽灵离线节点</span></label>
+          </div>
+          <div class="dc-btns">
+            <button class="btn gold sm" id="d-run" type="button">开始灰度下发</button>
+            <button class="btn line sm" id="d-rand" type="button">随机化</button>
+            <button class="btn ghost sm" id="d-reset" type="button">重置</button>
+            <button class="btn ghost sm" id="d-export" type="button">导出 JSON</button>
+          </div>
+        </div>
+      </div>
+      <div class="demo-stage">
+        <div class="ds-bar">
+          <div class="ds-stat"><b id="ds-online">0</b><span>在线</span></div>
+          <div class="ds-stat"><b id="ds-play">0</b><span>播放中</span></div>
+          <div class="ds-stat"><b id="ds-off">0</b><span>离线</span></div>
+          <div class="ds-stat"><b id="ds-ring">—</b><span>当前环</span></div>
+          <div class="ds-stat"><b id="ds-seats">0/0</b><span>席位</span></div>
+          <div class="ds-mode"><span class="pill" id="ds-mode">enforce</span><span class="pill cyan" id="ds-gate">门控开</span></div>
+        </div>
+        <div class="ds-canvas-wrap">
+          <canvas id="fleet-cv"></canvas>
+          <div class="ds-hint" id="ds-hint">点击终端查看详情 · 拖动滑块实时改变机群</div>
+          <div class="ds-tip" id="ds-tip" hidden></div>
+        </div>
+        <div class="ds-rings" id="ds-rings" aria-label="灰度环推进"></div>
+        <div class="ds-jobs">
+          <div class="dj-h"><span>任务链 · 实时</span><span id="dj-count">0 个任务</span></div>
+          <div class="dj-list" id="dj-list"></div>
+        </div>
+      </div>
+      <aside class="demo-detail" id="demo-detail" aria-label="终端详情" hidden>
+        <div class="dd-h"><b id="dd-alias">—</b><button type="button" id="dd-close" aria-label="关闭详情">×</button></div>
+        <div class="dd-b" id="dd-body"></div>
+      </aside>
+    </div>
+    <p class="demo-note">本演示为浏览器内本地模拟，用于展示真实产品的状态机与门禁行为，不连接任何真实终端。真实控制台内嵌在服务端二进制中。</p>
+  </div>
+</section>
+
+<!-- ══════════ INSTALL ══════════ -->
+<section class="sec" id="install">
+  <div class="wrap">
+    <header class="sec-h rv">
+      <span class="kicker">05 · DEPLOY</span>
+      <h2>一条命令装机，<span class="grad-cool">一条命令入网</span></h2>
+      <p>服务端目标是 x86_64 Linux + systemd。终端安装器自动识别 amd64 / arm64 / armhf，从服务端 <code>/dl/</code> 拉取对应 deb。</p>
+    </header>
+    <div class="inst">
+      <div class="inst-card rv">
+        <div class="ic-h"><span class="ic-n">A</span><h3>服务端 · x86_64 Linux</h3><span class="pill">systemd</span></div>
+        <div class="code" data-copy>
+          <button class="copy" type="button" aria-label="复制服务端安装命令">复制</button>
+<pre><code>sudo apt-get update &amp;&amp; sudo apt-get install -y gnupg
+tar -xzf zephyr-music-server-0.2.0.tar.gz
+cd zephyr-music-server-0.2.0/server
+sudo ./install.sh
+curl -s http://127.0.0.1:8080/api/v1/health</code></pre>
+        </div>
+        <p class="ic-p">安装器落地二进制、systemd 单元、配置、公钥信任根与 <code>/dl</code> 分发目录。浏览器打开 <code>http://&lt;服务端IP&gt;:8080/</code> 即进内嵌控制台。生产请在前面加 TLS 反向代理并配置鉴权。</p>
+      </div>
+      <div class="inst-card rv">
+        <div class="ic-h"><span class="ic-n">B</span><h3>终端 · 每台一条命令</h3><span class="pill cyan">架构自动识别</span></div>
+        <div class="code" data-copy>
+          <button class="copy" type="button" aria-label="复制令牌签发命令">复制</button>
+<pre><code>curl -s -X POST http://&lt;服务端IP&gt;:8080/api/v1/nodes/token \
+  -H 'Content-Type: application/json' \
+  -d '{"ttl_seconds":1800}'</code></pre>
+        </div>
+        <div class="code" data-copy>
+          <button class="copy" type="button" aria-label="复制终端安装命令">复制</button>
+<pre><code>curl -fsSL http://&lt;服务端IP&gt;:8080/dl/agent-install.sh | \
+  sudo bash -s -- --server http://&lt;服务端IP&gt;:8080 \
+                  --token &lt;一次性令牌&gt;</code></pre>
+        </div>
+        <p class="ic-p">控制台「终端管理 → 添加终端」向导签发令牌后会给出同款命令。离线环境可直接 <code>dpkg -i</code> 包内 deb。注册成功后终端立即出现在控制台。</p>
+      </div>
+    </div>
+    <div class="dl-card rv">
+      <div class="dl-h">
+        <h3>v0.2.0 发布资产</h3>
+        <div class="arch-tabs" id="arch-tabs" role="tablist" aria-label="终端架构">
+          <button role="tab" aria-selected="true" data-arch="amd64" class="on">amd64</button>
+          <button role="tab" aria-selected="false" data-arch="arm64">arm64</button>
+          <button role="tab" aria-selected="false" data-arch="armhf">armhf</button>
+        </div>
+      </div>
+      <div class="dl-grid">
+        <a class="dl-item" href="https://github.com/Eyebright/zephyr-music-server/releases/download/v0.2.0/zephyr-music-server-0.2.0.tar.gz">
+          <span class="dl-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 19h16"/></svg></span>
+          <span class="dl-txt"><b>zephyr-music-server-0.2.0.tar.gz</b><i>服务端 + 三架构 deb + 安装器 · 32.5 MiB</i></span>
+          <span class="dl-go">下载</span>
+        </a>
+        <a class="dl-item" id="dl-deb" href="https://github.com/Eyebright/zephyr-music-server/releases/download/v0.2.0/hifihub-agent_0.2.0_amd64.deb">
+          <span class="dl-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 9h6v6H9z"/></svg></span>
+          <span class="dl-txt"><b id="dl-deb-name">hifihub-agent_0.2.0_amd64.deb</b><i id="dl-deb-meta">x86_64 终端 Agent · 4.0 MiB</i></span>
+          <span class="dl-go">下载</span>
+        </a>
+        <a class="dl-item" href="https://github.com/Eyebright/zephyr-music-server/releases/tag/v0.2.0" target="_blank" rel="noopener">
+          <span class="dl-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
+          <span class="dl-txt"><b>Release 说明与校验和</b><i>CI 全绿 · SHA256SUMS 随包发布</i></span>
+          <span class="dl-go">查看</span>
+        </a>
+      </div>
+      <div class="dl-note">离线安装：<code>sudo dpkg -i agent/hifihub-agent_0.2.0_&lt;arch&gt;.deb &amp;&amp; sudo apt-get -f install -y</code></div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ SCOPE / TRIMMED ══════════ -->
+<section class="sec alt" id="scope">
+  <div class="wrap">
+    <header class="sec-h rv">
+      <span class="kicker">06 · SCOPE</span>
+      <h2>删掉的功能，<span class="grad-warm">以及为什么</span></h2>
+      <p>可行性审计的结论是：无法落地的功能不做假实现。以下六项已从产品中删除，原因写进 README。</p>
+    </header>
+    <div class="trim">
+      <article class="trim-i rv"><span class="ti-x" aria-hidden="true">✕</span><div><h4>Roon 本地包库 / 重签名 / 入库</h4><p>Roon 制品为专有签名包，第三方重签名无效且违反其分发条款。Roon Bridge 仍作为普通签名制品正常下发。</p></div></article>
+      <article class="trim-i rv"><span class="ti-x" aria-hidden="true">✕</span><div><h4>服务端在线构建</h4><p>需在服务端内置各应用交叉工具链，体积与攻击面不可接受。构建在离线主机或 CI 完成，制品上传入库。</p></div></article>
+      <article class="trim-i rv"><span class="ti-x" aria-hidden="true">✕</span><div><h4>二进制补丁</h4><p>对已签名制品做二进制补丁会破坏签名链。以新版本上传替代。</p></div></article>
+      <article class="trim-i rv"><span class="ti-x" aria-hidden="true">✕</span><div><h4>远程 .sh 抓取入库</h4><p>服务端代抓公网脚本引入 SSRF 与未签名代码执行风险。仅保留本地上传 + 验签门禁。</p></div></article>
+      <article class="trim-i rv"><span class="ti-x" aria-hidden="true">✕</span><div><h4>终端 Agent 自更新</h4><p>运行中自我替换风险高。系统更新走命令通道，由人工或维护窗口触发。</p></div></article>
+      <article class="trim-i rv"><span class="ti-x" aria-hidden="true">✕</span><div><h4>控制台 mock 角色切换</h4><p>真实鉴权属于反向代理层（Nginx / Caddy + OIDC / basic-auth）。控制台假定可信 LAN，不做假角色。</p></div></article>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ SPECS ══════════ -->
+<section class="sec" id="specs">
+  <div class="wrap">
+    <header class="sec-h rv">
+      <span class="kicker">07 · SPECIFICATIONS</span>
+      <h2>技术规格</h2>
+      <p>没有隐藏运行时，没有外部数据库服务，没有容器编排依赖。</p>
+    </header>
+    <div class="spec-grid">
+      <div class="spec-card rv">
+        <h3>服务端</h3>
+        <table class="spec-t">
+          <tr><th>语言</th><td>Go 1.27+ · <code>CGO_ENABLED=0</code></td></tr>
+          <tr><th>存储</th><td>SQLite 单文件（modernc.org/sqlite，纯 Go）</td></tr>
+          <tr><th>控制台</th><td><code>go:embed</code> 内嵌 SPA，随二进制分发</td></tr>
+          <tr><th>目标</th><td>x86_64 Linux + systemd（另提供 arm64 二进制）</td></tr>
+          <tr><th>监听</th><td><code>0.0.0.0:8080</code>，TLS 由前置反向代理负责</td></tr>
+          <tr><th>依赖</th><td>gnupg（验签）· 无其他系统依赖</td></tr>
+          <tr><th>许可</th><td>MIT</td></tr>
+        </table>
+      </div>
+      <div class="spec-card rv">
+        <h3>终端 Agent</h3>
+        <table class="spec-t">
+          <tr><th>模块</th><td>独立 Go module，仅标准库</td></tr>
+          <tr><th>架构</th><td>amd64 · arm64 · armhf（GOARM=7）</td></tr>
+          <tr><th>打包</th><td>内置 <code>debpack</code> 生成 deb，无需 dpkg-deb / 交叉 gcc</td></tr>
+          <tr><th>权限</th><td>root，受 systemd 单元白名单约束</td></tr>
+          <tr><th>开关</th><td><code>ALLOW_POWER</code> · <code>ALLOW_LOCAL</code></td></tr>
+          <tr><th>本地控制台</th><td>端口 8080，变更需节点密钥</td></tr>
+          <tr><th>心跳</th><td>默认 15s，离线阈值 = 3× 心跳</td></tr>
+        </table>
+      </div>
+      <div class="spec-card rv">
+        <h3>验证状态</h3>
+        <div class="ver-list">
+          <div class="ver-i"><b>126 / 0</b><span>enforce 端到端冒烟断言 通过 / 失败</span></div>
+          <div class="ver-i"><b>全绿</b><span>服务端与 Agent <code>go build / vet / test</code></span></div>
+          <div class="ver-i"><b>CI 通过</b><span>GitHub Actions：测试 → 冒烟 → 构建 → 发布</span></div>
+          <div class="ver-i"><b>16 / 16</b><span>发布包 SHA256SUMS 校验全部 OK</span></div>
+          <div class="ver-i"><b>双视口</b><span>控制台桌面 1440 与移动 515 零溢出零裁剪</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ FAQ ══════════ -->
+<section class="sec alt" id="faq">
+  <div class="wrap narrow">
+    <header class="sec-h rv">
+      <span class="kicker">08 · FAQ</span>
+      <h2>常见问题</h2>
+    </header>
+    <div class="faq" id="faq-list">
+      <details class="rv"><summary>服务端必须联网吗？<span class="fq-i" aria-hidden="true"></span></summary><div class="fq-b"><p>不需要。主密钥与许可证签发都可以完全离线。服务端只在入库时验签、在下发时把制品推给终端，整个链路可以在隔离 LAN 内闭环运行。终端安装器从服务端 <code>/dl/</code> 取包，不访问公网。</p></div></details>
+      <details class="rv"><summary>为什么不做在线构建和二进制补丁？<span class="fq-i" aria-hidden="true"></span></summary><div class="fq-b"><p>在线构建要求服务端内置各应用的交叉工具链，体积与攻击面都不可接受；二进制补丁会破坏已签名制品的签名链。两者都被删除，改为「离线/CI 构建 → 签名 → 上传入库」这一条可验证的路径。</p></div></details>
+      <details class="rv"><summary>播放中的终端会被升级打断吗？<span class="fq-i" aria-hidden="true"></span></summary><div class="fq-b"><p>不会。播放门控（FR-3.10）在服务端与终端双侧执行：任务进入 <code>waiting_idle</code> 等待空闲，系统升级、停服务与关机在播放中同样被拦截。服务端返回 409，终端本地控制台也拒绝执行。</p></div></details>
+      <details class="rv"><summary>许可证是怎么工作的？<span class="fq-i" aria-hidden="true"></span></summary><div class="fq-b"><p>许可证由离线主密钥签发，服务端只验签并统计席位占用。每次下发前都要过「许可证有效 + 该终端已授权 + 席位充足」三道检查，任一不满足即拦截。</p></div></details>
+      <details class="rv"><summary>灰度发布怎么推进？<span class="fq-i" aria-hidden="true"></span></summary><div class="fq-b"><p>环的百分比必须合计 100，绑定的 BOM 版本必须已发布。当前环仍有未完成任务时推进一步会返回 409，避免把故障扩散到下一环。删除灰度不会撤销已下发的任务，且支持撤销恢复。</p></div></details>
+      <details class="rv"><summary>控制台的鉴权在哪里做？<span class="fq-i" aria-hidden="true"></span></summary><div class="fq-b"><p>在反向代理层。控制台假定可信 LAN，生产部署请在 Nginx / Caddy 前配置 TLS 与 OIDC 或 basic-auth。产品内不做 mock 角色切换，因为那不是真鉴权。</p></div></details>
+      <details class="rv"><summary>误删了 BOM 版本或终端怎么办？<span class="fq-i" aria-hidden="true"></span></summary><div class="fq-b"><p>BOM 保留完整版本历史，可回滚到任意已发布版本；回滚会生成一个新的已发布版本而不是覆盖历史。终端注销后支持撤销恢复。破坏性操作在控制台都带撤销入口。</p></div></details>
+      <details class="rv"><summary>支持哪些终端硬件？<span class="fq-i" aria-hidden="true"></span></summary><div class="fq-b"><p>安装器自动识别 amd64、arm64 与 armhf，覆盖 x86 小主机、树莓派 4/5（64 位）与树莓派 2/3（32 位）。Agent 仅依赖标准库，deb 由内置 debpack 生成，不需要目标机上有构建工具。</p></div></details>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ CTA ══════════ -->
+<section class="cta">
+  <div class="wrap">
+    <div class="cta-in rv">
+      <span class="kicker">READY TO DEPLOY</span>
+      <h2>把机群交给<span class="grad-warm">一个下发源</span></h2>
+      <p>下载发布包，装上服务端，每台终端一条命令入网。</p>
+      <div class="cta-btns">
+        <a class="btn gold lg" href="https://github.com/Eyebright/zephyr-music-server/releases/download/v0.2.0/zephyr-music-server-0.2.0.tar.gz">下载 v0.2.0</a>
+        <a class="btn line lg" href="https://github.com/Eyebright/zephyr-music-server" target="_blank" rel="noopener">查看源码</a>
+        <a class="btn ghost lg" href="https://github.com/Eyebright/zephyr-music-server/blob/main/INSTALL.md" target="_blank" rel="noopener">部署文档</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <div class="foot-grid">
+      <div class="foot-brand">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" width="28" height="28"><rect x="1.2" y="1.2" width="29.6" height="29.6" rx="9" fill="none" stroke="#f6a821" stroke-width="1.6"/><path d="M7 20.5V11.5M11.5 23V9M16 25.5V6.5M20.5 23V9M25 20.5V11.5" stroke="#ffd479" stroke-width="2.1" stroke-linecap="round"/></svg></span>
+          <span class="brand-txt"><b>ZEPHYR</b><i>MUSIC SERVER</i></span>
+        </div>
+        <p>面向家庭与小型商用 Hi-Fi 机群的唯一下发源音乐服务管理平台。</p>
+        <div class="foot-eq" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+      </div>
+      <div class="foot-col"><h4>产品</h4><a href="#features">能力</a><a href="#architecture">架构</a><a href="#security">安全</a><a href="#demo">交互演示</a><a href="#scope">删减清单</a></div>
+      <div class="foot-col"><h4>资源</h4><a href="#install">安装</a><a href="#specs">规格</a><a href="#faq">FAQ</a><a href="https://github.com/Eyebright/zephyr-music-server/blob/main/INSTALL.md" target="_blank" rel="noopener">INSTALL.md</a><a href="https://github.com/Eyebright/zephyr-music-server/releases" target="_blank" rel="noopener">全部发布</a></div>
+      <div class="foot-col"><h4>联系</h4><a href="mailto:services@zephyr.hk">services@zephyr.hk</a><a href="https://www.zephyr.hk" target="_blank" rel="noopener">www.zephyr.hk</a><a href="https://github.com/Eyebright/zephyr-music-server" target="_blank" rel="noopener">GitHub 仓库</a><a href="https://github.com/Eyebright/zephyr-music-server/issues" target="_blank" rel="noopener">问题反馈</a></div>
+    </div>
+    <div class="foot-bar">
+      <span>© 2026 Zephyr Music Server contributors · MIT License</span>
+      <span class="foot-ver">v0.2.0 · 纯 Go · 无 CGO · SQLite 单文件</span>
+    </div>
+  </div>
+</footer>
+
+<button class="totop" id="totop" type="button" aria-label="回到顶部" hidden>
+  <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" d="M8 13V3M4 7l4-4 4 4"/></svg>
+</button>
+<div class="toast-root" id="toast-root" aria-live="polite"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
