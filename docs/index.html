@@ -426,30 +426,11 @@ curl -s http://127.0.0.1:8080/api/v1/health</code></pre>
   </div>
 </section>
 
-<!-- ══════════ SCOPE / TRIMMED ══════════ -->
-<section class="sec alt" id="scope">
-  <div class="wrap">
-    <header class="sec-h rv">
-      <span class="kicker">06 · SCOPE</span>
-      <h2>删掉的功能，<span class="grad-warm">以及为什么</span></h2>
-      <p>可行性审计的结论是：无法落地的功能不做假实现。以下六项已从产品中删除，原因写进 README。</p>
-    </header>
-    <div class="trim">
-      <article class="trim-i rv"><span class="ti-x" aria-hidden="true">✕</span><div><h4>Roon 本地包库 / 重签名 / 入库</h4><p>Roon 制品为专有签名包，第三方重签名无效且违反其分发条款。Roon Bridge 仍作为普通签名制品正常下发。</p></div></article>
-      <article class="trim-i rv"><span class="ti-x" aria-hidden="true">✕</span><div><h4>服务端在线构建</h4><p>需在服务端内置各应用交叉工具链，体积与攻击面不可接受。构建在离线主机或 CI 完成，制品上传入库。</p></div></article>
-      <article class="trim-i rv"><span class="ti-x" aria-hidden="true">✕</span><div><h4>二进制补丁</h4><p>对已签名制品做二进制补丁会破坏签名链。以新版本上传替代。</p></div></article>
-      <article class="trim-i rv"><span class="ti-x" aria-hidden="true">✕</span><div><h4>远程 .sh 抓取入库</h4><p>服务端代抓公网脚本引入 SSRF 与未签名代码执行风险。仅保留本地上传 + 验签门禁。</p></div></article>
-      <article class="trim-i rv"><span class="ti-x" aria-hidden="true">✕</span><div><h4>终端 Agent 自更新</h4><p>运行中自我替换风险高。系统更新走命令通道，由人工或维护窗口触发。</p></div></article>
-      <article class="trim-i rv"><span class="ti-x" aria-hidden="true">✕</span><div><h4>控制台 mock 角色切换</h4><p>真实鉴权属于反向代理层（Nginx / Caddy + OIDC / basic-auth）。控制台假定可信 LAN，不做假角色。</p></div></article>
-    </div>
-  </div>
-</section>
-
 <!-- ══════════ SPECS ══════════ -->
-<section class="sec" id="specs">
+<section class="sec alt" id="specs">
   <div class="wrap">
     <header class="sec-h rv">
-      <span class="kicker">07 · SPECIFICATIONS</span>
+      <span class="kicker">06 · SPECIFICATIONS</span>
       <h2>技术规格</h2>
       <p>没有隐藏运行时，没有外部数据库服务，没有容器编排依赖。</p>
     </header>
@@ -493,10 +474,10 @@ curl -s http://127.0.0.1:8080/api/v1/health</code></pre>
 </section>
 
 <!-- ══════════ FAQ ══════════ -->
-<section class="sec alt" id="faq">
+<section class="sec" id="faq">
   <div class="wrap narrow">
     <header class="sec-h rv">
-      <span class="kicker">08 · FAQ</span>
+      <span class="kicker">07 · FAQ</span>
       <h2>常见问题</h2>
     </header>
     <div class="faq" id="faq-list">
@@ -541,7 +522,7 @@ curl -s http://127.0.0.1:8080/api/v1/health</code></pre>
         <p>面向家庭与小型商用 Hi-Fi 机群的唯一下发源音乐服务管理平台。</p>
         <div class="foot-eq" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
       </div>
-      <div class="foot-col"><h4>产品</h4><a href="#features">能力</a><a href="#architecture">架构</a><a href="#security">安全</a><a href="#demo">交互演示</a><a href="#scope">删减清单</a></div>
+      <div class="foot-col"><h4>产品</h4><a href="#features">能力</a><a href="#architecture">架构</a><a href="#security">安全</a><a href="#demo">交互演示</a></div>
       <div class="foot-col"><h4>资源</h4><a href="#install">安装</a><a href="#specs">规格</a><a href="#faq">FAQ</a><a href="https://github.com/Eyebright/zephyr-music-server/blob/main/INSTALL.md" target="_blank" rel="noopener">INSTALL.md</a><a href="https://github.com/Eyebright/zephyr-music-server/releases" target="_blank" rel="noopener">全部发布</a></div>
       <div class="foot-col"><h4>联系</h4><a href="mailto:services@zephyr.hk">services@zephyr.hk</a><a href="https://www.zephyr.hk" target="_blank" rel="noopener">www.zephyr.hk</a><a href="https://github.com/Eyebright/zephyr-music-server" target="_blank" rel="noopener">GitHub 仓库</a><a href="https://github.com/Eyebright/zephyr-music-server/issues" target="_blank" rel="noopener">问题反馈</a></div>
     </div>
