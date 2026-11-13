@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#080a0e">
+<meta name="description" content="Zephyr Music Server 运维控制台 — 终端、应用仓库、服务下发、密钥与授权、审计">
+<title>Zephyr Music Server · 运维控制台</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 34 34'%3E%3Crect x='1' y='1' width='32' height='32' rx='9' fill='%23f6a821'/%3E%3Cpath d='M10 12h14l-14 10h14' stroke='%23080a0e' stroke-width='2.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+</head>
+<body>
+<div class="bg-glow bg-glow-a" aria-hidden="true"></div>
+<div class="bg-glow bg-glow-b" aria-hidden="true"></div>
+<div class="bg-grain" aria-hidden="true"></div>
+
+<div id="app">
+  <aside id="sidebar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg width="36" height="36" viewBox="0 0 34 34"><defs><linearGradient id="brandg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f6a821"/><stop offset="1" stop-color="#ffd479"/></linearGradient></defs><rect x="1" y="1" width="32" height="32" rx="9" fill="url(#brandg)"/><path d="M10 12h14l-14 10h14" stroke="#080a0e" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <div class="brand-text">
+        <div class="brand-name">Zephyr</div>
+        <div class="brand-sub">Music Server</div>
+      </div>
+      <div class="eq" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+    </div>
+    <div class="brand-meta">
+      <span id="brand-ver" class="ver-chip mono">v—</span>
+      <span id="health-line" class="health-line">正在连接服务器…</span>
+    </div>
+    <nav id="nav" class="nav" aria-label="主导航"></nav>
+    <div class="side-foot">
+      <div class="lbl">Zephyr Hi-Fi Operations</div>
+      <a href="mailto:services@zephyr.hk">services@zephyr.hk</a>
+      <a href="https://www.zephyr.hk" target="_blank" rel="noopener">www.zephyr.hk</a>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="search-box">
+        <svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        <input id="global-search" type="search" placeholder="搜索当前视图…（按 / 聚焦）" autocomplete="off" spellcheck="false" aria-label="全局搜索">
+      </div>
+      <div class="top-right">
+        <div id="conn" class="conn ok" title="服务器连接状态"><span class="sdot live"></span><span id="conn-text">已连接</span></div>
+        <button class="icon-btn bell" data-act="bell" title="告警中心" aria-label="告警中心">
+          <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 01-3.4 0"/></svg>
+          <span id="bell-count" class="bell-count hidden">0</span>
+        </button>
+      </div>
+    </header>
+    <main id="view" class="view" aria-live="polite"></main>
+  </div>
+</div>
+
+<div id="drawer-root"></div>
+<div id="modal-root"></div>
+<div id="confirm-root"></div>
+<div id="toast-root" class="toast-root" aria-live="assertive"></div>
+<script src="/app.js"></script>
+</body>
+</html>

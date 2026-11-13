@@ -1,0 +1,27 @@
+# compiled binaries & packages (ship via GitHub Releases, never in git)
+bin/
+agent/bin/
+agent/dist/
+release/
+dist/
+*.exe
+*.deb
+*.tar.gz
+*.asc.bak
+
+# runtime state & smoke data
+data-smoke/
+*.db
+*.db-wal
+*.db-shm
+*.log
+state.json
+server.env.local
+agent.env.local
+
+# editor / OS noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

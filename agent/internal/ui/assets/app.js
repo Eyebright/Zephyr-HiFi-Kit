@@ -1,0 +1,411 @@
+"use strict";
+
+const $ = (id) => document.getElementById(id);
+let catalog = [];
+let nodeSecret = "";
+let lastIdentity = null;
+let gateBlockMsg = "";
+
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+async function api(path, method = "GET", body) {
+  const opt = { method, headers: {} };
+  // Mutations carry the node secret when known (standalone loopback). Behind the
+  // server reverse proxy the secret is empty here and the proxy injects it.
+  if (method !== "GET" && nodeSecret) opt.headers["X-Node-Secret"] = nodeSecret;
+  if (body !== undefined) {
+    opt.headers["Content-Type"] = "application/json";
+    opt.body = JSON.stringify(body);
+  }
+  const res = await fetch(path, opt);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const e = new Error(data.error || ("HTTP " + res.status));
+    e.status = res.status;
+    throw e;
+  }
+  return data;
+}
+
+function renderBanner() {
+  const b = $("banner");
+  const id = lastIdentity || {};
+  let msg = gateBlockMsg;
+  if (!msg) {
+    if (id.allow_local === false) {
+      msg = "本地控制已禁用（ALLOW_LOCAL=false）。请通过服务端控制台操作。";
+    } else if (id.playing && id.play_protect) {
+      msg = "播放保护已启用：终端正在播放，安装/升级/电源等操作已被拦截。请先停止播放。";
+    }
+  }
+  if (msg) {
+    b.textContent = msg;
+    b.className = "banner warn";
+    b.hidden = false;
+  } else {
+    b.hidden = true;
+  }
+}
+
+function applyGates(id) {
+  const blocked = id.allow_local === false || (id.playing && id.play_protect);
+  ["btn-os-check", "btn-os-upgrade", "btn-netdiag"].forEach((bid) => {
+    const el = $(bid);
+    if (el) el.disabled = blocked;
+  });
+}
+
+function toast(msg, kind = "") {
+  const t = $("toast");
+  t.textContent = msg;
+  t.className = "toast " + kind;
+  t.hidden = false;
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => (t.hidden = true), 3500);
+}
+
+function fmtUptime(sec) {
+  sec = Math.floor(sec || 0);
+  const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60);
+  return (d ? d + "天 " : "") + h + "时 " + m + "分";
+}
+
+function setBar(id, pct, hot) {
+  const el = $(id);
+  el.style.width = Math.max(0, Math.min(100, pct)) + "%";
+  el.className = pct >= (hot || 90) ? "hot" : "";
+}
+
+function renderIdentity(id) {
+  lastIdentity = id;
+  $("alias").textContent = id.alias || "终端";
+  $("arch").textContent = id.arch || "";
+  $("agentver").textContent = "Agent " + (id.agent_version || "");
+  const sl = $("serverlink");
+  sl.textContent = id.server_reachable ? "服务端已连接" : "服务端离线";
+  sl.className = "pill " + (id.server_reachable ? "ok" : "bad");
+  const sy = $("syslink");
+  sy.textContent = id.system_available ? "系统控制就绪" : "系统控制不可用";
+  sy.className = "pill " + (id.system_available ? "ok" : "bad");
+  $("btn-reboot").disabled = !id.allow_power;
+  $("btn-shutdown").disabled = !id.allow_power;
+  applyGates(id);
+  renderBanner();
+}
+
+function renderMetrics(m) {
+  $("m-cpu").textContent = (m.cpu_percent || 0).toFixed(0) + "%";
+  setBar("bar-cpu", m.cpu_percent || 0);
+  $("m-mem").textContent = (m.mem_percent || 0).toFixed(0) + "%";
+  setBar("bar-mem", m.mem_percent || 0);
+  $("m-temp").textContent = (m.temp_c || 0).toFixed(1) + "°C";
+  setBar("bar-temp", (m.temp_c || 0), 75);
+  $("m-disk").textContent = (m.disk_percent || 0).toFixed(0) + "%";
+  setBar("bar-disk", m.disk_percent || 0);
+  $("m-load").textContent = (m.load || []).map((x) => x.toFixed(2)).join(" ");
+  $("m-uptime").textContent = fmtUptime(m.uptime_sec);
+  $("m-distro").textContent = m.distro || "";
+  $("m-kernel").textContent = m.kernel ? "内核 " + m.kernel : "";
+}
+
+function statusText(s) {
+  if (!s.installed) return "未安装";
+  if (s.running) return "运行中";
+  if (s.enabled) return "已启用·未运行";
+  return "已停用";
+}
+
+function renderServices(list) {
+  const wrap = $("cards");
+  wrap.innerHTML = "";
+  list.filter((s) => s.primary).forEach((s) => {
+    const card = document.createElement("div");
+    card.className = "card";
+    const dotClass = !s.installed ? "" : s.running ? "on" : "off";
+    const proto = s.protocol ? `<span class="badge">${s.protocol.toUpperCase()}</span>` : "";
+    const helpers = (s.helpers || []).length ? `<span>组件 <b>${s.helpers.join(", ")}</b></span>` : "";
+    let actions;
+    if (!s.installed) {
+      actions = `<button class="btn primary" data-act="install">安装</button>`;
+    } else {
+      const toggle = s.enabled
+        ? `<button class="btn warn" data-act="disable">停用</button>`
+        : `<button class="btn good" data-act="enable">启用</button>`;
+      actions = `${toggle}
+        <button class="btn" data-act="config">配置</button>
+        <button class="btn danger" data-act="uninstall">卸载</button>`;
+    }
+    card.innerHTML = `
+      <div class="card-top">
+        <div class="card-title"><span class="dot ${dotClass}"></span><h3>${s.name}</h3></div>
+        ${proto}
+      </div>
+      <div class="card-desc">${s.description || ""}</div>
+      <div class="card-meta">
+        <span>状态 <b>${statusText(s)}</b></span>
+        <span>版本 <b>${s.version || "–"}</b></span>
+        ${s.occupies_dac ? "<span>占用 DAC</span>" : ""}
+        ${helpers}
+      </div>
+      <div class="card-actions">${actions}</div>`;
+    card.querySelectorAll("button[data-act]").forEach((b) => {
+      b.addEventListener("click", () => onAction(s, b.dataset.act));
+    });
+    wrap.appendChild(card);
+  });
+}
+
+function renderDAC(holders) {
+  const panel = $("dac-panel");
+  if (!holders || !holders.length) { panel.hidden = true; return; }
+  panel.hidden = false;
+  $("dac-list").innerHTML = holders
+    .map((h) => `<div class="dac-item"><span><b>${h.process || "?"}</b> (PID ${h.pid})</span><span>${h.device}</span></div>`)
+    .join("");
+}
+
+function renderDevices(devs) {
+  const panel = $("dev-panel");
+  if (!devs || !devs.length) { panel.hidden = true; return; }
+  panel.hidden = false;
+  $("dev-list").innerHTML = devs
+    .map((d) => `<div class="dev-item"><span>${d.name}</span><b>${d.hw}</b></div>`)
+    .join("");
+}
+
+async function loadStatus() {
+  try {
+    const st = await api("local/api/status");
+    renderIdentity(st.identity);
+    renderMetrics(st.metrics);
+    renderServices(st.services);
+    renderDAC(st.dac);
+    renderDevices(st.devices);
+  } catch (e) {
+    // keep last good render; surface transient errors quietly
+  }
+}
+
+// --- modal ---
+let modalOk = null;
+function openModal(title, bodyHTML, onOk) {
+  $("modal-title").textContent = title;
+  $("modal-body").innerHTML = bodyHTML;
+  modalOk = onOk;
+  $("modal").hidden = false;
+}
+function closeModal() { $("modal").hidden = true; modalOk = null; }
+$("modal-cancel").addEventListener("click", closeModal);
+$("modal-ok").addEventListener("click", async () => {
+  if (!modalOk) return closeModal();
+  $("modal-ok").disabled = true;
+  try { await modalOk(); closeModal(); }
+  catch (e) {
+    if (e.status === 403) { gateBlockMsg = e.message; renderBanner(); }
+    toast(e.message, "err");
+  }
+  finally { $("modal-ok").disabled = false; }
+});
+
+function fieldsHTML(svc, withVersion) {
+  let html = "";
+  if (withVersion) {
+    const entry = catalog.find((c) => c.app_id === svc.app_id);
+    const versions = (entry && entry.versions) || [];
+    const opts = versions.length
+      ? versions.map((v) => `<option value="${v}">${v}</option>`).join("")
+      : `<option value="">最新可用</option>`;
+    html += `<div class="field"><label>版本</label><select id="f-version">${opts}</select>
+      <div class="help">由服务端应用仓库提供</div></div>`;
+  }
+  (svc.config_fields || []).forEach((f) => {
+    const val = (svc.config && svc.config[f.key]) || f.default || "";
+    html += `<div class="field"><label>${f.label}</label>
+      <input id="f-${f.key}" value="${val}" placeholder="${f.placeholder || ""}">
+      ${f.help ? `<div class="help">${f.help}</div>` : ""}</div>`;
+  });
+  return html || `<div class="help">该服务无需额外配置。</div>`;
+}
+
+function collectConfig(svc) {
+  const cfg = {};
+  (svc.config_fields || []).forEach((f) => {
+    const el = $("f-" + f.key);
+    if (el) cfg[f.key] = el.value;
+  });
+  return cfg;
+}
+
+async function ensureCatalog() {
+  try { catalog = await api("local/api/catalog"); }
+  catch (e) { catalog = []; }
+}
+
+async function onAction(svc, act) {
+  try {
+    if (act === "install") {
+      await ensureCatalog();
+      openModal("安装 " + svc.name, fieldsHTML(svc, true), async () => {
+        const verEl = $("f-version");
+        const version = verEl ? verEl.value : "";
+        await api(`local/api/services/${svc.app_id}/install`, "POST", { version, config: collectConfig(svc) });
+        gateBlockMsg = "";
+        toast(svc.name + " 安装完成", "ok");
+        loadStatus();
+      });
+    } else if (act === "config") {
+      openModal("配置 " + svc.name, fieldsHTML(svc, false), async () => {
+        await api(`local/api/services/${svc.app_id}/config`, "POST", { config: collectConfig(svc) });
+        gateBlockMsg = "";
+        toast("配置已应用", "ok");
+        loadStatus();
+      });
+    } else if (act === "enable") {
+      await api(`local/api/services/${svc.app_id}/enable`, "POST");
+      gateBlockMsg = "";
+      toast(svc.name + " 已启用", "ok"); loadStatus();
+    } else if (act === "disable") {
+      await api(`local/api/services/${svc.app_id}/disable`, "POST");
+      gateBlockMsg = "";
+      toast(svc.name + " 已停用", "ok"); loadStatus();
+    } else if (act === "uninstall") {
+      if (!confirm(`确认卸载 ${svc.name}？`)) return;
+      await api(`local/api/services/${svc.app_id}/uninstall`, "POST");
+      gateBlockMsg = "";
+      toast(svc.name + " 已卸载", "ok"); loadStatus();
+    }
+  } catch (e) {
+    if (e.status === 403) { gateBlockMsg = e.message; renderBanner(); }
+    toast(e.message, "err");
+  }
+}
+
+async function power(action) {
+  const label = action === "reboot" ? "重启" : "关机";
+  if (!confirm(`确认${label}本终端？正在进行的播放会中断。`)) return;
+  try {
+    await api("local/api/power", "POST", { action });
+    gateBlockMsg = "";
+    toast(label + "指令已发送", "ok");
+  } catch (e) {
+    if (e.status === 403) { gateBlockMsg = e.message; renderBanner(); }
+    toast(e.message, "err");
+  }
+}
+$("btn-reboot").addEventListener("click", () => power("reboot"));
+$("btn-shutdown").addEventListener("click", () => power("shutdown"));
+
+// --- 系统更新 ---
+function renderOSResult(res) {
+  const log = $("os-log");
+  log.textContent = res.log || "";
+  log.hidden = !res.log;
+  const data = res.data || {};
+  const pkgs = data.packages || [];
+  const summary = $("os-summary");
+  if (res.status === "err" && !pkgs.length) {
+    summary.textContent = "操作失败：" + (res.log || "未知错误").split("\n")[0];
+  } else {
+    const when = data.last_check ? new Date(data.last_check * 1000).toLocaleString() : "";
+    summary.innerHTML = `可升级 <b>${pkgs.length}</b> 个软件包` +
+      (data.reboot_required ? ' · <b class="warn-text">需要重启</b>' : "") +
+      (when ? ` · ${esc(when)}` : "");
+  }
+  $("os-packages").innerHTML = pkgs.map((p) =>
+    `<label class="os-pkg"><input type="checkbox" data-pkg="${esc(p.name)}" checked>` +
+    `<span class="os-pkg-name">${esc(p.name)}</span>` +
+    `<span class="os-pkg-ver">${esc(p.current)} → <b>${esc(p.candidate)}</b></span></label>`
+  ).join("");
+}
+
+async function osCheck() {
+  const btn = $("btn-os-check");
+  btn.disabled = true;
+  $("os-summary").textContent = "正在检查更新…";
+  try {
+    const res = await api("local/api/os/check", "POST");
+    gateBlockMsg = "";
+    renderOSResult(res);
+    toast(res.status === "ok" ? "检查完成" : "检查失败", res.status === "ok" ? "ok" : "err");
+  } catch (e) {
+    if (e.status === 403) { gateBlockMsg = e.message; renderBanner(); }
+    $("os-summary").textContent = e.message;
+    toast(e.message, "err");
+  } finally {
+    btn.disabled = false;
+    if (lastIdentity) applyGates(lastIdentity);
+    loadStatus();
+  }
+}
+
+async function osUpgrade() {
+  const checked = Array.from(document.querySelectorAll("#os-packages input[data-pkg]:checked"))
+    .map((el) => el.dataset.pkg);
+  const scope = checked.length ? `选中的 ${checked.length} 个软件包` : "全部可升级软件包";
+  if (!confirm(`确认升级${scope}？升级期间请勿断电。`)) return;
+  const btn = $("btn-os-upgrade");
+  btn.disabled = true;
+  $("os-summary").textContent = "正在升级…";
+  try {
+    const res = await api("local/api/os/upgrade", "POST", { packages: checked });
+    gateBlockMsg = "";
+    renderOSResult(res);
+    toast(res.status === "ok" ? "升级完成" : "升级失败", res.status === "ok" ? "ok" : "err");
+  } catch (e) {
+    if (e.status === 403) { gateBlockMsg = e.message; renderBanner(); }
+    $("os-summary").textContent = e.message;
+    toast(e.message, "err");
+  } finally {
+    btn.disabled = false;
+    if (lastIdentity) applyGates(lastIdentity);
+    loadStatus();
+  }
+}
+$("btn-os-check").addEventListener("click", osCheck);
+$("btn-os-upgrade").addEventListener("click", osUpgrade);
+
+// --- 网络诊断 ---
+const NET_LABELS = { dns: "DNS 解析", tcp: "TCP 连接", mdns: "mDNS 发现", ssdp: "SSDP 发现", multicast: "组播加入" };
+async function netdiag() {
+  const btn = $("btn-netdiag");
+  btn.disabled = true;
+  $("net-results").innerHTML = '<div class="hint">正在诊断…</div>';
+  try {
+    const res = await api("local/api/netdiag", "POST");
+    gateBlockMsg = "";
+    const results = (res.data && res.data.results) || [];
+    $("net-results").innerHTML = results.map((p) =>
+      `<div class="net-item ${p.ok ? "ok" : "bad"}">` +
+      `<span class="net-name">${esc(NET_LABELS[p.name] || p.name)}</span>` +
+      `<span class="net-detail">${esc(p.detail)}</span>` +
+      `<span class="net-ms">${p.ms}ms</span>` +
+      `<span class="net-flag">${p.ok ? "正常" : "失败"}</span></div>`
+    ).join("") || '<div class="hint">无诊断结果。</div>';
+    toast("诊断完成", "ok");
+  } catch (e) {
+    if (e.status === 403) { gateBlockMsg = e.message; renderBanner(); }
+    $("net-results").innerHTML = `<div class="hint">${esc(e.message)}</div>`;
+    toast(e.message, "err");
+  } finally {
+    btn.disabled = false;
+    if (lastIdentity) applyGates(lastIdentity);
+  }
+}
+$("btn-netdiag").addEventListener("click", netdiag);
+
+async function loadSecret() {
+  try {
+    const r = await api("local/api/secret");
+    nodeSecret = r.secret || "";
+  } catch (e) {
+    // Remote/proxied: the server injects X-Node-Secret; leave it empty here.
+    nodeSecret = "";
+  }
+}
+
+loadSecret();
+loadStatus();
+setInterval(loadStatus, 3000);

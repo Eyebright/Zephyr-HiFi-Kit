@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Zephyr Music Player</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">◉</span>
+      <div>
+        <div class="eyebrow" style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;opacity:.7;font-weight:600">Zephyr Music Player</div>
+        <h1 id="alias">终端</h1>
+        <div class="sub"><span id="arch"></span> · <span id="agentver"></span></div>
+      </div>
+    </div>
+    <div class="links">
+      <span id="serverlink" class="pill">服务端…</span>
+      <span id="syslink" class="pill">系统…</span>
+    </div>
+  </header>
+
+  <main>
+    <div id="banner" class="banner" hidden></div>
+
+    <section class="panel perf">
+      <div class="panel-head">
+        <h2>性能</h2>
+        <div class="power">
+          <button id="btn-reboot" class="btn warn">重启</button>
+          <button id="btn-shutdown" class="btn danger">关机</button>
+        </div>
+      </div>
+      <div class="gauges">
+        <div class="gauge"><div class="glabel">CPU</div><div class="gval" id="m-cpu">–</div><div class="bar"><i id="bar-cpu"></i></div></div>
+        <div class="gauge"><div class="glabel">内存</div><div class="gval" id="m-mem">–</div><div class="bar"><i id="bar-mem"></i></div></div>
+        <div class="gauge"><div class="glabel">温度</div><div class="gval" id="m-temp">–</div><div class="bar"><i id="bar-temp"></i></div></div>
+        <div class="gauge"><div class="glabel">磁盘</div><div class="gval" id="m-disk">–</div><div class="bar"><i id="bar-disk"></i></div></div>
+      </div>
+      <div class="perf-extra">
+        <span>负载 <b id="m-load">–</b></span>
+        <span>运行 <b id="m-uptime">–</b></span>
+        <span id="m-distro"></span>
+        <span id="m-kernel"></span>
+      </div>
+    </section>
+
+    <section class="panel dac" id="dac-panel" hidden>
+      <h2>DAC 占用</h2>
+      <div id="dac-list"></div>
+    </section>
+
+    <section class="services">
+      <div class="section-head">
+        <h2>音频服务</h2>
+        <span class="hint">由服务端统一下发 · 点击卡片配置</span>
+      </div>
+      <div id="cards" class="cards"></div>
+    </section>
+
+    <section class="panel devices" id="dev-panel" hidden>
+      <h2>ALSA 输出设备</h2>
+      <div id="dev-list" class="dev-list"></div>
+    </section>
+
+    <section class="panel os" id="os-panel">
+      <div class="panel-head">
+        <h2>系统更新</h2>
+        <div class="os-actions">
+          <button id="btn-os-check" class="btn">检查更新</button>
+          <button id="btn-os-upgrade" class="btn primary">升级</button>
+        </div>
+      </div>
+      <div id="os-summary" class="hint">尚未检查。点击「检查更新」获取可升级软件包。</div>
+      <div id="os-packages" class="os-packages"></div>
+      <pre id="os-log" class="log" hidden></pre>
+    </section>
+
+    <section class="panel netdiag" id="net-panel">
+      <div class="panel-head">
+        <h2>网络诊断</h2>
+        <button id="btn-netdiag" class="btn">开始诊断</button>
+      </div>
+      <div id="net-results" class="net-results">
+        <div class="hint">检测 DNS、TCP、mDNS、SSDP 与组播连通性。</div>
+      </div>
+    </section>
+  </main>
+
+  <div id="modal" class="modal" hidden>
+    <div class="modal-box">
+      <h3 id="modal-title">配置</h3>
+      <div id="modal-body"></div>
+      <div class="modal-actions">
+        <button id="modal-cancel" class="btn">取消</button>
+        <button id="modal-ok" class="btn primary">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,59 @@
+name: CI & Release
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Server unit tests
+        run: go test ./...
+
+      - name: Agent unit tests
+        working-directory: agent
+        run: go test ./...
+
+      - name: End-to-end smoke test (enforce mode)
+        run: sh scripts/smoke-test.sh
+
+      - name: Build release bundle
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="0.2.0"
+          fi
+          VERSION="$VERSION" sh scripts/build-release.sh
+
+      - name: Publish GitHub Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            release/zephyr-music-server-*.tar.gz \
+            release/zephyr-music-server-*/agent/*.deb \
+            --title "Zephyr Music Server $GITHUB_REF_NAME" \
+            --generate-notes
+
+      - name: Upload bundle artifact (non-tag builds)
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: zephyr-music-server-bundle
+          path: release/zephyr-music-server-*.tar.gz
+          retention-days: 7

@@ -1,0 +1,28 @@
+[Unit]
+Description=Zephyr Music Server (hifihub delivery core)
+Documentation=https://www.zephyr.hk
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hifihub-server
+Group=hifihub-server
+EnvironmentFile=-/etc/hifihub/server.env
+WorkingDirectory=/var/lib/hifihub-server
+ExecStart=/usr/bin/hifihub-server
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+MemoryMax=512M
+
+# Hardening: the server only serves HTTP, reads artifacts and runs gpg verify.
+# It never needs root. All writable state lives under /var/lib/hifihub-server.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/hifihub-server
+
+[Install]
+WantedBy=multi-user.target

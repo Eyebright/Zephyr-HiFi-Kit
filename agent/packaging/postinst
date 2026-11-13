@@ -1,0 +1,12 @@
+#!/bin/sh
+set -e
+# /etc/hifihub/agent.env is a dpkg conffile and may hold the operator's server
+# URL and registration token. Never create or overwrite it here: dpkg keeps
+# operator edits across upgrades, and install.sh manages the keys explicitly.
+if [ "$1" = "configure" ]; then
+  mkdir -p /var/lib/hifihub
+  systemctl daemon-reload || true
+  systemctl enable hifihub-agent.service || true
+  systemctl restart hifihub-agent.service || true
+fi
+exit 0

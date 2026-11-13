@@ -1,0 +1,20 @@
+[Unit]
+Description=HiFiHub Terminal Agent (local console + server-managed audio services)
+Documentation=https://github.com/hifihub
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/hifihub/agent.env
+ExecStart=/usr/bin/hifihub-agent
+Restart=on-failure
+RestartSec=5
+# Root is required for systemd/ALSA/dpkg/power control; actions are restricted
+# to a whitelist inside the agent (NFR-S5).
+User=root
+LimitNOFILE=65536
+MemoryMax=120M
+
+[Install]
+WantedBy=multi-user.target
