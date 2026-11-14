@@ -3,23 +3,90 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Zephyr Music Server · Hi-Fi 机群唯一下发源</title>
-<meta name="description" content="Zephyr Music Server：一台 x86 Linux 服务端统一管理数十至数百台 Hi-Fi 终端。签名制品仓库、BOM 期望态、灰度下发、播放门控、席位授权与全量审计。纯 Go、无 CGO、SQLite 单文件、内嵌控制台。">
+<title>Zephyr Music Server · Hi-Fi 机群唯一下发源 | Roon / HQPlayer 多终端听音室管理</title>
+<meta name="description" content="Zephyr Music Server 适用于多终端 Hi-Fi 机群、听音室与音响展厅：一台 x86 Linux 服务端统一编排 Roon / HQPlayer / 系统更新，覆盖 x86 小主机与树莓派 ARM 终端。签名制品、灰度下发、播放门控、席位授权、全量审计，纯 Go 单二进制、可离线内网运行。">
+<meta name="keywords" content="Hi-Fi 机群管理,Roon 多终端管理,HQPlayer NAA,听音室系统,音响展厅,多房间音频,树莓派 Hi-Fi 终端,x86 Linux 音乐服务器,灰度下发,播放门控,席位授权">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
 <meta name="theme-color" content="#07090d">
 <link rel="canonical" href="https://zephyr.hk/">
+<link rel="alternate" hreflang="zh-CN" href="https://zephyr.hk/">
+<link rel="alternate" hreflang="x-default" href="https://zephyr.hk/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Zephyr Music Server">
-<meta property="og:title" content="Zephyr Music Server · Hi-Fi 机群唯一下发源">
-<meta property="og:description" content="签名制品仓库 · BOM 期望态 · 灰度下发 · 播放门控 · 席位授权 · 全量审计。纯 Go，无 CGO，SQLite 单文件，内嵌控制台。">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:title" content="Zephyr Music Server · Hi-Fi 机群唯一下发源 | Roon / HQPlayer 多终端听音室管理">
+<meta property="og:description" content="适用于多终端 Hi-Fi 机群、听音室与音响展厅。一台 x86 Linux 服务端统一编排 Roon / HQPlayer / 系统更新，覆盖 x86 与树莓派 ARM 终端；签名制品、灰度下发、播放门控、席位授权、全量审计。">
 <meta property="og:url" content="https://zephyr.hk/">
 <meta property="og:image" content="https://zephyr.hk/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Zephyr Music Server — Hi-Fi 机群唯一下发源">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Zephyr Music Server · Hi-Fi 机群唯一下发源">
+<meta name="twitter:description" content="适用于多终端 Hi-Fi 机群、听音室与音响展厅：Roon / HQPlayer 统一编排，签名制品、灰度下发、播放门控、席位授权。">
+<meta name="twitter:image" content="https://zephyr.hk/og.png">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "name": "Zephyr Music Server",
+      "url": "https://zephyr.hk/",
+      "inLanguage": "zh-CN"
+    },
+    {
+      "@type": "SoftwareApplication",
+      "name": "Zephyr Music Server",
+      "alternateName": "Zephyr Music Player 服务端",
+      "url": "https://zephyr.hk/",
+      "image": "https://zephyr.hk/og.png",
+      "screenshot": "https://zephyr.hk/og.png",
+      "description": "适用于多终端 Hi-Fi 机群、听音室与音响展厅的唯一下发源：一台 x86 Linux 服务端统一编排 Roon / HQPlayer / 系统更新，覆盖 x86 小主机与树莓派 ARM 终端；签名制品仓库、BOM 期望态、灰度下发、播放门控、席位授权与全量审计。",
+      "applicationCategory": "MultimediaApplication",
+      "applicationSubCategory": "Hi-Fi 机群管理与制品下发",
+      "operatingSystem": "Linux x86_64 服务端；终端 amd64 / arm64 / armhf",
+      "softwareVersion": "0.2.0",
+      "license": "https://opensource.org/licenses/MIT",
+      "downloadUrl": "https://github.com/Eyebright/zephyr-music-server/releases/tag/v0.2.0",
+      "installUrl": "https://zephyr.hk/#install",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+      "featureList": [
+        "多终端 Hi-Fi 机群统一编排（Roon Bridge / HQPlayer NAA / 系统更新）",
+        "GPG 签名制品仓库与 BOM 期望态",
+        "灰度环下发与失败自动回滚",
+        "播放门控（服务端与终端双侧）",
+        "席位授权与离线许可证验签",
+        "全量审计与命令通道",
+        "纯 Go 单二进制、SQLite 单文件、可离线内网运行"
+      ],
+      "audience": {
+        "@type": "Audience",
+        "audienceType": "Hi-Fi 机群运维、听音室、音响展厅、多房间音频集成商"
+      }
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        { "@type": "Question", "name": "服务端必须联网吗？", "acceptedAnswer": { "@type": "Answer", "text": "不需要。主密钥与许可证签发都可完全离线，整个链路可在隔离 LAN 内闭环运行；终端安装器从服务端 /dl/ 取包，不访问公网。" } },
+        { "@type": "Question", "name": "为什么不做在线构建和二进制补丁？", "acceptedAnswer": { "@type": "Answer", "text": "在线构建需内置交叉工具链，体积与攻击面不可接受；二进制补丁会破坏签名链。改为离线/CI 构建 → 签名 → 上传入库的可验证路径。" } },
+        { "@type": "Question", "name": "播放中的终端会被升级打断吗？", "acceptedAnswer": { "@type": "Answer", "text": "不会。播放门控在服务端与终端双侧执行，任务进入 waiting_idle 等待空闲；播放中系统升级、停服务与关机同样被拦截。" } },
+        { "@type": "Question", "name": "许可证是怎么工作的？", "acceptedAnswer": { "@type": "Answer", "text": "许可证由离线主密钥签发，服务端只验签并统计席位占用；每次下发前过许可证有效、终端已授权、席位充足三道检查。" } },
+        { "@type": "Question", "name": "灰度发布怎么推进？", "acceptedAnswer": { "@type": "Answer", "text": "环百分比合计 100，绑定 BOM 版本必须已发布；当前环有未完成任务时推进返回 409，避免故障扩散；支持撤销恢复。" } },
+        { "@type": "Question", "name": "控制台的鉴权在哪里做？", "acceptedAnswer": { "@type": "Answer", "text": "在反向代理层（Nginx / Caddy + TLS + OIDC 或 basic-auth）。控制台假定可信 LAN，产品内不做 mock 角色切换。" } },
+        { "@type": "Question", "name": "误删了 BOM 版本或终端怎么办？", "acceptedAnswer": { "@type": "Answer", "text": "BOM 保留完整版本历史可回滚；回滚生成新的已发布版本而非覆盖历史；终端注销支持撤销恢复。" } },
+        { "@type": "Question", "name": "支持哪些终端硬件？", "acceptedAnswer": { "@type": "Answer", "text": "安装器自动识别 amd64、arm64 与 armhf，覆盖 x86 小主机、树莓派 4/5（64 位）与树莓派 2/3（32 位）。" } }
+      ]
+    }
+  ]
+}
+</script>
 </head>
 <body>
 <a class="skip" href="#main">跳到主内容</a>
@@ -44,6 +111,7 @@
       </span>
     </a>
     <nav class="links" id="nav-links" aria-label="页面导航">
+      <a href="#scenarios" data-spy="scenarios">场景</a>
       <a href="#features" data-spy="features">能力</a>
       <a href="#architecture" data-spy="architecture">架构</a>
       <a href="#security" data-spy="security">安全</a>
@@ -114,6 +182,56 @@
 <div class="marquee" aria-hidden="true">
   <div class="mq-track" id="mq-track"></div>
 </div>
+
+<!-- ══════════ SCENARIOS / 适用范围 ══════════ -->
+<section class="sec alt" id="scenarios">
+  <div class="wrap">
+    <header class="sec-h rv">
+      <span class="kicker">SCENARIOS · 适用范围</span>
+      <h2>它管哪些机器，<span class="grad-warm">适合谁用</span></h2>
+      <p>从一间听音室到一片多终端 Hi-Fi 机群——Zephyr Music Server 把 Roon / HQPlayer 播放终端、x86 小主机与树莓派 ARM 终端收敛到一台 x86 Linux 服务端，统一编排、签名下发、灰度推进。下面这些场景，都是它的主场。</p>
+    </header>
+    <div class="bento">
+      <article class="cell rv" data-hue="amber">
+        <div class="cell-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div>
+        <h3>多终端 Hi-Fi 机群</h3>
+        <p>一台服务端统管多台播放终端，Roon Bridge、HQPlayer NAA 与系统更新走同一条 GPG 签名下发链，期望态一处定义、全机群收敛。</p>
+        <div class="agent-tags"><span>Roon Bridge</span><span>HQPlayer NAA</span><span>多终端编排</span></div>
+      </article>
+      <article class="cell rv" data-hue="cyan">
+        <div class="cell-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="2"/><circle cx="12" cy="14" r="3.4"/><circle cx="12" cy="6.5" r="1.4"/></svg></div>
+        <h3>听音室与音响展厅</h3>
+        <p>试听位与展示机群集中编排，按房间、别名分组管理；播放门控双侧拦截，升级与停服务绝不中断正在进行的试听。</p>
+        <div class="agent-tags"><span>听音室</span><span>音响展厅</span><span>播放门控</span></div>
+      </article>
+      <article class="cell rv" data-hue="green">
+        <div class="cell-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M9.5 21v-6h5v6"/></svg></div>
+        <h3>家庭多房间音频</h3>
+        <p>客厅、书房、卧室各一台树莓派或小主机，统一期望态、逐房间灰度升级；一条命令入网，误删可撤销恢复。</p>
+        <div class="agent-tags"><span>多房间</span><span>树莓派</span><span>分组灰度</span></div>
+      </article>
+      <article class="cell rv" data-hue="violet">
+        <div class="cell-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="8" cy="18" r="2"/></svg></div>
+        <h3>Roon / HQPlayer 重度用户</h3>
+        <p>已在跑 Roon Core / HQPlayer 的发烧友，把 NAA 终端与版本收敛到一个可回滚的下发源，BOM 历史完整保留、随时回退。</p>
+        <div class="agent-tags"><span>Roon Core</span><span>HQPlayer</span><span>版本回滚</span></div>
+      </article>
+      <article class="cell rv" data-hue="magenta">
+        <div class="cell-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="16" rx="2"/><path d="M6.5 9l3 3-3 3M12.5 15h5"/></svg></div>
+        <h3>运维与集成商</h3>
+        <p>为客户批量部署与远程运维：席位授权、灰度环推进、全量审计、独立命令通道与 mDNS / SSDP 网络诊断，一个控制台看全。</p>
+        <div class="agent-tags"><span>批量部署</span><span>席位授权</span><span>全量审计</span></div>
+      </article>
+      <article class="cell rv" data-hue="blue">
+        <div class="cell-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Z"/><path d="M9 12h6"/></svg></div>
+        <h3>离线 / 隔离内网</h3>
+        <p>主密钥与许可证离线签发，服务端只验签；纯 Go 单二进制、SQLite 单文件，整链路可在隔离 LAN 闭环运行，不访问公网。</p>
+        <div class="agent-tags"><span>离线签发</span><span>隔离 LAN</span><span>纯 Go</span></div>
+      </article>
+    </div>
+    <p class="scn-plat rv">服务端 <b>x86_64 Linux</b> · 终端 <b>amd64 / arm64 / armhf</b>（x86 小主机 · 树莓派 4/5 · 树莓派 2/3）· 应用 <b>Roon Bridge / HQPlayer NAA / 系统更新</b></p>
+  </div>
+</section>
 
 <!-- ══════════ FEATURES ══════════ -->
 <section class="sec" id="features">
@@ -522,7 +640,7 @@ curl -s http://127.0.0.1:8080/api/v1/health</code></pre>
         <p>面向家庭与小型商用 Hi-Fi 机群的唯一下发源音乐服务管理平台。</p>
         <div class="foot-eq" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
       </div>
-      <div class="foot-col"><h4>产品</h4><a href="#features">能力</a><a href="#architecture">架构</a><a href="#security">安全</a><a href="#demo">交互演示</a></div>
+      <div class="foot-col"><h4>产品</h4><a href="#scenarios">适用范围</a><a href="#features">能力</a><a href="#architecture">架构</a><a href="#security">安全</a><a href="#demo">交互演示</a></div>
       <div class="foot-col"><h4>资源</h4><a href="#install">安装</a><a href="#specs">规格</a><a href="#faq">FAQ</a><a href="https://github.com/Eyebright/zephyr-music-server/blob/main/INSTALL.md" target="_blank" rel="noopener">INSTALL.md</a><a href="https://github.com/Eyebright/zephyr-music-server/releases" target="_blank" rel="noopener">全部发布</a></div>
       <div class="foot-col"><h4>联系</h4><a href="mailto:services@zephyr.hk">services@zephyr.hk</a><a href="https://www.zephyr.hk" target="_blank" rel="noopener">www.zephyr.hk</a><a href="https://github.com/Eyebright/zephyr-music-server" target="_blank" rel="noopener">GitHub 仓库</a><a href="https://github.com/Eyebright/zephyr-music-server/issues" target="_blank" rel="noopener">问题反馈</a></div>
     </div>

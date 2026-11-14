@@ -238,6 +238,8 @@ main{position:relative;z-index:1}
 .pl-s.done{color:var(--green);border-color:rgba(70,224,138,.3);background:rgba(70,224,138,.07)}
 .agent-tags{display:flex;flex-wrap:wrap;gap:7px;margin-top:6px}
 .agent-tags span{font-family:var(--mono);font-size:11px;padding:4px 11px;border-radius:16px;border:1px solid rgba(246,168,33,.24);color:var(--gold);background:rgba(246,168,33,.06)}
+.scn-plat{margin-top:20px;padding:15px 20px;border:1px solid var(--line);border-radius:var(--r-md);background:linear-gradient(168deg,rgba(23,30,41,.55),rgba(9,12,17,.6));color:var(--muted);font-size:13.5px;line-height:1.75}
+.scn-plat b{color:var(--gold);font-weight:600}
 
 /* ── architecture ── */
 .arch{display:grid;grid-template-columns:minmax(0,.95fr) minmax(0,1.05fr);gap:52px;align-items:start}
