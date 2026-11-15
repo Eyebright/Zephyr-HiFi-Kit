@@ -966,7 +966,7 @@
   var DEBS = {
     amd64: ["hifihub-agent_0.3.0_amd64.deb", "x86_64 终端 Agent · 4.0 MiB"],
     arm64: ["hifihub-agent_0.3.0_arm64.deb", "树莓派 4/5 · 64 位 · 3.6 MiB"],
-    armhf: ["hifihub-agent_0.3.0_armhf.deb", "树莓派 2/3 · 32 位 · 3.8 MiB"]
+    armhf: ["hifihub-agent_0.3.0_armhf.deb", "树莓派 2/3 · 32 位 · 3.9 MiB"]
   };
   $$("#arch-tabs button").forEach(function (b) {
     b.addEventListener("click", function () {
