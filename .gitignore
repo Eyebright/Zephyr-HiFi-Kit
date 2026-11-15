@@ -25,3 +25,13 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+
+# Android terminal (APK + native core are built in CI, never committed)
+android/.gradle/
+android/build/
+android/app/build/
+android/app/src/main/jniLibs/
+android/keystore.properties
+android/local.properties
+*.apk
+*.so

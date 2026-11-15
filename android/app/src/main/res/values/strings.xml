@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Zephyr 终端</string>
+    <string name="setup_title">连接音乐服务器</string>
+    <string name="setup_subtitle">输入服务端地址与一次性注册令牌，开始比特完美 ZAT 播放。</string>
+    <string name="server_url">服务端地址</string>
+    <string name="token">注册令牌</string>
+    <string name="token_hint">在服务端「添加终端」中生成</string>
+    <string name="alias">终端别名</string>
+    <string name="alias_hint">例如：客厅安卓终端</string>
+    <string name="start">启动终端</string>
+    <string name="reconfigure">重新配置</string>
+    <string name="channel_name">ZAT 播放</string>
+    <string name="notif_text">Zephyr 终端运行中 · ZAT 音频</string>
+    <string name="err_server">请填写服务端地址</string>
+    <string name="err_start">启动失败，请检查地址与令牌</string>
+</resources>

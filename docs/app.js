@@ -966,7 +966,12 @@
   var DEBS = {
     amd64: ["hifihub-agent_0.3.0_amd64.deb", "x86_64 终端 Agent · 4.0 MiB"],
     arm64: ["hifihub-agent_0.3.0_arm64.deb", "树莓派 4/5 · 64 位 · 3.6 MiB"],
-    armhf: ["hifihub-agent_0.3.0_armhf.deb", "树莓派 2/3 · 32 位 · 3.9 MiB"]
+    armhf: ["hifihub-agent_0.3.0_armhf.deb", "树莓派 2/3 · 32 位 · 3.9 MiB"],
+    android: ["zephyr-terminal-0.3.0.apk", "安卓终端 · Android 8.0+ · arm64 / armv7"]
+  };
+  var DL_NOTES = {
+    android: "安卓安装：下载 APK → 允许「安装未知应用」→ 安装并启动「Zephyr 终端」→ 填服务端地址与一次性令牌（控制台「添加终端」向导架构选 Android）。",
+    linux: "离线安装：<code>sudo dpkg -i agent/hifihub-agent_0.3.0_&lt;arch&gt;.deb &amp;&amp; sudo apt-get -f install -y</code>"
   };
   $$("#arch-tabs button").forEach(function (b) {
     b.addEventListener("click", function () {
@@ -976,6 +981,7 @@
       if (link) link.href = "https://github.com/Eyebright/zephyr-music-server/releases/download/v0.3.0/" + d[0];
       var n = $("#dl-deb-name"), m = $("#dl-deb-meta");
       if (n) n.textContent = d[0]; if (m) m.textContent = d[1];
+      var note = $("#dl-note"); if (note) note.innerHTML = (a === "android" ? DL_NOTES.android : DL_NOTES.linux);
       Audio2.blip(560, .08, "sine", .08);
     });
   });

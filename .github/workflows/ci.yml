@@ -129,3 +129,164 @@ jobs:
           gh release upload "$GITHUB_REF_NAME" \
             release/zephyr-music-server-*-audio-*.tar.gz \
             --clobber
+
+  # Android terminal APK. The Go c-shared core (libzatagent.so) is cross-built
+  # with the NDK clang toolchain + AAudio backend (arm64-v8a + armeabi-v7a), then
+  # the Kotlin foreground-service / WebView shell is assembled with Gradle. This
+  # cannot run on the pure-Go management host (needs NDK + SDK + JDK 17), so the
+  # SDK is provisioned explicitly here. Signing uses the ANDROID_KEYSTORE_* secrets
+  # when present; otherwise the release build falls back to debug signing (still
+  # installable). The APK is the zephyr-terminal-<version>.apk release asset.
+  android:
+    needs: build
+    runs-on: ubuntu-24.04
+    env:
+      ANDROID_HOME: /opt/android-sdk
+      ANDROID_SDK_ROOT: /opt/android-sdk
+      ANDROID_NDK_HOME: /opt/android-sdk/ndk/26.3.11579264
+      NDK_VERSION: 26.3.11579264
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android SDK 34 + NDK r26d + CMake 3.22.1
+        run: |
+          sudo mkdir -p "$ANDROID_HOME"
+          sudo chown -R "$USER":"$USER" "$ANDROID_HOME"
+          curl -fsSL -o /tmp/cmdtools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          unzip -q /tmp/cmdtools.zip -d /tmp/cmdtools
+          mkdir -p "$ANDROID_HOME/cmdline-tools/latest"
+          mv /tmp/cmdtools/cmdline-tools/* "$ANDROID_HOME/cmdline-tools/latest/"
+          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
+          yes | sdkmanager --licenses >/dev/null
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;$NDK_VERSION" "cmake;3.22.1"
+
+      - name: Setup Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Android core host unit tests
+        working-directory: agent
+        env:
+          CGO_ENABLED: 0
+        run: go test ./internal/androidcore/...
+
+      - name: Build APK (NDK c-shared + AAudio + Gradle assembleRelease)
+        env:
+          KEYSTORE_FILE: ${{ secrets.ANDROID_KEYSTORE_FILE }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="0.3.0"
+          fi
+          VERSION="$VERSION" sh scripts/build-android.sh
+
+      - name: Verify native libs packaged + JNI linkage
+        run: |
+          APK=$(ls release/zephyr-terminal-*.apk)
+          echo "== native libs in APK =="
+          unzip -l "$APK" | grep -E 'lib/.*libzat(agent|jni)\.so'
+          READELF="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+          tmp=$(mktemp -d)
+          for abi in arm64-v8a armeabi-v7a; do
+            unzip -o -q "$APK" "lib/$abi/libzatjni.so" "lib/$abi/libzatagent.so" -d "$tmp"
+            echo "== $abi: libzatjni.so DT_NEEDED =="
+            "$READELF" -d "$tmp/lib/$abi/libzatjni.so" | grep NEEDED
+            "$READELF" -d "$tmp/lib/$abi/libzatjni.so" | grep -q 'libzatagent\.so' \
+              || { echo "!! libzatjni.so lacks a basename dependency on libzatagent.so"; exit 1; }
+            echo "== $abi: libzatagent.so SONAME =="
+            "$READELF" -d "$tmp/lib/$abi/libzatagent.so" | grep -i soname || true
+          done
+
+      - name: Upload APK artifact (non-tag builds)
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: zephyr-terminal-apk
+          path: release/zephyr-terminal-*.apk
+          retention-days: 7
+
+      - name: Attach APK to release (tag builds)
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" release/zephyr-terminal-*.apk --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" release/zephyr-terminal-*.apk \
+              --title "Zephyr Music Player $GITHUB_REF_NAME" --generate-notes
+          fi
+
+  # AAudio runtime verification on an Android emulator. The c-shared build above
+  # proves the AAudio CGO backend compiles and links; this job exercises the real
+  # open/write/drain/close path (S16/S24/S32) against the emulator's audio output.
+  # The player test binary is cross-compiled for android/amd64 with the NDK and
+  # run via adb. Exclusive sharing may be unavailable on the emulator; Open falls
+  # back to shared, so the full path is still validated.
+  android-aaudio:
+    needs: build
+    runs-on: ubuntu-24.04
+    env:
+      ANDROID_HOME: /opt/android-sdk
+      ANDROID_SDK_ROOT: /opt/android-sdk
+      ANDROID_NDK_HOME: /opt/android-sdk/ndk/26.3.11579264
+      NDK_VERSION: 26.3.11579264
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+
+      - name: Install SDK + NDK r26d + emulator system-image (API 34 x86_64)
+        run: |
+          sudo mkdir -p "$ANDROID_HOME"
+          sudo chown -R "$USER":"$USER" "$ANDROID_HOME"
+          curl -fsSL -o /tmp/cmdtools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          unzip -q /tmp/cmdtools.zip -d /tmp/cmdtools
+          mkdir -p "$ANDROID_HOME/cmdline-tools/latest"
+          mv /tmp/cmdtools/cmdline-tools/* "$ANDROID_HOME/cmdline-tools/latest/"
+          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
+          yes | sdkmanager --licenses >/dev/null
+          sdkmanager "platform-tools" "emulator" "ndk;$NDK_VERSION" "system-images;android-34;google_apis;x86_64"
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: AAudio loopback on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-boot-anim -camera-back none
+          script: |
+            export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
+            CC="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android26-clang"
+            cd agent
+            CGO_ENABLED=1 GOOS=android GOARCH=amd64 CC="$CC" GOFLAGS=-mod=mod \
+              go test -c -o /tmp/player.test ./internal/player
+            adb push /tmp/player.test /data/local/tmp/player.test
+            adb shell chmod 755 /data/local/tmp/player.test
+            adb shell /data/local/tmp/player.test -test.v -test.run TestAAudio

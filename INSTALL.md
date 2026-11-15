@@ -295,6 +295,31 @@ journalctl -u hifihub-agent -f
 > - 新注册终端默认**未授权**：需在控制台「终端管理」或「密钥与授权」中授权（占用一个
 >   许可证席位）后才能接收下发任务。
 
+### 5.3 安卓终端（APK）
+
+安卓终端是独立的 ZAT 播放终端：注册上线、心跳遥测、接收服务端 ZAT 推流并经
+**AAudio 比特完美**出声，前台播放服务保活，本地控制台支持暂停 / 停止 / seek / 音量。
+
+**设备要求**
+
+- Android 8.0（API 26）及以上，arm64-v8a 或 armeabi-v7a 设备。
+- 与服务端同一可达网络；服务端地址形如 `http://<服务端IP>:8080`。
+
+**安装三步**
+
+1. 从 Release 下载 `zephyr-terminal-0.3.0.apk`（控制台「添加终端」向导架构选 Android
+   后也给出同款下载链接），在系统设置允许「安装未知应用」后安装。
+2. 启动「Zephyr 终端」，填写服务端地址（`http://<服务端IP>:8080`）、注册令牌（控制台
+   「终端管理 → 添加终端」向导、架构选 **Android** 签发的一次性令牌）与可选别名。
+3. 点「启动」后终端自动注册并上线，出现在服务端控制台「终端管理」列表（架构 android）。
+
+> - 令牌一次性，注册成功后失效；节点密钥持久化在应用私有目录（0600）。
+> - 安卓终端经 AAudio 默认输出出声，无 ALSA 设备名；EXCLUSIVE 不可用时自动回退 SHARED。
+> - 新注册终端默认未授权，需在控制台授权（占一个许可证席位）后才能接收播放推送。
+> - APK 由 CI 用 NDK r26 交叉编译 Go c-shared 核心（`libzatagent.so`）+ Gradle 组装；
+>   配置 release keystore（`ANDROID_KEYSTORE_*` secrets）后为 release 签名，否则 debug
+>   签名（仍可安装）。从源码重建见 §10.2。
+
 ---
 
 ## 6. 首次下发流程（端到端）
@@ -488,3 +513,34 @@ PCM 逐比特一致）；打 tag 时把音频 bundle 与音频 deb 追加到 Git
 > 音频版与纯 Go 版的引擎名、配置/数据目录、systemd 单元完全一致，可互相替换，区别仅
 > 在于是否链接 libFLAC/ALSA。部署真实播放请使用音频版 bundle（其 `server/dist/` 内为
 > 音频 deb，终端经 `/dl/` 自助安装即获得播放能力）。
+
+### 10.2 安卓终端构建（NDK c-shared + AAudio + Gradle）
+
+安卓终端 APK 只能在 **Linux** 上构建：用 Android NDK 的 clang 把 Go 核心交叉编译成
+c-shared 库（`libzatagent.so`，链接 AAudio），再由 Gradle 组装 Kotlin 前台服务 / WebView
+外壳。Windows/macOS 无 NDK 工具链，无法本机构建（CI 的 `android` 任务负责产出）。
+
+构建依赖：Go 1.27+、Android NDK r26（`26.3.11579264`）、Android SDK（platform 34 /
+build-tools 34.0.0 / cmake 3.22.1）、JDK 17、Gradle 8.7+。
+
+```sh
+export ANDROID_HOME=/opt/android-sdk
+export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/26.3.11579264"
+# 可选 release 签名（不设则 debug 签名，仍可安装）：
+# export KEYSTORE_FILE=/path/release.keystore KEYSTORE_PASSWORD=… KEY_ALIAS=… KEY_PASSWORD=…
+VERSION=0.3.0 sh scripts/build-android.sh   # 产出 release/zephyr-terminal-0.3.0.apk
+```
+
+脚本对 `arm64-v8a` 与 `armeabi-v7a` 各交叉编译一份 `libzatagent.so` 放入
+`android/app/src/main/jniLibs/<abi>/`，CMake 编译 JNI 桥（`libzatjni.so`）链接它，
+Gradle `assembleRelease` 打包 APK。纯 Go 核心单元测试（无需 NDK）：
+
+```sh
+cd agent && CGO_ENABLED=0 go test ./internal/androidcore/...
+```
+
+CI（`.github/workflows/ci.yml`）：`android` 任务在 ubuntu runner 上 provision SDK/NDK/
+Gradle，构建 APK 并用 NDK `llvm-readelf` 校验两个 ABI 的 `libzatjni.so` 均按 basename
+依赖 `libzatagent.so`、APK 内 native 库齐全；`android-aaudio` 任务在 API 34 x86_64 模拟器
+上交叉编译并运行 player 测试，验证 AAudio `open/write/drain/close`（S16/S24/S32）真实
+出声路径。打 tag 时把 `zephyr-terminal-<version>.apk` 追加到 GitHub Release。

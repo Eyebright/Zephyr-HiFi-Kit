@@ -118,7 +118,7 @@ type Node struct {
 	Alias           string   `json:"alias"`
 	Group           string   `json:"group"`
 	Tags            []string `json:"tags"`
-	Arch            string   `json:"arch"`
+	Arch            string   `json:"arch"` // amd64|arm64|armhf|armv7hf|android
 	Distro          string   `json:"distro"`
 	Kernel          string   `json:"kernel"`
 	Status          string   `json:"status"` // online|offline|unknown

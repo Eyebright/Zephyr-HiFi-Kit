@@ -691,7 +691,11 @@ async function deleteNodes(ids) {
 
 /* ================= ADD-NODE WIZARD ================= */
 const WZ = { step: 1, alias: "", group: "", arch: "amd64", distro: "debian", ttl: 1800, note: "", token: "", expiresAt: 0, nodeId: "", node: null };
-function installCmd() { return `curl -fsSL ${location.origin}/dl/agent-install.sh | sudo bash -s -- --server ${location.origin} --token ${WZ.token}`; }
+const ANDROID_APK = "https://github.com/Eyebright/zephyr-music-server/releases/download/v0.3.0/zephyr-terminal-0.3.0.apk";
+function installCmd() {
+  if (WZ.arch === "android") return `1. 下载安装 APK：${ANDROID_APK}\n2. 启动「Zephyr 终端」，服务端地址填 ${location.origin}\n3. 注册令牌填 ${WZ.token}`;
+  return `curl -fsSL ${location.origin}/dl/agent-install.sh | sudo bash -s -- --server ${location.origin} --token ${WZ.token}`;
+}
 function openWizard() {
   Object.assign(WZ, { step: 1, alias: "", group: "", arch: "amd64", distro: "debian", ttl: 1800, note: "", token: "", expiresAt: 0, nodeId: "", node: null });
   renderWizard();
@@ -725,8 +729,8 @@ function wzStep1() {
       <div class="field"><label>分组</label><input id="wz-group" class="inp" placeholder="如：一楼" value="${esc(WZ.group)}" maxlength="40"></div>
     </div>
     <div class="f-row">
-      <div class="field"><label>架构</label><select id="wz-arch" class="inp">${opt("amd64", "amd64 (x86_64)", WZ.arch)}${opt("arm64", "arm64 (aarch64)", WZ.arch)}${opt("armhf", "armhf", WZ.arch)}${opt("armv7hf", "armv7hf", WZ.arch)}</select></div>
-      <div class="field"><label>发行版</label><select id="wz-distro" class="inp">${opt("debian", "Debian", WZ.distro)}${opt("ubuntu", "Ubuntu", WZ.distro)}${opt("raspberry-pi-os", "Raspberry Pi OS", WZ.distro)}${opt("armbian", "Armbian", WZ.distro)}${opt("other", "其他", WZ.distro)}</select></div>
+      <div class="field"><label>架构</label><select id="wz-arch" class="inp" data-change="wz-arch">${opt("amd64", "amd64 (x86_64)", WZ.arch)}${opt("arm64", "arm64 (aarch64)", WZ.arch)}${opt("armhf", "armhf", WZ.arch)}${opt("armv7hf", "armv7hf", WZ.arch)}${opt("android", "Android (arm64)", WZ.arch)}</select></div>
+      <div class="field"><label>发行版</label><select id="wz-distro" class="inp">${opt("debian", "Debian", WZ.distro)}${opt("ubuntu", "Ubuntu", WZ.distro)}${opt("raspberry-pi-os", "Raspberry Pi OS", WZ.distro)}${opt("armbian", "Armbian", WZ.distro)}${opt("android", "Android", WZ.distro)}${opt("other", "其他", WZ.distro)}</select></div>
     </div>
     <div class="f-row">
       <div class="field"><label>令牌有效期</label><select id="wz-ttl" class="inp">${opt("600", "10 分钟", String(WZ.ttl))}${opt("1800", "30 分钟", String(WZ.ttl))}${opt("3600", "1 小时", String(WZ.ttl))}${opt("86400", "24 小时", String(WZ.ttl))}</select></div>
@@ -736,14 +740,23 @@ function wzStep1() {
 }
 
 function wzStep2() {
+  const android = WZ.arch === "android";
+  const installPanel = android
+    ? `<div class="field"><label>在安卓设备安装</label>
+      <div class="f-hint">下载 APK 安装后启动「Zephyr 终端」，填入下方服务端地址与令牌即可注册上线。</div>
+      <a class="btn sm block" href="${ANDROID_APK}" target="_blank" rel="noopener">${icon("download", 14)} 下载 Zephyr 终端 APK</a>
+      <div class="cmd-box" style="white-space:pre-wrap"><span id="wz-cmd">${esc(installCmd())}</span></div>
+      <button class="btn sm block" data-act="wz-copy-cmd">${icon("copy", 14)} 复制配置信息</button>
+    </div>`
+    : `<div class="field"><label>在目标主机执行（需要 sudo）</label>
+      <div class="cmd-box"><span class="c-prompt">$</span><span id="wz-cmd">${esc(installCmd())}</span></div>
+      <button class="btn sm block" data-act="wz-copy-cmd">${icon("copy", 14)} 复制安装命令</button>
+    </div>`;
   return `<div class="field"><label>安装令牌</label>
       <div class="token-box"><span class="tok" id="wz-token">${esc(WZ.token)}</span><button class="btn xs" data-act="wz-copy-token">${icon("copy", 13)} 复制</button></div>
       <div class="f-hint">剩余有效时间 <span class="wz-count" id="wz-cd">--:--</span> · 一次性，注册后失效</div>
     </div>
-    <div class="field"><label>在目标主机执行（需要 sudo）</label>
-      <div class="cmd-box"><span class="c-prompt">$</span><span id="wz-cmd">${esc(installCmd())}</span></div>
-      <button class="btn sm block" data-act="wz-copy-cmd">${icon("copy", 14)} 复制安装命令</button>
-    </div>
+    ${installPanel}
     <div class="waiting"><span class="w-pulse"></span><div style="flex:1"><div class="w-txt">等待 Agent 注册…</div><div class="w-sub">每 2 秒自动检测令牌使用状态</div></div><span class="spin"></span></div>`;
 }
 function wzStep3() {
@@ -759,6 +772,7 @@ function wzStep3() {
 async function wzNext() {
   WZ.alias = val("wz-alias").trim(); WZ.group = val("wz-group").trim();
   WZ.arch = val("wz-arch"); WZ.distro = val("wz-distro"); WZ.ttl = Number(val("wz-ttl")) || 1800; WZ.note = val("wz-note").trim();
+  if (WZ.arch === "android") WZ.distro = "android";
   const errEl = $("#wz-err");
   const fail = m => { if (errEl) errEl.innerHTML = `<div class="f-err mb12">${esc(m)}</div>`; };
   if (!WZ.alias) return fail("请填写终端别名");
@@ -833,7 +847,10 @@ function nodeDrawerBody(n, apps) {
   const id = n.node_id;
   let h = "";
   if (n.status !== "online") {
-    h += `<div class="banner warn">${icon("power", 15)}<div><b>终端离线</b> · 最近心跳 ${ago(n.last_seen)}<br>检查电源与网络，并在主机运行 <span class="mono">systemctl status zephyr-agent</span>；离线判定阈值 ${n.offline_after || 45} 秒。<div class="mt8"><button class="btn xs" data-act="node-net" data-id="${esc(id)}">${icon("wifi", 12)} 网络诊断</button></div></div></div>`;
+    const hint = n.arch === "android"
+      ? `检查电源与网络，并确认「Zephyr 终端」App 正在运行（通知栏播放服务未被系统回收）`
+      : `检查电源与网络，并在主机运行 <span class="mono">systemctl status zephyr-agent</span>`;
+    h += `<div class="banner warn">${icon("power", 15)}<div><b>终端离线</b> · 最近心跳 ${ago(n.last_seen)}<br>${hint}；离线判定阈值 ${n.offline_after || 45} 秒。<div class="mt8"><button class="btn xs" data-act="node-net" data-id="${esc(id)}">${icon("wifi", 12)} 网络诊断</button></div></div></div>`;
   }
   h += `<div class="tiles c4 mb12">` +
     tile("sliders", "配置", "期望态 / DAC", "node-config", "amber", id) +
@@ -2587,7 +2604,7 @@ const ACT = {
   "wz-back": () => { WZ.step = 1; renderWizard(); },
   "wz-reissue": () => wzReissue(),
   "wz-copy-token": async () => { toast(await copyText(WZ.token) ? "令牌已复制" : "复制失败，请手动选择", "ok"); },
-  "wz-copy-cmd": async () => { toast(await copyText(installCmd()) ? "安装命令已复制" : "复制失败，请手动选择", "ok"); },
+  "wz-copy-cmd": async () => { const ok = await copyText(installCmd()); toast(ok ? (WZ.arch === "android" ? "配置信息已复制" : "安装命令已复制") : "复制失败，请手动选择", "ok"); },
   "wz-auth": async ds => { try { await api("POST", `/nodes/${enc(ds.id)}/authorize`); toast("终端已授权", "ok"); refreshCurrent(); } catch (e) { toast(e.message, "err"); } },
   "wz-config": ds => { closeModal(); openConfig(ds.id); },
   "wz-console": ds => { closeModal(); openConsole(ds.id); },
@@ -2679,7 +2696,8 @@ const CHG = {
   "lic-pfile": el => fileToText(el, txt => { const t = $("#lic-payload"); if (t) t.value = txt; }),
   "lic-sfile": el => fileToText(el, txt => { const t = $("#lic-sig"); if (t) t.value = txt; }),
   "gpg-file": el => fileToText(el, txt => { const t = $("#gpg-armored"); if (t) t.value = txt; }),
-  "bi-file": el => fileToText(el, txt => { const t = $("#bi-json"); if (t) t.value = txt; })
+  "bi-file": el => fileToText(el, txt => { const t = $("#bi-json"); if (t) t.value = txt; }),
+  "wz-arch": el => { const d = $("#wz-distro"); if (!d) return; if (el.value === "android") d.value = "android"; else if (d.value === "android") d.value = "debian"; }
 };
 
 /* ================= EVENTS & BOOT ================= */

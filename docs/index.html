@@ -51,7 +51,7 @@
       "description": "适用于多终端 Hi-Fi 机群、听音室与音响展厅的唯一下发源与音频推送平台：一台 x86 Linux 服务端统一编排 Roon / HQPlayer / 系统更新，覆盖 x86 小主机与树莓派 ARM 终端；签名制品仓库、BOM 期望态、灰度下发、播放门控、席位授权与全量审计，并以自有 ZAT 协议（RAAT-like）把 SMB 媒体库音频比特完美推送到终端出声。",
       "applicationCategory": "MultimediaApplication",
       "applicationSubCategory": "Hi-Fi 机群管理与制品下发",
-      "operatingSystem": "Linux x86_64 服务端；终端 amd64 / arm64 / armhf",
+      "operatingSystem": "Linux x86_64 服务端；终端 amd64 / arm64 / armhf；Android 8.0+（arm64 / armv7）",
       "softwareVersion": "0.3.0",
       "license": "https://opensource.org/licenses/MIT",
       "downloadUrl": "https://github.com/Eyebright/zephyr-music-server/releases/tag/v0.3.0",
@@ -83,7 +83,7 @@
         { "@type": "Question", "name": "灰度发布怎么推进？", "acceptedAnswer": { "@type": "Answer", "text": "环百分比合计 100，绑定 BOM 版本必须已发布；当前环有未完成任务时推进返回 409，避免故障扩散；支持撤销恢复。" } },
         { "@type": "Question", "name": "控制台的鉴权在哪里做？", "acceptedAnswer": { "@type": "Answer", "text": "在反向代理层（Nginx / Caddy + TLS + OIDC 或 basic-auth）。控制台假定可信 LAN，产品内不做 mock 角色切换。" } },
         { "@type": "Question", "name": "误删了 BOM 版本或终端怎么办？", "acceptedAnswer": { "@type": "Answer", "text": "BOM 保留完整版本历史可回滚；回滚生成新的已发布版本而非覆盖历史；终端注销支持撤销恢复。" } },
-        { "@type": "Question", "name": "支持哪些终端硬件？", "acceptedAnswer": { "@type": "Answer", "text": "安装器自动识别 amd64、arm64 与 armhf，覆盖 x86 小主机、树莓派 4/5（64 位）与树莓派 2/3（32 位）。" } }
+        { "@type": "Question", "name": "支持哪些终端硬件？", "acceptedAnswer": { "@type": "Answer", "text": "Linux 安装器自动识别 amd64、arm64 与 armhf，覆盖 x86 小主机、树莓派 4/5（64 位）与树莓派 2/3（32 位）；另提供安卓终端 APK，支持 Android 8.0 及以上的 arm64 / armv7 设备，经 AAudio 比特完美出声。" } }
       ]
     }
   ]
@@ -491,7 +491,7 @@
     <header class="sec-h rv">
       <span class="kicker">05 · DEPLOY</span>
       <h2>一条命令装机，<span class="grad-cool">一条命令入网</span></h2>
-      <p>服务端目标是 x86_64 Linux + systemd。终端安装器自动识别 amd64 / arm64 / armhf，从服务端 <code>/dl/</code> 拉取对应 deb。</p>
+      <p>服务端目标是 x86_64 Linux + systemd。Linux 终端安装器自动识别 amd64 / arm64 / armhf，从服务端 <code>/dl/</code> 拉取对应 deb；安卓终端安装 APK 后填服务端地址与令牌即可入网。</p>
     </header>
     <div class="inst">
       <div class="inst-card rv">
@@ -525,11 +525,36 @@ curl -s http://127.0.0.1:8080/api/v1/health</code></pre>
     </div>
     <div class="dl-card rv">
       <div class="dl-h">
+        <h3>安卓终端 · Zephyr Terminal APK</h3>
+        <span class="pill cyan">Android 8.0+ · arm64 / armv7</span>
+      </div>
+      <div class="dl-grid">
+        <a class="dl-item" href="https://github.com/Eyebright/zephyr-music-server/releases/download/v0.3.0/zephyr-terminal-0.3.0.apk">
+          <span class="dl-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 19h16"/></svg></span>
+          <span class="dl-txt"><b>zephyr-terminal-0.3.0.apk</b><i>安卓终端 · AAudio 比特完美 · arm64 / armv7</i></span>
+          <span class="dl-go">下载</span>
+        </a>
+        <a class="dl-item" href="https://github.com/Eyebright/zephyr-music-server/releases/tag/v0.3.0" target="_blank" rel="noopener">
+          <span class="dl-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
+          <span class="dl-txt"><b>Release 说明与校验和</b><i>CI 全绿 · SHA256SUMS 随包发布</i></span>
+          <span class="dl-go">查看</span>
+        </a>
+        <a class="dl-item" href="https://github.com/Eyebright/zephyr-music-server/blob/main/INSTALL.md" target="_blank" rel="noopener">
+          <span class="dl-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
+          <span class="dl-txt"><b>部署说明</b><i>服务端装机 · 终端入网 · 安卓安装</i></span>
+          <span class="dl-go">查看</span>
+        </a>
+      </div>
+      <div class="dl-note">安装三步：① 下载 APK，在系统设置允许「安装未知应用」后安装；② 启动「Zephyr 终端」，填入服务端地址（如 <code>http://&lt;服务端IP&gt;:8080</code>）与控制台「终端管理 → 添加终端」向导签发的一次性令牌（架构选 Android）；③ 注册成功后终端立即上线。安卓终端经自有 ZAT 协议接收音频，由 AAudio 比特完美出声，前台播放服务保活，支持暂停 / 停止 / seek / 音量。</div>
+    </div>
+    <div class="dl-card rv">
+      <div class="dl-h">
         <h3>v0.3.0 发布资产</h3>
         <div class="arch-tabs" id="arch-tabs" role="tablist" aria-label="终端架构">
           <button role="tab" aria-selected="true" data-arch="amd64" class="on">amd64</button>
           <button role="tab" aria-selected="false" data-arch="arm64">arm64</button>
           <button role="tab" aria-selected="false" data-arch="armhf">armhf</button>
+          <button role="tab" aria-selected="false" data-arch="android">Android</button>
         </div>
       </div>
       <div class="dl-grid">
@@ -549,7 +574,7 @@ curl -s http://127.0.0.1:8080/api/v1/health</code></pre>
           <span class="dl-go">查看</span>
         </a>
       </div>
-      <div class="dl-note">离线安装：<code>sudo dpkg -i agent/hifihub-agent_0.3.0_&lt;arch&gt;.deb &amp;&amp; sudo apt-get -f install -y</code></div>
+      <div class="dl-note" id="dl-note">离线安装：<code>sudo dpkg -i agent/hifihub-agent_0.3.0_&lt;arch&gt;.deb &amp;&amp; sudo apt-get -f install -y</code></div>
     </div>
     <div class="dl-card rv">
       <div class="dl-h">

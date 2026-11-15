@@ -1,4 +1,4 @@
-//go:build !cgo || !linux
+//go:build !cgo || (!linux && !android)
 
 package player
 
@@ -8,9 +8,9 @@ import (
 	"hifihub/zat"
 )
 
-// errStub is returned by the non-CGO player. Real playback needs the ALSA
-// backend, built only on Linux with CGO enabled (alsa_cgo.go).
-var errStub = errors.New("player: ALSA playback requires the CGO backend (linux)")
+// errStub is returned by the non-CGO player. Real playback needs a CGO backend:
+// ALSA on Linux (alsa_cgo.go) or AAudio on Android (aaudio_cgo.go).
+var errStub = errors.New("player: audio playback requires the CGO backend (linux/ALSA or android/AAudio)")
 
 type stubPlayer struct{}
 
