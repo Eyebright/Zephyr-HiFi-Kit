@@ -47,7 +47,8 @@ build_abi() {
   out="$JNILIBS/$abi"
   mkdir -p "$out"
   ( cd "$ROOT/agent" && CGO_ENABLED=1 GOOS=android GOARCH="$goarch" CC="$LLVM/$cc" \
-      go build -buildmode=c-shared -trimpath -ldflags "-s -w" \
+      go build -buildmode=c-shared -trimpath \
+      -ldflags "-s -w -extldflags=-Wl,-soname,libzatagent.so" \
       -o "$out/libzatagent.so" ./cmd/hifihub-agent-android )
   # The generated header is not needed by the JNI shim (it declares the exports).
   rm -f "$out/libzatagent.h"

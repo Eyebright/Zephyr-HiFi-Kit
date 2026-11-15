@@ -206,10 +206,11 @@ jobs:
             unzip -o -q "$APK" "lib/$abi/libzatjni.so" "lib/$abi/libzatagent.so" -d "$tmp"
             echo "== $abi: libzatjni.so DT_NEEDED =="
             "$READELF" -d "$tmp/lib/$abi/libzatjni.so" | grep NEEDED
-            "$READELF" -d "$tmp/lib/$abi/libzatjni.so" | grep -q 'libzatagent\.so' \
-              || { echo "!! libzatjni.so lacks a basename dependency on libzatagent.so"; exit 1; }
+            "$READELF" -d "$tmp/lib/$abi/libzatjni.so" | grep -Eq '\(NEEDED\).*\[libzatagent\.so\]' \
+              || { echo "!! libzatjni.so DT_NEEDED for libzatagent.so is not the bare basename"; exit 1; }
             echo "== $abi: libzatagent.so SONAME =="
-            "$READELF" -d "$tmp/lib/$abi/libzatagent.so" | grep -i soname || true
+            "$READELF" -d "$tmp/lib/$abi/libzatagent.so" | grep -Eq '\(SONAME\).*\[libzatagent\.so\]' \
+              || { echo "!! libzatagent.so is missing SONAME libzatagent.so"; exit 1; }
           done
 
       - name: Upload APK artifact (non-tag builds)
@@ -285,8 +286,7 @@ jobs:
             export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
             CC="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android26-clang"
             cd agent
-            CGO_ENABLED=1 GOOS=android GOARCH=amd64 CC="$CC" GOFLAGS=-mod=mod \
-              go test -c -o /tmp/player.test ./internal/player
+            CGO_ENABLED=1 GOOS=android GOARCH=amd64 CC="$CC" GOFLAGS=-mod=mod go test -c -o /tmp/player.test ./internal/player
             adb push /tmp/player.test /data/local/tmp/player.test
             adb shell chmod 755 /data/local/tmp/player.test
             adb shell /data/local/tmp/player.test -test.v -test.run TestAAudio
