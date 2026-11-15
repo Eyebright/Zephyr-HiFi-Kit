@@ -282,11 +282,12 @@ jobs:
           profile: pixel_6
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-boot-anim -camera-back none
+          # The runner executes each script line as a separate `sh -c`, so shell
+          # state (cd, exported vars) does not persist between lines. Every line
+          # is self-contained: inline the NDK CC, cd within the build line, and
+          # call adb by absolute path.
           script: |
-            export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
-            CC="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android26-clang"
-            cd agent
-            CGO_ENABLED=1 GOOS=android GOARCH=amd64 CC="$CC" GOFLAGS=-mod=mod go test -c -o /tmp/player.test ./internal/player
-            adb push /tmp/player.test /data/local/tmp/player.test
-            adb shell chmod 755 /data/local/tmp/player.test
-            adb shell /data/local/tmp/player.test -test.v -test.run TestAAudio
+            cd agent && CGO_ENABLED=1 GOOS=android GOARCH=amd64 CC="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android26-clang" GOFLAGS=-mod=mod go test -c -o /tmp/player.test ./internal/player
+            "$ANDROID_HOME/platform-tools/adb" push /tmp/player.test /data/local/tmp/player.test
+            "$ANDROID_HOME/platform-tools/adb" shell chmod 755 /data/local/tmp/player.test
+            "$ANDROID_HOME/platform-tools/adb" shell /data/local/tmp/player.test -test.v -test.run TestAAudio
