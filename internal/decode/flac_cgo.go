@@ -173,7 +173,7 @@ func goFLACWrite(_ *C.FLAC__StreamDecoder, f *C.FLAC__Frame, b **C.FLAC__int32, 
 }
 
 //export goFLACMeta
-func goFLACMeta(_ *C.FLAC__StreamDecoder, _ *C.FLAC__StreamMetadata, _ unsafe.Pointer) {}
+func goFLACMeta(dec *C.FLAC__StreamDecoder, meta *C.FLAC__StreamMetadata, cd unsafe.Pointer) {}
 
 //export goFLACErr
 func goFLACErr(_ *C.FLAC__StreamDecoder, s C.FLAC__StreamDecoderErrorStatus, cd unsafe.Pointer) {

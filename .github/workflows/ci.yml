@@ -112,7 +112,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Only the audio tarballs are standalone release assets; the audio agent
+          # debs ship inside each tarball's server/dist/ (served via /dl/). Uploading
+          # them separately would clobber the pure-Go management debs of the same
+          # name that the build job published and the website links to.
           gh release upload "$GITHUB_REF_NAME" \
             release/zephyr-music-server-*-audio-*.tar.gz \
-            bin/audio/hifihub-agent_*_*.deb \
             --clobber
