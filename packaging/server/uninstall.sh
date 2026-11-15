@@ -1,5 +1,5 @@
 #!/bin/sh
-# Zephyr Music Server uninstaller. Removes the binary and systemd unit but
+# Zephyr Music Player uninstaller. Removes the binary and systemd unit but
 # PRESERVES configuration and data (artifacts/db) so reinstall is non-destructive.
 set -eu
 

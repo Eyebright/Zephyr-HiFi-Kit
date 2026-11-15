@@ -26,6 +26,15 @@ type fakeBackend struct {
 	osChecks    int
 	upgPackages []string
 	netdiags    int
+
+	playback       PlaybackState
+	playbackErr    error
+	playbackPaused bool
+	pauseCalls     int
+	stopCalls      int
+	seekPTS        uint64
+	volumeSet      int
+	deviceSet      string
 }
 
 func newFake() *fakeBackend {
@@ -101,6 +110,26 @@ func (f *fakeBackend) Netdiag(context.Context) serverclient.CommandResult {
 	return serverclient.CommandResult{Status: "ok", Log: "netdiag log", Data: map[string]any{
 		"at": int64(1700000000), "results": []any{},
 	}}
+}
+
+func (f *fakeBackend) Playback() PlaybackState { return f.playback }
+func (f *fakeBackend) PlaybackPause() (bool, error) {
+	f.pauseCalls++
+	f.playbackPaused = !f.playbackPaused
+	return f.playbackPaused, f.playbackErr
+}
+func (f *fakeBackend) PlaybackStop() error { f.stopCalls++; return f.playbackErr }
+func (f *fakeBackend) PlaybackSeek(pts uint64) error {
+	f.seekPTS = pts
+	return f.playbackErr
+}
+func (f *fakeBackend) PlaybackVolume(v int) error {
+	f.volumeSet = v
+	return f.playbackErr
+}
+func (f *fakeBackend) PlaybackDevice(dev string) error {
+	f.deviceSet = dev
+	return f.playbackErr
 }
 
 func do(t *testing.T, h http.Handler, method, path, body string) (int, string) {
@@ -308,5 +337,93 @@ func TestOSAndNetdiagRoutes(t *testing.T) {
 	code, body = do(t, h, "POST", "/local/api/netdiag", "")
 	if code != 200 || !strings.Contains(body, "netdiag log") || f.netdiags != 1 {
 		t.Fatalf("netdiag: %d %s", code, body)
+	}
+}
+
+func TestPlaybackRouteOpen(t *testing.T) {
+	f := newFake()
+	f.playback = PlaybackState{Connected: true, State: "playing", Playing: true, Title: "夜曲", PTS: 1000, Volume: 80, BufferMS: 250}
+	h := New(f).Handler()
+	code, body := do(t, h, "GET", "/local/api/playback", "")
+	if code != 200 || !strings.Contains(body, "夜曲") || !strings.Contains(body, "playing") {
+		t.Fatalf("playback GET: %d %s", code, body)
+	}
+	// Read stays open even when local mutation is disabled.
+	f.gate.AllowLocal = false
+	if code, _ := do(t, h, "GET", "/local/api/playback", ""); code != 200 {
+		t.Fatal("playback GET must stay open when ALLOW_LOCAL=false")
+	}
+}
+
+func TestPlaybackControlsBypassPlayProtect(t *testing.T) {
+	f := newFake()
+	f.gate.Playing = true
+	f.gate.PlayProtect = true
+	h := New(f).Handler()
+
+	// Playback controls are playback itself (PROTOCOL.md §11): they must work
+	// while playing, unlike install/power which the play gate blocks.
+	if code, body := do(t, h, "POST", "/local/api/playback/pause", ""); code != 200 || !strings.Contains(body, "paused") || f.pauseCalls != 1 {
+		t.Fatalf("pause during playback: %d %s", code, body)
+	}
+	if code, _ := do(t, h, "POST", "/local/api/playback/stop", ""); code != 200 || f.stopCalls != 1 {
+		t.Fatalf("stop during playback: %d", code)
+	}
+	if code, _ := do(t, h, "POST", "/local/api/playback/volume", `{"volume":50}`); code != 200 || f.volumeSet != 50 {
+		t.Fatalf("volume during playback: %d", code)
+	}
+	if code, _ := do(t, h, "POST", "/local/api/playback/seek", `{"pts":12345}`); code != 200 || f.seekPTS != 12345 {
+		t.Fatalf("seek during playback: %d", code)
+	}
+	if code, _ := do(t, h, "POST", "/local/api/playback/device", `{"device":"hw:1,0"}`); code != 200 || f.deviceSet != "hw:1,0" {
+		t.Fatalf("device during playback: %d", code)
+	}
+
+	// Non-playback mutations remain blocked by FR-3.10.
+	if code, body := do(t, h, "POST", "/local/api/services/shairport-sync/install", `{}`); code != 403 || !strings.Contains(body, "FR-3.10") {
+		t.Fatalf("install must be play-protected: %d %s", code, body)
+	}
+	if code, _ := do(t, h, "POST", "/local/api/power", `{"action":"reboot"}`); code != 403 {
+		t.Fatal("power must be play-protected")
+	}
+	if f.installed["shairport-sync"] || f.powerAction != "" {
+		t.Fatal("no non-playback mutation may run while play-protected")
+	}
+}
+
+func TestPlaybackControlsGated(t *testing.T) {
+	f := newFake()
+	h := New(f).Handler()
+
+	// ALLOW_LOCAL=false blocks playback controls too.
+	f.gate.AllowLocal = false
+	if code, body := do(t, h, "POST", "/local/api/playback/stop", ""); code != 403 || !strings.Contains(body, "ALLOW_LOCAL=false") {
+		t.Fatalf("allow_local gate on playback: %d %s", code, body)
+	}
+	if f.stopCalls != 0 {
+		t.Fatal("stop must not run when ALLOW_LOCAL=false")
+	}
+
+	// Node secret required when set.
+	f.gate.AllowLocal = true
+	f.gate.Secret = "s3cret"
+	if code, _ := do(t, h, "POST", "/local/api/playback/stop", ""); code != 403 {
+		t.Fatal("missing secret must block playback control")
+	}
+	if code, _ := doWithSecret(t, h, "POST", "/local/api/playback/stop", "", "wrong"); code != 403 {
+		t.Fatal("wrong secret must block playback control")
+	}
+	if code, _ := doWithSecret(t, h, "POST", "/local/api/playback/stop", "", "s3cret"); code != 200 || f.stopCalls != 1 {
+		t.Fatalf("correct secret: %d", code)
+	}
+}
+
+func TestPlaybackErrorPropagates(t *testing.T) {
+	f := newFake()
+	f.playbackErr = errors.New("未连接到服务端 ZAT")
+	h := New(f).Handler()
+	code, body := do(t, h, "POST", "/local/api/playback/stop", "")
+	if code != 400 || !strings.Contains(body, "ZAT") {
+		t.Fatalf("expected 400 playback error, got %d %s", code, body)
 	}
 }

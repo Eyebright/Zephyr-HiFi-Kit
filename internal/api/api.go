@@ -20,12 +20,14 @@ import (
 	"hifihub/server/internal/config"
 	"hifihub/server/internal/domain"
 	"hifihub/server/internal/keys"
+	"hifihub/server/internal/library"
 	"hifihub/server/internal/license"
 	"hifihub/server/internal/metrics"
 	"hifihub/server/internal/node"
 	"hifihub/server/internal/repo"
 	"hifihub/server/internal/rollouts"
 	"hifihub/server/internal/task"
+	"hifihub/server/internal/zatserver"
 )
 
 // Deps aggregates the services backing the API.
@@ -42,6 +44,8 @@ type Deps struct {
 	Commands *commands.Service
 	Rollouts *rollouts.Service
 	Metrics  *metrics.Collector
+	Library  *library.Service
+	ZAT      *zatserver.Server
 }
 
 // API aggregates the services and the router.
@@ -59,6 +63,8 @@ type API struct {
 	cmds   *commands.Service
 	rolls  *rollouts.Service
 	met    *metrics.Collector
+	lib    *library.Service
+	zat    *zatserver.Server
 	mux    *http.ServeMux
 }
 
@@ -67,7 +73,7 @@ func New(cfg config.Config, d Deps) *API {
 	a := &API{
 		cfg: cfg, cat: d.Cat, repo: d.Repo, boms: d.Boms, nodes: d.Nodes, tasks: d.Tasks,
 		lic: d.License, keys: d.Keys, aud: d.Audit, alerts: d.Alerts, cmds: d.Commands,
-		rolls: d.Rollouts, met: d.Metrics, mux: http.NewServeMux(),
+		rolls: d.Rollouts, met: d.Metrics, lib: d.Library, zat: d.ZAT, mux: http.NewServeMux(),
 	}
 	a.routes()
 	return a
@@ -170,6 +176,23 @@ func (a *API) routes() {
 	a.route("GET /api/v1/rollouts/{id}", a.getRollout)
 	a.route("POST /api/v1/rollouts/{id}/advance", a.advanceRollout)
 	a.route("DELETE /api/v1/rollouts/{id}", a.deleteRollout)
+
+	// Media library: SMB mounts + scanned tracks (Zephyr Music Player).
+	a.route("GET /api/v1/mounts", a.listMounts)
+	a.route("POST /api/v1/mounts", a.addMount)
+	a.route("GET /api/v1/mounts/{id}", a.getMount)
+	a.route("DELETE /api/v1/mounts/{id}", a.deleteMount)
+	a.route("POST /api/v1/mounts/{id}/mount", a.mountShare)
+	a.route("POST /api/v1/mounts/{id}/unmount", a.unmountShare)
+	a.route("POST /api/v1/mounts/{id}/scan", a.scanMount)
+	a.route("GET /api/v1/tracks", a.listTracks)
+	a.route("GET /api/v1/tracks/{id}", a.getTrack)
+
+	// ZAT push playback to terminals. GET play status is dispatched through the
+	// {sub} wildcard below: a literal "/nodes/{id}/play" would ambiguity-conflict
+	// with "/nodes/token/{token}" (neither is a subset of the other).
+	a.route("POST /api/v1/nodes/{id}/play", a.playTrack)
+	a.route("POST /api/v1/nodes/{id}/stop", a.stopPlay)
 
 	// Root-level distribution downloads and self metrics.
 	a.route("GET /dl/{name}", a.downloadDist)

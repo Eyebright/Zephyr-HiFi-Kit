@@ -25,6 +25,50 @@
   <main>
     <div id="banner" class="banner" hidden></div>
 
+    <section class="panel nowplaying" id="np-panel">
+      <div class="panel-head">
+        <h2>正在播放</h2>
+        <div class="np-badges">
+          <span id="np-conn" class="pill">ZAT…</span>
+          <span id="np-state" class="np-state">空闲</span>
+        </div>
+      </div>
+      <div class="np-body">
+        <div class="np-art" aria-hidden="true"><span class="np-disc"></span></div>
+        <div class="np-info">
+          <div class="np-title" id="np-title">未连接</div>
+          <div class="np-sub"><span id="np-artist"></span><span id="np-album"></span></div>
+          <div class="np-format" id="np-format"></div>
+          <div class="np-progress">
+            <span class="np-time" id="np-pos">0:00</span>
+            <input type="range" id="np-seek" min="0" max="100" value="0" step="1" disabled aria-label="播放进度">
+            <span class="np-time" id="np-dur">--:--</span>
+          </div>
+          <div class="np-controls">
+            <button id="np-pause" class="btn primary" disabled>暂停</button>
+            <button id="np-stop" class="btn danger" disabled>停止</button>
+            <div class="np-buffer">
+              <span class="np-buffer-label">缓冲</span>
+              <div class="bar np-buffer-bar"><i id="np-buffer"></i></div>
+              <span class="np-buffer-ms" id="np-buffer-ms">0 ms</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="np-foot">
+        <div class="np-volume">
+          <label for="np-volume">音量</label>
+          <input type="range" id="np-volume" min="0" max="100" value="100" step="1" aria-label="音量">
+          <span id="np-volume-val">100%</span>
+        </div>
+        <div class="np-device">
+          <label for="np-device">输出设备</label>
+          <select id="np-device"><option value="default">默认 (default)</option></select>
+        </div>
+      </div>
+      <div class="hint np-hint">由服务端媒体库经 ZAT 协议推送 · 播放控制不受播放保护限制</div>
+    </section>
+
     <section class="panel perf">
       <div class="panel-head">
         <h2>性能</h2>

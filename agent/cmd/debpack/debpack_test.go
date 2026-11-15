@@ -95,7 +95,7 @@ func TestDebRoundTrip(t *testing.T) {
 	prerm := []byte("#!/bin/sh\nexit 0\n")
 	installSh := []byte("#!/usr/bin/env bash\nVERSION=\"1.2.3\"\n")
 
-	deb, err := buildDeb(agentBin, unit, env, postinst, prerm, installSh, "1.2.3", "arm64")
+	deb, err := buildDeb(agentBin, unit, env, postinst, prerm, installSh, "1.2.3", "arm64", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,5 +146,35 @@ func TestDebRoundTrip(t *testing.T) {
 	}
 	if !bytes.Equal(tarContents["./etc/hifihub/agent.env"], env) {
 		t.Fatal("env content mismatch")
+	}
+}
+
+// TestAudioDepends verifies the CGO audio variant declares the ALSA runtime
+// library (with the Ubuntu 24.04 t64 alternate) while the pure-Go variant does
+// not, since the stub player links no audio library.
+func TestAudioDepends(t *testing.T) {
+	args := []byte("bin")
+	build := func(audio bool) string {
+		deb, err := buildDeb(args, args, args, args, args, args, "9.9.9", "amd64", audio)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, members := readAr(t, deb)
+		listTar(t, members["control.tar.gz"])
+		return string(tarContents["./control"])
+	}
+	plain := build(false)
+	if strings.Contains(plain, "libasound") {
+		t.Fatalf("pure-Go control must not depend on libasound:\n%s", plain)
+	}
+	if !strings.Contains(plain, "Depends: systemd, apt, dpkg, alsa-utils") {
+		t.Fatalf("pure-Go depends changed:\n%s", plain)
+	}
+	audio := build(true)
+	if !strings.Contains(audio, "libasound2 | libasound2t64") {
+		t.Fatalf("audio control missing ALSA runtime dependency:\n%s", audio)
+	}
+	if !strings.Contains(audio, "ZAT audio playback") {
+		t.Fatalf("audio control missing playback description:\n%s", audio)
 	}
 }

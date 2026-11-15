@@ -25,6 +25,7 @@ import (
 	"hifihub/agent/internal/sysinfo"
 	"hifihub/agent/internal/systemctrl"
 	"hifihub/agent/internal/ui"
+	"hifihub/agent/internal/zatclient"
 )
 
 // Core is the assembled terminal agent.
@@ -37,6 +38,7 @@ type Core struct {
 	ex        *executor.Executor
 	cmdExec   *commands.Executor
 	client    *serverclient.Client
+	zat       *zatclient.Client
 	arch      string
 	machineID string
 
@@ -68,6 +70,18 @@ func New(cfg config.Config) (*Core, error) {
 	// wraps its own 120s context. Playback gates read live DAC + cached policy.
 	cmdRun := systemctrl.ExecRunner{Timeout: 900 * time.Second}
 	c.cmdExec = commands.New(cmdRun, cfg.ServerURL, c.isPlaying, c.playProtectCached)
+	// ZAT sink: dials the server source, renders PCM, drives the play gate. The
+	// credential getter reads live state so registration is picked up on reconnect.
+	c.zat = zatclient.New(cfg.ZATAddr, cfg.AgentVersion,
+		func() (string, string) { s := c.st.Snapshot(); return s.NodeID, s.Secret },
+		func() []string {
+			devs := c.Devices()
+			names := make([]string, 0, len(devs))
+			for _, d := range devs {
+				names = append(names, d.HW)
+			}
+			return names
+		})
 	return c, nil
 }
 
@@ -91,7 +105,13 @@ func (c *Core) cachedPolicy() serverclient.Policy {
 
 func (c *Core) playProtectCached() bool { return c.cachedPolicy().PlayProtect }
 
-func (c *Core) isPlaying() bool { return len(c.DAC()) > 0 }
+// isPlaying reports whether the terminal is rendering audio: either another
+// process holds the DAC, or the agent's own ZAT sink is playing. Both feed the
+// FR-3.10 play gate so upgrades/power actions are blocked during ZAT playback.
+func (c *Core) isPlaying() bool { return len(c.DAC()) > 0 || c.zat.Playing() }
+
+// RunZAT maintains the outbound ZAT sink connection until ctx is cancelled.
+func (c *Core) RunZAT(ctx context.Context) { c.zat.Run(ctx) }
 
 // GateState reports the cheap local gate inputs for the UI (no network calls).
 func (c *Core) GateState() ui.GateState {
@@ -364,6 +384,11 @@ func (c *Core) Heartbeat(ctx context.Context) error {
 		active = protoForProcess(holders[0].Process)
 		pid = holders[0].PID
 	}
+	// The agent's own ZAT sink counts as playback and owns the active protocol.
+	if c.zat.Playing() {
+		playing = true
+		active = "zat"
+	}
 	p, err := c.client.Heartbeat(ctx, s.NodeID, serverclient.Heartbeat{
 		AgentVersion: c.cfg.AgentVersion, Playing: playing, ActiveProto: active,
 		DacHolderPID: pid, CPU: m.CPUPercent, MemMB: m.MemUsedMB, TempC: m.TempC,
@@ -487,3 +512,32 @@ func (c *Core) OSUpgrade(ctx context.Context, packages []string) serverclient.Co
 func (c *Core) Netdiag(ctx context.Context) serverclient.CommandResult {
 	return c.cmdExec.Execute(ctx, serverclient.Command{Type: "netdiag"})
 }
+
+// --- ZAT playback (local console) ---
+
+// Playback returns the live ZAT now-playing state plus the local device override.
+func (c *Core) Playback() ui.PlaybackState {
+	s := c.zat.Snapshot()
+	return ui.PlaybackState{
+		Connected: s.Connected, State: s.State, Playing: s.Playing, SessionID: s.SessionID,
+		TrackID: s.TrackID, Title: s.Title, Artist: s.Artist, Album: s.Album,
+		DurationMS: s.DurationMS, Codec: s.Codec, Rate: s.Rate, Channels: s.Channels,
+		PTS: s.PTS, BufferMS: s.BufferMS, Volume: s.Volume, ALSADevice: s.ALSADevice,
+		Device: c.zat.PreferredDevice(),
+	}
+}
+
+// PlaybackPause toggles local pause/resume and returns the new paused state.
+func (c *Core) PlaybackPause() (bool, error) { return c.zat.TogglePause() }
+
+// PlaybackStop drains ALSA and tears down the ZAT session.
+func (c *Core) PlaybackStop() error { return c.zat.Stop() }
+
+// PlaybackSeek skips forward to a sample position.
+func (c *Core) PlaybackSeek(pts uint64) error { return c.zat.Seek(pts) }
+
+// PlaybackVolume sets soft volume 0..100.
+func (c *Core) PlaybackVolume(v int) error { return c.zat.SetVolume(v) }
+
+// PlaybackDevice sets a local preferred ALSA device (overrides the server suggestion).
+func (c *Core) PlaybackDevice(dev string) error { c.zat.SetDevice(dev); return nil }

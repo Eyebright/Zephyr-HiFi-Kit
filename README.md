@@ -1,8 +1,10 @@
-# Zephyr Music Server
+# Zephyr Music Player
 
-面向家庭与小型商用 Hi-Fi 机群的**唯一下发源**音乐服务管理平台：一台 x86 Linux 服务端统一管理
-数十至数百台 Zephyr Music Player 终端（树莓派 / x86 小主机），负责签名制品仓库、BOM 期望态、
-灰度下发、系统更新、网络诊断、授权席位与审计。纯 Go（无 CGO）、SQLite 单文件存储、内嵌管理控制台。
+面向家庭与小型商用 Hi-Fi 机群的**音乐服务与终端推送**平台：一台 x86 Linux 服务端统一管理
+数十至数百台播放终端（树莓派 / x86 小主机），负责签名制品仓库、BOM 期望态、灰度下发、
+系统更新、网络诊断、授权席位与审计，并提供 SMB 媒体库挂载、音频格式识别与自有 ZAT 协议
+（RAAT-like）推流播放。管理版纯 Go（无 CGO）、SQLite 单文件存储、内嵌管理控制台；音频版经
+CGO + libFLAC + ALSA 实现真实解码与比特完美出声（见 INSTALL.md §10.1）。
 
 官方联系：services@zephyr.hk · https://www.zephyr.hk
 
@@ -18,7 +20,8 @@
 | 运维 | 远程 apt 检查·升级（命令通道）/ mDNS·SSDP·多播网络诊断 / 内核待重启告警 / 灰度发布（环推进） |
 | 安全 | enforce 验签 / 离线主密钥·签名子密钥·公钥信任根分工 / 密钥导入·信任根导出 / 终端本地控制台节点密钥门禁 / 全量审计 + CSV/JSON 导出 |
 | 可观测 | 总览 KPI + 服务端消耗 / 终端资源与 DAC 占用 / 告警铃铛抽屉（确认·解决·扫描）/ 终端控制台反向代理 |
-| 终端 Agent | 注册·心跳·快照 / 任务执行（apt·dpkg·配置渲染·systemd 白名单）/ DAC 仲裁执行 / 播放保护本地门禁 / 本地控制台（服务·系统更新·网络诊断·电源） |
+| 终端 Agent | 注册·心跳·快照 / 任务执行（apt·dpkg·配置渲染·systemd 白名单）/ DAC 仲裁执行 / 播放保护本地门禁 / 本地控制台（服务·系统更新·网络诊断·电源·正在播放） |
+| 音频解决方案 | SMB/CIFS 媒体库挂载 / 音频格式识别（WAV·FLAC 等）/ 自有 ZAT 协议推流（采样时钟 PTS·节点密钥鉴权）/ 终端 ALSA 比特完美播放 / 正在播放控制台（暂停·停止·seek·音量·输出设备） |
 
 ## 已删减功能（可行性审计结论：无法落地，不做假实现）
 
@@ -39,8 +42,8 @@
 
 ```sh
 sudo apt-get update && sudo apt-get install -y gnupg
-tar -xzf zephyr-music-server-0.2.0.tar.gz
-cd zephyr-music-server-0.2.0/server
+tar -xzf zephyr-music-server-0.3.0.tar.gz
+cd zephyr-music-server-0.3.0/server
 sudo ./install.sh                      # 二进制 + systemd + 配置 + 信任根 + /dl 分发目录
 curl -s http://127.0.0.1:8080/api/v1/health
 ```
@@ -62,7 +65,7 @@ curl -fsSL http://<服务端IP>:8080/dl/agent-install.sh | \
 安装器自动识别 amd64 / arm64 / armhf，从服务端 `/dl/` 拉取对应 deb，写入
 `/etc/hifihub/agent.env` 并启用服务；注册成功后终端立即出现在控制台。
 
-离线环境可用包内 deb：`sudo dpkg -i agent/hifihub-agent_0.2.0_<arch>.deb && sudo apt-get -f install -y`。
+离线环境可用包内 deb：`sudo dpkg -i agent/hifihub-agent_0.3.0_<arch>.deb && sudo apt-get -f install -y`。
 
 完整部署、密钥分工、许可证签发与排障见 [INSTALL.md](INSTALL.md)。
 
@@ -72,23 +75,33 @@ curl -fsSL http://<服务端IP>:8080/dl/agent-install.sh | \
 
 ```
 cmd/hifihub-server/      服务端入口
-internal/                api / catalog / repo / bom / node / task / store / signature / config / web(内嵌控制台)
-agent/                   终端 Agent 独立模块（cmd / internal / packaging / cmd/debpack）
+internal/                api / catalog / repo / bom / node / task / store / signature / config / web(内嵌控制台) / media·decode·library·mount·zatserver(音频)
+zat/                     自有 ZAT 音频传输协议（服务端与终端共享的独立模块）
+agent/                   终端 Agent 独立模块（cmd / internal：player·zatclient / packaging / cmd/debpack）
 packaging/server/        服务端 install.sh / uninstall.sh / systemd 单元 / 配置模板
-scripts/                 build-release.sh / smoke-test.sh
+scripts/                 build-release.sh / build-audio.sh / build-audio-cross.sh / smoke-test.sh
 prototype/               UI 可行性验证原型（纯前端 mock，非运行代码）
 ```
 
 ## 构建与测试
 
 ```sh
-sh scripts/build-release.sh                 # 交叉编译 + 三架构 deb + 发布包 + SHA256SUMS
-VERSION=0.2.0 sh scripts/build-release.sh
+sh scripts/build-release.sh                 # 纯 Go 管理版：交叉编译 + 三架构 deb + 发布包 + SHA256SUMS
+VERSION=0.3.0 sh scripts/build-release.sh
 go test ./... && (cd agent && go test ./...)
 sh scripts/smoke-test.sh                    # enforce 模式端到端冒烟（需 go/gpg/curl）
 ```
 
-需要 Go 1.27+；`CGO_ENABLED=0`，deb 由内置 `debpack` 生成，无需 dpkg-deb / 交叉 gcc。
+需要 Go 1.27+；管理版 `CGO_ENABLED=0`，deb 由内置 `debpack` 生成，无需 dpkg-deb / 交叉 gcc。
+
+音频版（Linux + CGO + libFLAC + ALSA，真实解码与比特完美出声）：
+
+```sh
+sudo apt-get install -y pkg-config libflac-dev libasound2-dev flac
+TEST=1 sh scripts/build-audio.sh            # CGO 构建 + ALSA null 回环 + FLAC 往返测试
+AUDIO=1 sh scripts/build-release.sh         # 本机单架构音频发布包
+sh scripts/build-audio-cross.sh             # ARM 交叉音频 deb（multiarch，详见 INSTALL.md §10.1）
+```
 
 ## 安全模型
 

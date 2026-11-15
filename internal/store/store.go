@@ -358,4 +358,42 @@ CREATE TABLE IF NOT EXISTS server_state (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL DEFAULT ''
 );
+
+CREATE TABLE IF NOT EXISTS mounts (
+  id         TEXT PRIMARY KEY,
+  host       TEXT NOT NULL,
+  share      TEXT NOT NULL,
+  target     TEXT NOT NULL,
+  username   TEXT NOT NULL DEFAULT '',
+  password   TEXT NOT NULL DEFAULT '',
+  domain     TEXT NOT NULL DEFAULT '',
+  version    TEXT NOT NULL DEFAULT '3.0',
+  writable   INTEGER NOT NULL DEFAULT 0,
+  status     TEXT NOT NULL DEFAULT 'unmounted',
+  detail     TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  mounted_at INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS tracks (
+  id            TEXT PRIMARY KEY,
+  mount_id      TEXT NOT NULL REFERENCES mounts(id),
+  path          TEXT NOT NULL,
+  rel_path      TEXT NOT NULL,
+  title         TEXT NOT NULL DEFAULT '',
+  artist        TEXT NOT NULL DEFAULT '',
+  album         TEXT NOT NULL DEFAULT '',
+  codec         TEXT NOT NULL DEFAULT '',
+  container     TEXT NOT NULL DEFAULT '',
+  rate          INTEGER NOT NULL DEFAULT 0,
+  channels      INTEGER NOT NULL DEFAULT 0,
+  bits          INTEGER NOT NULL DEFAULT 0,
+  total_samples INTEGER NOT NULL DEFAULT 0,
+  duration_ms   INTEGER NOT NULL DEFAULT 0,
+  decodable     INTEGER NOT NULL DEFAULT 0,
+  size          INTEGER NOT NULL DEFAULT 0,
+  scanned_at    INTEGER NOT NULL,
+  UNIQUE(mount_id, rel_path)
+);
+CREATE INDEX IF NOT EXISTS idx_tracks_mount ON tracks(mount_id);
 `

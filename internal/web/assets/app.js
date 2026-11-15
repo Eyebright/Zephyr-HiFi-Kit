@@ -1,5 +1,5 @@
 "use strict";
-/* Zephyr Music Server · Operations Console · vanilla ES2020, no deps */
+/* Zephyr Music Player · Operations Console · vanilla ES2020, no deps */
 
 /* ---------- tiny helpers ---------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -94,7 +94,10 @@ const ICONS = {
   edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   database: '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>',
-  eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>'
+  eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>',
+  stop: '<rect x="6" y="6" width="12" height="12" rx="2"/>',
+  folder: '<path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/>',
+  pause: '<rect x="7" y="5" width="3.5" height="14" rx="1"/><rect x="13.5" y="5" width="3.5" height="14" rx="1"/>'
 };
 function icon(name, size = 16, cls = "") {
   return `<svg class="ic ${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ICONS.info}</svg>`;
@@ -353,10 +356,12 @@ const S = {
   nodeApps: {}, nodeOs: {},
   nodeFilter: "all", nodeSort: { key: "alias", dir: 1 }, sel: new Set(),
   alertFilter: "open", auditFilter: "all",
-  jobBom: "", jobSel: new Set()
+  jobBom: "", jobSel: new Set(),
+  mounts: [], tracks: [], libMount: "", play: {}
 };
 const NAV = [
   { id: "overview", name: "总览", icon: "gauge" },
+  { id: "library", name: "音乐库", icon: "music" },
   { id: "nodes", name: "终端管理", icon: "server" },
   { id: "catalog", name: "应用仓库", icon: "box" },
   { id: "deliver", name: "服务下发", icon: "send" },
@@ -388,11 +393,12 @@ function viewError(e) {
 
 /* ---------- routing ---------- */
 function shellFor(v) {
-  return ({ overview: shellOverview, nodes: shellNodes, catalog: shellCatalog, deliver: shellDeliver, keys: shellKeys, audit: shellAudit }[v] || shellOverview)();
+  return ({ overview: shellOverview, library: shellLibrary, nodes: shellNodes, catalog: shellCatalog, deliver: shellDeliver, keys: shellKeys, audit: shellAudit }[v] || shellOverview)();
 }
 async function refreshFor(v, silent) {
   try {
     if (v === "overview") await refreshOverview();
+    else if (v === "library") await refreshLibrary();
     else if (v === "nodes") await refreshNodes();
     else if (v === "catalog") await refreshCatalog();
     else if (v === "deliver") await refreshDeliver();
@@ -415,6 +421,7 @@ function setView(v) {
   refreshFor(v);
   if (v === "overview" || v === "nodes") poll("view:main", () => refreshFor(v, true), 4000);
   else if (v === "deliver") poll("view:main", () => refreshDeliverLive(), 2000);
+  else if (v === "library") poll("view:main", () => refreshLibraryLive(), 3000);
 }
 
 /* ---------- global live tick ---------- */
@@ -2240,6 +2247,312 @@ async function alertScan() {
   catch (e) { toast(e.message, "err"); }
 }
 
+/* ================= MUSIC LIBRARY ================= */
+function fmtDur(ms) {
+  const s = Math.max(0, Math.round((Number(ms) || 0) / 1000));
+  return Math.floor(s / 60) + ":" + p2(s % 60);
+}
+function codecBadge(c) {
+  const k = String(c || "").toLowerCase();
+  const lossless = ["flac", "alac", "pcm", "wav", "aiff", "dsd"];
+  const kind = !k || k === "unknown" ? "muted" : lossless.some(x => k.includes(x)) ? "ok" : "warn";
+  return badge(c || "未知", kind);
+}
+function mountBadge(st) {
+  if (st === "mounted") return badge("已挂载", "ok");
+  if (st === "error") return badge("错误", "err");
+  return badge("未挂载", "muted");
+}
+function shellLibrary() {
+  return `<div class="kpis stagger" style="--i:0" id="lib-kpis"></div>
+    <section class="card stagger" style="--i:1">
+      ${secHead(`${icon("folder", 17)} SMB 文件空间`, `<button class="btn ghost sm" data-act="lib-refresh">${icon("refresh", 14)} 刷新</button><button class="btn primary sm" data-act="lib-add">${icon("plus", 14)} 添加共享</button>`)}
+      <div id="lib-mounts"></div>
+    </section>
+    <section class="card mt16 stagger" style="--i:2">
+      <div class="sec-head">
+        <div class="sec-title">${icon("music", 17)} 音乐曲目</div>
+        <div class="spacer"></div>
+        <div class="chips" id="lib-chips"></div>
+      </div>
+      <div id="lib-tracks"></div>
+    </section>
+    <section class="card mt16 stagger" style="--i:3">
+      ${secHead(`${icon("speaker", 17)} 正在播放`, `<span class="txt-faint" style="font-size:12px">ZAT 推流 · 终端 ALSA 出声</span>`)}
+      <div id="lib-now"></div>
+    </section>`;
+}
+async function fetchPlay(nodes) {
+  const online = (nodes || []).filter(n => n.status === "online");
+  const entries = await Promise.all(online.map(async n => {
+    try { return [n.node_id, await api("GET", `/nodes/${enc(n.node_id)}/play`)]; }
+    catch (e) { return [n.node_id, { node_id: n.node_id, connected: false, playing: false }]; }
+  }));
+  const map = {};
+  for (const [id, p] of entries) map[id] = p || {};
+  S.play = map;
+}
+async function refreshLibrary() {
+  const [mounts, tracks, nodes] = await Promise.all([api("GET", "/mounts"), api("GET", "/tracks"), api("GET", "/nodes")]);
+  S.mounts = Array.isArray(mounts) ? mounts : [];
+  S.tracks = Array.isArray(tracks) ? tracks : [];
+  S.nodes = Array.isArray(nodes) ? nodes : [];
+  await fetchPlay(S.nodes);
+  paintLibrary();
+}
+async function refreshLibraryLive() {
+  const nodes = await api("GET", "/nodes");
+  S.nodes = Array.isArray(nodes) ? nodes : [];
+  await fetchPlay(S.nodes);
+  paintLibKpis(); paintNowPlaying();
+}
+function paintLibrary() { paintLibKpis(); paintMounts(); paintLibChips(); paintTracks(); paintNowPlaying(); }
+function paintLibKpis() {
+  const el = $("#lib-kpis"); if (!el) return;
+  const mounted = S.mounts.filter(m => m.status === "mounted").length;
+  const dec = S.tracks.filter(t => t.decodable).length;
+  const playing = Object.values(S.play).filter(p => p && p.playing).length;
+  el.innerHTML =
+    kpi("共享挂载", S.mounts.length, "amber", "folder") +
+    kpi("已挂载", mounted, "green", "check") +
+    kpi("曲目总数", S.tracks.length, "cyan", "music") +
+    kpi("可解码", dec, "violet", "disc") +
+    kpi("播放中", playing, "blue", "speaker");
+}
+function paintMounts() {
+  const el = $("#lib-mounts"); if (!el) return;
+  const list = S.mounts.filter(m => hit(m.host, m.share, m.target, m.username, m.domain));
+  if (!list.length) {
+    el.innerHTML = empty("folder", S.mounts.length ? "没有匹配的共享" : "还没有 SMB 文件空间。添加共享后挂载并扫描，即可识别音频并推送到终端。",
+      S.mounts.length ? "" : `<button class="btn primary" data-act="lib-add">${icon("plus", 15)} 添加共享</button>`);
+    return;
+  }
+  el.innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr>
+    <th>共享</th><th>状态</th><th>认证</th><th>协议</th><th>曲目</th><th style="text-align:right">操作</th>
+  </tr></thead><tbody>` + list.map(mountRow).join("") + `</tbody></table></div>`;
+}
+function mountRow(m) {
+  const cnt = S.tracks.filter(t => t.mount_id === m.id).length;
+  const mounted = m.status === "mounted";
+  return `<tr>
+    <td><div class="mono">${esc(m.host)}/${esc(m.share)}</div><div class="sub mono truncate" style="max-width:320px" title="${esc(m.target)}">${esc(m.target)}</div></td>
+    <td>${mountBadge(m.status)}${m.detail ? `<div class="sub truncate" style="max-width:200px" title="${esc(m.detail)}">${esc(m.detail)}</div>` : ""}</td>
+    <td>${m.username ? `<div>${esc(m.domain ? m.domain + "\\" : "")}${esc(m.username)}</div>` : '<span class="txt-faint">guest</span>'}</td>
+    <td class="cell-mono">vers=${esc(m.version || "3.0")}<div class="sub">${m.writable ? "读写" : "只读"}</div></td>
+    <td class="cell-mono">${mounted ? cnt : '<span class="txt-faint">—</span>'}</td>
+    <td><div class="acts">
+      ${mounted
+        ? `<button class="btn xs ghost" data-act="lib-scan" data-id="${esc(m.id)}" title="扫描识别音频">${icon("refresh", 13)} 扫描</button>
+           <button class="btn xs ghost" data-act="lib-unmount" data-id="${esc(m.id)}" title="卸载共享">${icon("power", 13)} 卸载</button>`
+        : `<button class="btn xs cyan" data-act="lib-mount" data-id="${esc(m.id)}" title="挂载共享">${icon("download", 13)} 挂载</button>`}
+      <button class="btn xs danger" data-act="lib-delete" data-id="${esc(m.id)}" title="删除共享">${icon("trash", 13)}</button>
+    </div></td>
+  </tr>`;
+}
+function paintLibChips() {
+  const el = $("#lib-chips"); if (!el) return;
+  const counts = {};
+  S.tracks.forEach(t => { counts[t.mount_id] = (counts[t.mount_id] || 0) + 1; });
+  const chips = [["", "全部", S.tracks.length]].concat(S.mounts.map(m => [m.id, m.host + "/" + m.share, counts[m.id] || 0]));
+  el.innerHTML = chips.map(([id, label, c]) =>
+    `<button class="chip ${S.libMount === id ? "active" : ""}" data-act="lib-filter" data-f="${esc(id)}">${esc(label)}<span class="cnt">${c}</span></button>`).join("");
+}
+function filteredTracks() {
+  let list = S.tracks.slice();
+  if (S.libMount) list = list.filter(t => t.mount_id === S.libMount);
+  list = list.filter(t => hit(t.title, t.artist, t.album, t.codec, t.container, t.rel_path));
+  list.sort((a, b) => String(a.artist || "").localeCompare(String(b.artist || ""), "zh")
+    || String(a.album || "").localeCompare(String(b.album || ""), "zh")
+    || String(a.title || "").localeCompare(String(b.title || ""), "zh"));
+  return list;
+}
+function paintTracks() {
+  const el = $("#lib-tracks"); if (!el) return;
+  const list = filteredTracks();
+  if (!list.length) {
+    const msg = !S.mounts.length ? "先添加并挂载 SMB 共享，扫描后曲目会出现在这里。"
+      : !S.tracks.length ? "还没有曲目。挂载共享后点击「扫描」识别音频文件。"
+      : "没有匹配的曲目。";
+    el.innerHTML = empty("music", msg, !S.mounts.length ? `<button class="btn primary" data-act="lib-add">${icon("plus", 15)} 添加共享</button>` : "", true);
+    return;
+  }
+  el.innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr>
+    <th>曲目</th><th>艺术家 / 专辑</th><th>格式</th><th>采样</th><th>时长</th><th>大小</th><th>解码</th><th style="text-align:right">操作</th>
+  </tr></thead><tbody>` + list.map(trackRow).join("") + `</tbody></table></div>`;
+}
+function trackRow(t) {
+  return `<tr>
+    <td><div class="truncate" style="max-width:280px">${esc(t.title || "—")}</div><div class="sub mono truncate" style="max-width:280px" title="${esc(t.rel_path)}">${esc(t.rel_path)}</div></td>
+    <td><div>${esc(t.artist || "—")}</div><div class="sub">${esc(t.album || "")}</div></td>
+    <td>${codecBadge(t.codec)}<div class="sub">${esc(t.container || "")}</div></td>
+    <td class="cell-mono nowrap">${t.rate ? (t.rate / 1000).toFixed(1) + " kHz" : "—"}<div class="sub">${t.channels || "?"} ch · ${t.bits || "?"} bit</div></td>
+    <td class="cell-mono nowrap">${fmtDur(t.duration_ms)}</td>
+    <td class="cell-mono nowrap">${fmtBytes(t.size)}</td>
+    <td>${t.decodable ? badge("可解码", "ok") : badge("仅识别", "muted")}</td>
+    <td><div class="acts"><button class="btn xs primary" data-act="track-play" data-id="${esc(t.id)}" ${t.decodable ? "" : "disabled"} title="${t.decodable ? "推送到终端播放" : "v0.1 仅支持 FLAC / WAV 解码"}">${icon("send", 13)} 推送</button></div></td>
+  </tr>`;
+}
+function paintNowPlaying() {
+  const el = $("#lib-now"); if (!el) return;
+  const online = S.nodes.filter(n => n.status === "online");
+  if (!online.length) {
+    el.innerHTML = empty("speaker", "没有在线终端。终端 Agent 连接 ZAT 服务后，推送的曲目会在这里实时显示。", `<button class="btn ghost sm" data-act="lib-goto-nodes">${icon("server", 14)} 前往终端管理</button>`, true);
+    return;
+  }
+  el.innerHTML = `<div class="now-list">` + online.map(nowRow).join("") + `</div>`;
+}
+function nowRow(n) {
+  const p = S.play[n.node_id] || {};
+  const t = p.track_id ? S.tracks.find(x => x.id === p.track_id) : null;
+  const playing = !!p.playing;
+  const elapsed = t && t.rate && p.pts ? fmtDur(p.pts / t.rate * 1000) : null;
+  return `<div class="now-row ${playing ? "playing" : ""}">
+    <div class="now-ic">${icon(playing ? "speaker" : "server", 18)}</div>
+    <div class="now-info">
+      <div class="now-alias">${esc(n.alias || shortId(n.node_id))} ${authBadge(n)}</div>
+      <div class="now-meta mono">${esc(shortId(n.node_id))}${n.ip ? " · " + esc(n.ip) : ""}${n.active_proto ? " · " + esc(n.active_proto) : ""}</div>
+    </div>
+    <div class="now-track">
+      ${playing || p.connected
+        ? `<div class="now-title truncate">${esc(p.title || (t && t.title) || "—")}</div>
+           <div class="now-sub">${p.connected ? badge("ZAT 已连接", "ok") : badge("未连接", "muted")}${playing ? badge("播放中", "info") : ""}${elapsed ? ` <span class="mono">${elapsed}</span>` : ""}${p.buffer_ms != null ? ` <span class="txt-faint">缓冲 ${p.buffer_ms} ms</span>` : ""}</div>`
+        : `<div class="now-sub txt-faint">空闲 · 未推流</div>`}
+    </div>
+    <div class="now-acts">${playing ? `<button class="btn xs danger" data-act="play-stop" data-id="${esc(n.node_id)}">${icon("stop", 13)} 停止</button>` : ""}</div>
+  </div>`;
+}
+
+/* ---- add SMB share ---- */
+function openMountAdd() {
+  openModal(`${icon("folder", 18)} 添加 SMB 共享`, `
+    <div id="mnt-err"></div>
+    <div class="f-row">
+      <div class="field"><label>主机 *</label><input id="mnt-host" class="inp mono" placeholder="如 192.168.1.10 或 nas.local" maxlength="120"><div class="f-hint">SMB 服务器 hostname / IP，不含 / \\ 空格</div></div>
+      <div class="field"><label>共享名 *</label><input id="mnt-share" class="inp mono" placeholder="如 music" maxlength="120"><div class="f-hint">单段共享名，如 music / Media</div></div>
+    </div>
+    <div class="f-row">
+      <div class="field"><label>用户名</label><input id="mnt-user" class="inp mono" placeholder="留空 = guest 访客" maxlength="120"></div>
+      <div class="field"><label>密码</label><input id="mnt-pass" type="password" class="inp mono" placeholder="仅服务端保存，不回显" maxlength="200"></div>
+    </div>
+    <div class="f-row">
+      <div class="field"><label>域</label><input id="mnt-domain" class="inp mono" placeholder="如 WORKGROUP（可选）" maxlength="120"></div>
+      <div class="field"><label>SMB 版本</label><select id="mnt-ver" class="inp"><option value="3.0">3.0（默认）</option><option value="3.1.1">3.1.1</option><option value="2.1">2.1</option><option value="2.0">2.0</option><option value="1.0">1.0</option></select></div>
+    </div>
+    <div class="field"><label class="switch"><input id="mnt-rw" type="checkbox"><span class="track"></span><span class="sw-lbl">可写挂载（默认只读，媒体库仅读取）</span></label></div>
+    <div class="banner info">${icon("info", 15)}<span>挂载使用内核 mount.cifs（需 cifs-utils 与 root）。凭据写入临时 0600 文件，挂载后立即删除，绝不出现在命令行或日志。</span></div>`,
+    `<button class="btn ghost" data-act="modal-close">取消</button><div class="spacer"></div><button class="btn primary" data-act="lib-add-submit">${icon("check", 15)} 添加共享</button>`, { narrow: true });
+}
+async function submitMountAdd() {
+  const err = $("#mnt-err");
+  const fail = m => { if (err) err.innerHTML = `<div class="banner err">${icon("alert", 15)}<span>${esc(m)}</span></div>`; };
+  const host = val("mnt-host").trim(), share = val("mnt-share").trim();
+  if (!host) return fail("请填写主机");
+  if (!share) return fail("请填写共享名");
+  if (/[/\\\s]/.test(host)) return fail("主机不能包含 / \\ 或空格");
+  if (/[/\\\s]/.test(share)) return fail("共享名不能包含 / \\ 或空格");
+  try {
+    await api("POST", "/mounts", {
+      host, share, username: val("mnt-user").trim(), password: val("mnt-pass"),
+      domain: val("mnt-domain").trim(), version: val("mnt-ver"), writable: checked("mnt-rw")
+    });
+    toast(`共享 ${host}/${share} 已添加`, "ok");
+    closeModal();
+    await refreshLibrary();
+  } catch (e) { fail(e.message); }
+}
+async function libMountAct(id, act) {
+  const m = S.mounts.find(x => x.id === id);
+  const label = m ? m.host + "/" + m.share : shortId(id);
+  try {
+    if (act === "scan") {
+      const r = await api("POST", `/mounts/${enc(id)}/scan`);
+      toast(`扫描完成：识别 ${r && r.count != null ? r.count : 0} 个音频文件`, "ok");
+    } else {
+      const r = await api("POST", `/mounts/${enc(id)}/${act}`);
+      if (r && r.status === "error") {
+        toast(`${act === "mount" ? "挂载" : "卸载"}失败：${r.detail || "未知错误"}`, "err");
+      } else {
+        toast(act === "mount" ? `已挂载 ${label}` : `已卸载 ${label}`, "ok");
+      }
+    }
+    await refreshLibrary();
+  } catch (e) { toast(e.message, "err"); await refreshLibrary(); }
+}
+async function libDelete(id) {
+  const m = S.mounts.find(x => x.id === id);
+  const label = m ? m.host + "/" + m.share : shortId(id);
+  const ok = await confirmDlg({ title: "删除共享", message: `将删除 ${label} 及其全部曲目记录。已挂载的共享会先卸载。此操作不可撤销。`, okText: "删除" });
+  if (!ok) return;
+  try { await api("DELETE", `/mounts/${enc(id)}`); toast(`共享 ${label} 已删除`, "ok"); await refreshLibrary(); }
+  catch (e) { toast(e.message, "err"); }
+}
+async function libRefresh() { try { await refreshLibrary(); toast("已刷新", "ok"); } catch (e) { toast(e.message, "err"); } }
+
+/* ---- push playback: terminal picker ---- */
+const TP = { trackID: "", track: null, sel: "", busy: false };
+async function openTrackPlay(trackID) {
+  TP.trackID = trackID; TP.track = S.tracks.find(x => x.id === trackID) || null; TP.sel = ""; TP.busy = false;
+  openModal(`${icon("send", 18)} 推送播放`, `<div id="tp-body">${empty("refresh", "正在加载终端…", "", true)}</div>`,
+    `<button class="btn ghost" data-act="modal-close">取消</button><div class="spacer"></div><button class="btn primary" id="tp-go" data-act="track-play-go" disabled>${icon("play", 15)} 推送播放</button>`, { narrow: true });
+  try {
+    const nodes = await api("GET", "/nodes");
+    S.nodes = Array.isArray(nodes) ? nodes : [];
+    await fetchPlay(S.nodes);
+  } catch (e) { /* keep cached nodes */ }
+  if (!$(".modal") || TP.trackID !== trackID) return;
+  paintTrackPlay();
+}
+function paintTrackPlay() {
+  const body = $("#tp-body"); if (!body) return;
+  const t = TP.track || {};
+  const online = S.nodes.filter(n => n.status === "online");
+  let h = `<div class="tp-track">
+      <div class="tp-title truncate">${esc(t.title || "未知曲目")}</div>
+      <div class="tp-meta">${esc(t.artist || "—")} · ${esc(t.album || "—")} ${codecBadge(t.codec)} <span class="mono">${t.rate ? (t.rate / 1000).toFixed(1) + " kHz" : ""}${t.channels ? " · " + t.channels + " ch" : ""}${t.bits ? " · " + t.bits + " bit" : ""}</span></div>
+    </div><div class="divider"></div><span class="lbl">选择终端（在线 ${online.length}）</span>`;
+  if (!online.length) {
+    h += empty("server", "没有在线终端。请先在「终端管理」添加并授权终端，终端 Agent 连接 ZAT 后即可推送。", `<button class="btn ghost sm" data-act="tp-goto-nodes">${icon("server", 14)} 前往终端管理</button>`, true);
+  } else {
+    h += `<div class="tp-nodes">` + online.map(n => {
+      const p = S.play[n.node_id] || {};
+      const sel = TP.sel === n.node_id;
+      return `<div class="tp-node ${sel ? "sel" : ""} ${n.authorized ? "" : "dis"}" data-act="tp-pick" data-id="${esc(n.node_id)}" role="button" tabindex="0">
+        <span class="tp-radio"></span>
+        <span class="tp-ninfo">
+          <span class="tp-nalias truncate">${esc(n.alias || shortId(n.node_id))}</span>
+          <span class="tp-nmeta mono">${esc(shortId(n.node_id))}${n.ip ? " · " + esc(n.ip) : ""}</span>
+        </span>
+        <span class="tp-nbadges">${authBadge(n)}${p.connected ? badge("ZAT 已连接", "ok") : badge("未连接", "muted")}${n.playing ? badge("播放中", "info") : ""}</span>
+      </div>`;
+    }).join("") + `</div>`;
+    if (!online.some(n => n.authorized)) h += `<div class="banner warn mt12">${icon("alert", 15)}<span>在线终端均未授权，ZAT 推流会被拒绝。请先在终端管理授权。</span></div>`;
+    else if (TP.sel && !(S.nodes.find(n => n.node_id === TP.sel) || {}).authorized) h += `<div class="banner warn mt12">${icon("alert", 15)}<span>该终端未授权，无法推流。请选择已授权终端。</span></div>`;
+  }
+  body.innerHTML = h;
+  const go = $("#tp-go"); if (go) go.disabled = !TP.sel || TP.busy;
+}
+async function trackPlayGo() {
+  const nodeID = TP.sel; if (!nodeID || TP.busy) return;
+  const n = S.nodes.find(x => x.node_id === nodeID);
+  if (n && !n.authorized) { toast("终端未授权，无法推流", "warn"); return; }
+  TP.busy = true;
+  const go = $("#tp-go"); if (go) { go.disabled = true; go.innerHTML = `${icon("refresh", 15)} 推送中…`; }
+  try {
+    const r = await api("POST", `/nodes/${enc(nodeID)}/play`, { track_id: TP.trackID });
+    toast(`已推送到 ${n ? (n.alias || shortId(nodeID)) : shortId(nodeID)}${r && r.session_id ? " · " + shortId(r.session_id) : ""}`, "ok");
+    closeModal();
+    await refreshLibraryLive();
+  } catch (e) {
+    TP.busy = false;
+    if (go) { go.disabled = false; go.innerHTML = `${icon("play", 15)} 推送播放`; }
+    toast(e.message, "err");
+  }
+}
+async function playStop(nodeID) {
+  try { await api("POST", `/nodes/${enc(nodeID)}/stop`); toast("已停止播放", "ok"); await refreshLibraryLive(); }
+  catch (e) { toast(e.message, "err"); }
+}
+
 /* ================= ACTION MAP ================= */
 const ACT = {
   "nav": ds => setView(ds.view),
@@ -2333,7 +2646,21 @@ Object.assign(ACT, {
   "alert-ack-all": () => alertAckAll(),
   "alert-filter": ds => { S.alertFilter = ds.f; paintAlerts(); },
   "alert-ack": ds => alertAct(ds.id, "ack"),
-  "alert-resolve": ds => alertAct(ds.id, "resolve")
+  "alert-resolve": ds => alertAct(ds.id, "resolve"),
+  "lib-add": () => openMountAdd(),
+  "lib-add-submit": () => submitMountAdd(),
+  "lib-refresh": () => libRefresh(),
+  "lib-mount": ds => libMountAct(ds.id, "mount"),
+  "lib-unmount": ds => libMountAct(ds.id, "unmount"),
+  "lib-scan": ds => libMountAct(ds.id, "scan"),
+  "lib-delete": ds => libDelete(ds.id),
+  "lib-filter": ds => { S.libMount = ds.f; paintLibChips(); paintTracks(); },
+  "lib-goto-nodes": () => { closeModal(); setView("nodes"); },
+  "track-play": ds => openTrackPlay(ds.id),
+  "tp-pick": ds => { TP.sel = ds.id; paintTrackPlay(); },
+  "tp-goto-nodes": () => { closeModal(); setView("nodes"); },
+  "track-play-go": () => trackPlayGo(),
+  "play-stop": ds => playStop(ds.id)
 });
 
 /* ================= CHANGE MAP ================= */
@@ -2406,6 +2733,7 @@ function paintSearch() {
   const v = S.view;
   if (v === "overview") paintOverviewNodes();
   else if (v === "nodes") paintNodeTable();
+  else if (v === "library") { paintMounts(); paintTracks(); }
   else if (v === "catalog") { paintApps(); paintBoms(); }
   else if (v === "deliver") paintRollouts();
   else if (v === "keys") paintLicNodes();

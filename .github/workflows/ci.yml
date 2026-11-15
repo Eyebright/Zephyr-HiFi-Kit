@@ -35,7 +35,7 @@ jobs:
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             VERSION="${GITHUB_REF_NAME#v}"
           else
-            VERSION="0.2.0"
+            VERSION="0.3.0"
           fi
           VERSION="$VERSION" sh scripts/build-release.sh
 
@@ -47,7 +47,7 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             release/zephyr-music-server-*.tar.gz \
             release/zephyr-music-server-*/agent/*.deb \
-            --title "Zephyr Music Server $GITHUB_REF_NAME" \
+            --title "Zephyr Music Player $GITHUB_REF_NAME" \
             --generate-notes
 
       - name: Upload bundle artifact (non-tag builds)
@@ -57,3 +57,56 @@ jobs:
           name: zephyr-music-server-bundle
           path: release/zephyr-music-server-*.tar.gz
           retention-days: 7
+
+  # Audio backend verification + audio-enabled release assets. The CGO libFLAC
+  # decoder and ALSA sink cannot be built on the pure-Go build host, so this job
+  # compiles them on native Linux runners (amd64 + arm64) and exercises the real
+  # audio path: the ALSA "null" loopback needs no sound hardware and the FLAC
+  # round-trip asserts bit-exact PCM. armhf audio is built by
+  # scripts/build-audio-cross.sh on a provisioned host (no native runner).
+  audio:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Install audio dev libraries (libFLAC + ALSA + flac CLI)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libflac-dev libasound2-dev flac
+
+      - name: CGO audio build + ALSA null loopback + FLAC round-trip + bundle
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="0.3.0"
+          fi
+          TEST=1 AUDIO=1 VERSION="$VERSION" sh scripts/build-release.sh
+
+      - name: Upload audio bundle artifact (non-tag builds)
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: zephyr-audio-${{ runner.arch }}
+          path: release/zephyr-music-server-*-audio-*.tar.gz
+          retention-days: 7
+
+      - name: Attach audio assets to release (tag builds)
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "$GITHUB_REF_NAME" \
+            release/zephyr-music-server-*-audio-*.tar.gz \
+            bin/audio/hifihub-agent_*_*.deb \
+            --clobber

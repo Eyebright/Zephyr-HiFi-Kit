@@ -1,5 +1,5 @@
 /* ============================================================
-   Zephyr Music Server · Operations Console
+   Zephyr Music Player · Operations Console
    Premium hi-fi dark · amber/gold brand accents
    ============================================================ */
 :root {
@@ -436,6 +436,38 @@ select.inp option { background: var(--card); color: var(--text); }
 .stat-inline .si b { font-family: var(--mono); font-size: 19px; font-weight: 800; }
 .stat-inline .si span { font-size: 11px; color: var(--faint); letter-spacing: .08em; text-transform: uppercase; }
 
+/* ---- music library: push-play terminal picker ---- */
+.tp-track { padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-md); background: linear-gradient(160deg, var(--card), rgba(18,22,31,.6)); }
+.tp-title { font-weight: 800; font-size: 15px; margin-bottom: 5px; }
+.tp-meta { display: flex; gap: 7px; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--muted); }
+.tp-nodes { display: flex; flex-direction: column; gap: 8px; }
+.tp-node { display: flex; align-items: center; gap: 11px; padding: 11px 13px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); cursor: pointer; transition: all .15s ease; }
+.tp-node:hover { border-color: var(--faint); transform: translateY(-1px); }
+.tp-node.sel { border-color: var(--amber); background: rgba(246,168,33,.09); box-shadow: 0 0 0 1px rgba(246,168,33,.3); }
+.tp-node.dis { opacity: .55; }
+.tp-radio { width: 16px; height: 16px; flex: none; border-radius: 50%; border: 1.5px solid var(--faint); position: relative; transition: all .15s; }
+.tp-node.sel .tp-radio { border-color: var(--amber); }
+.tp-node.sel .tp-radio::after { content: ""; position: absolute; inset: 3px; border-radius: 50%; background: var(--amber); }
+.tp-ninfo { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.tp-nalias { font-weight: 700; font-size: 13.5px; }
+.tp-nmeta { font-size: 11px; color: var(--faint); }
+.tp-nbadges { display: flex; gap: 5px; flex-wrap: wrap; justify-content: flex-end; }
+
+/* ---- music library: now playing ---- */
+.now-list { display: flex; flex-direction: column; gap: 10px; }
+.now-row { display: flex; align-items: center; gap: 13px; padding: 12px 14px; border: 1px solid var(--soft); border-radius: var(--r-md); background: var(--surface); transition: border-color .15s; }
+.now-row:hover { border-color: var(--line); }
+.now-row.playing { border-color: rgba(70,224,138,.45); background: linear-gradient(160deg, rgba(70,224,138,.06), var(--surface)); }
+.now-ic { width: 38px; height: 38px; flex: none; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: var(--faint); background: var(--soft); border: 1px solid var(--line); }
+.now-row.playing .now-ic { color: var(--green); background: rgba(70,224,138,.12); border-color: rgba(70,224,138,.35); }
+.now-info { min-width: 150px; }
+.now-alias { font-weight: 700; font-size: 13.5px; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.now-meta { font-size: 11px; color: var(--faint); margin-top: 2px; }
+.now-track { flex: 1; min-width: 0; }
+.now-title { font-weight: 600; font-size: 13px; margin-bottom: 3px; }
+.now-sub { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 11.5px; color: var(--muted); }
+.now-acts { display: flex; gap: 6px; flex: none; }
+
 .main-foot { padding: 14px 26px 22px; font-size: 11.5px; color: var(--faint); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; border-top: 1px solid var(--soft); margin-top: 8px; }
 .main-foot a { color: var(--muted); }
 .main-foot a:hover { color: var(--gold); }
@@ -467,6 +499,11 @@ select.inp option { background: var(--card); color: var(--text); }
   .toast-root { right: 10px; left: 10px; bottom: 10px; max-width: none; }
   .svc-row { flex-wrap: wrap; }
   .svc-nodes { justify-content: flex-start; }
+  .now-row { flex-wrap: wrap; }
+  .now-info { min-width: 0; flex: 1; }
+  .now-track { flex-basis: 100%; }
+  .tp-node { flex-wrap: wrap; }
+  .tp-nbadges { justify-content: flex-start; }
   .bom-row { grid-template-columns: 1fr 100px 34px; }
   .tiles.c4 { grid-template-columns: 1fr 1fr; }
 }

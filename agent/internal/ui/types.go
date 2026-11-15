@@ -69,6 +69,27 @@ type CatalogEntry struct {
 	Versions []string `json:"versions"`
 }
 
+// PlaybackState is the live ZAT now-playing snapshot for the local console.
+type PlaybackState struct {
+	Connected  bool   `json:"connected"`
+	State      string `json:"state"`
+	Playing    bool   `json:"playing"`
+	SessionID  string `json:"session_id,omitempty"`
+	TrackID    string `json:"track_id,omitempty"`
+	Title      string `json:"title,omitempty"`
+	Artist     string `json:"artist,omitempty"`
+	Album      string `json:"album,omitempty"`
+	DurationMS int    `json:"duration_ms,omitempty"`
+	Codec      string `json:"codec,omitempty"`
+	Rate       int    `json:"rate,omitempty"`
+	Channels   int    `json:"channels,omitempty"`
+	PTS        uint64 `json:"pts"`
+	BufferMS   int    `json:"buffer_ms"`
+	Volume     int    `json:"volume"`
+	ALSADevice string `json:"alsa_device,omitempty"`
+	Device     string `json:"device,omitempty"`
+}
+
 // Backend is everything the local UI needs from the agent core.
 type Backend interface {
 	Identity(ctx context.Context) Identity
@@ -91,4 +112,13 @@ type Backend interface {
 	OSCheck(ctx context.Context) serverclient.CommandResult
 	OSUpgrade(ctx context.Context, packages []string) serverclient.CommandResult
 	Netdiag(ctx context.Context) serverclient.CommandResult
+	// Playback returns the live ZAT now-playing state. The control methods drive
+	// the local render pipeline; they are playback controls and are NOT subject to
+	// the play-protection gate (PROTOCOL.md §11), only ALLOW_LOCAL + node secret.
+	Playback() PlaybackState
+	PlaybackPause() (bool, error)
+	PlaybackStop() error
+	PlaybackSeek(pts uint64) error
+	PlaybackVolume(v int) error
+	PlaybackDevice(dev string) error
 }

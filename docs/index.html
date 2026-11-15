@@ -3,27 +3,27 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Zephyr Music Server · Hi-Fi 机群唯一下发源 | Roon / HQPlayer 多终端听音室管理</title>
-<meta name="description" content="Zephyr Music Server 适用于多终端 Hi-Fi 机群、听音室与音响展厅：一台 x86 Linux 服务端统一编排 Roon / HQPlayer / 系统更新，覆盖 x86 小主机与树莓派 ARM 终端。签名制品、灰度下发、播放门控、席位授权、全量审计，纯 Go 单二进制、可离线内网运行。">
-<meta name="keywords" content="Hi-Fi 机群管理,Roon 多终端管理,HQPlayer NAA,听音室系统,音响展厅,多房间音频,树莓派 Hi-Fi 终端,x86 Linux 音乐服务器,灰度下发,播放门控,席位授权">
+<title>Zephyr Music Player · Hi-Fi 机群唯一下发源 | Roon / HQPlayer 多终端听音室管理</title>
+<meta name="description" content="Zephyr Music Player 适用于多终端 Hi-Fi 机群、听音室与音响展厅：一台 x86 Linux 服务端统一编排 Roon / HQPlayer / 系统更新，并以自有 ZAT 协议（RAAT-like）把 SMB 媒体库音频比特完美推送到终端出声。签名制品、灰度下发、播放门控、席位授权、全量审计；管理版纯 Go 单二进制、可离线内网运行，音频版 CGO + libFLAC + ALSA。">
+<meta name="keywords" content="Hi-Fi 机群管理,Roon 多终端管理,HQPlayer NAA,听音室系统,音响展厅,多房间音频,树莓派 Hi-Fi 终端,x86 Linux 音乐服务器,灰度下发,播放门控,席位授权,ZAT 音频协议,SMB 媒体库,FLAC 解码,ALSA 比特完美,RAAT-like 推流">
 <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
 <meta name="theme-color" content="#07090d">
 <link rel="canonical" href="https://zephyr.hk/">
 <link rel="alternate" hreflang="zh-CN" href="https://zephyr.hk/">
 <link rel="alternate" hreflang="x-default" href="https://zephyr.hk/">
 <meta property="og:type" content="website">
-<meta property="og:site_name" content="Zephyr Music Server">
+<meta property="og:site_name" content="Zephyr Music Player">
 <meta property="og:locale" content="zh_CN">
-<meta property="og:title" content="Zephyr Music Server · Hi-Fi 机群唯一下发源 | Roon / HQPlayer 多终端听音室管理">
-<meta property="og:description" content="适用于多终端 Hi-Fi 机群、听音室与音响展厅。一台 x86 Linux 服务端统一编排 Roon / HQPlayer / 系统更新，覆盖 x86 与树莓派 ARM 终端；签名制品、灰度下发、播放门控、席位授权、全量审计。">
+<meta property="og:title" content="Zephyr Music Player · Hi-Fi 机群唯一下发源 | Roon / HQPlayer 多终端听音室管理">
+<meta property="og:description" content="适用于多终端 Hi-Fi 机群、听音室与音响展厅。一台 x86 Linux 服务端统一编排 Roon / HQPlayer / 系统更新，并以自有 ZAT 协议把 SMB 媒体库音频比特完美推送到终端；签名制品、灰度下发、播放门控、席位授权、全量审计。">
 <meta property="og:url" content="https://zephyr.hk/">
 <meta property="og:image" content="https://zephyr.hk/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Zephyr Music Server — Hi-Fi 机群唯一下发源">
+<meta property="og:image:alt" content="Zephyr Music Player — Hi-Fi 机群唯一下发源">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Zephyr Music Server · Hi-Fi 机群唯一下发源">
-<meta name="twitter:description" content="适用于多终端 Hi-Fi 机群、听音室与音响展厅：Roon / HQPlayer 统一编排，签名制品、灰度下发、播放门控、席位授权。">
+<meta name="twitter:title" content="Zephyr Music Player · Hi-Fi 机群唯一下发源">
+<meta name="twitter:description" content="适用于多终端 Hi-Fi 机群、听音室与音响展厅：Roon / HQPlayer 统一编排 + 自有 ZAT 协议音频推流，签名制品、灰度下发、播放门控、席位授权。">
 <meta name="twitter:image" content="https://zephyr.hk/og.png">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="favicon.svg">
@@ -37,24 +37,24 @@
   "@graph": [
     {
       "@type": "WebSite",
-      "name": "Zephyr Music Server",
+      "name": "Zephyr Music Player",
       "url": "https://zephyr.hk/",
       "inLanguage": "zh-CN"
     },
     {
       "@type": "SoftwareApplication",
-      "name": "Zephyr Music Server",
-      "alternateName": "Zephyr Music Player 服务端",
+      "name": "Zephyr Music Player",
+      "alternateName": "Zephyr Music Server",
       "url": "https://zephyr.hk/",
       "image": "https://zephyr.hk/og.png",
       "screenshot": "https://zephyr.hk/og.png",
-      "description": "适用于多终端 Hi-Fi 机群、听音室与音响展厅的唯一下发源：一台 x86 Linux 服务端统一编排 Roon / HQPlayer / 系统更新，覆盖 x86 小主机与树莓派 ARM 终端；签名制品仓库、BOM 期望态、灰度下发、播放门控、席位授权与全量审计。",
+      "description": "适用于多终端 Hi-Fi 机群、听音室与音响展厅的唯一下发源与音频推送平台：一台 x86 Linux 服务端统一编排 Roon / HQPlayer / 系统更新，覆盖 x86 小主机与树莓派 ARM 终端；签名制品仓库、BOM 期望态、灰度下发、播放门控、席位授权与全量审计，并以自有 ZAT 协议（RAAT-like）把 SMB 媒体库音频比特完美推送到终端出声。",
       "applicationCategory": "MultimediaApplication",
       "applicationSubCategory": "Hi-Fi 机群管理与制品下发",
       "operatingSystem": "Linux x86_64 服务端；终端 amd64 / arm64 / armhf",
-      "softwareVersion": "0.2.0",
+      "softwareVersion": "0.3.0",
       "license": "https://opensource.org/licenses/MIT",
-      "downloadUrl": "https://github.com/Eyebright/zephyr-music-server/releases/tag/v0.2.0",
+      "downloadUrl": "https://github.com/Eyebright/zephyr-music-server/releases/tag/v0.3.0",
       "installUrl": "https://zephyr.hk/#install",
       "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
       "featureList": [
@@ -64,7 +64,9 @@
         "播放门控（服务端与终端双侧）",
         "席位授权与离线许可证验签",
         "全量审计与命令通道",
-        "纯 Go 单二进制、SQLite 单文件、可离线内网运行"
+        "SMB/CIFS 媒体库挂载与音频格式识别（WAV / FLAC）",
+        "自有 ZAT 协议（RAAT-like）推流、终端 ALSA 比特完美播放",
+        "管理版纯 Go 单二进制、SQLite 单文件、可离线内网运行；音频版 CGO + libFLAC + ALSA"
       ],
       "audience": {
         "@type": "Audience",
@@ -101,13 +103,13 @@
 
 <header class="nav" id="nav">
   <div class="nav-in">
-    <a class="brand" href="#top" aria-label="Zephyr Music Server 首页">
+    <a class="brand" href="#top" aria-label="Zephyr Music Player 首页">
       <span class="brand-mark" aria-hidden="true">
         <svg viewBox="0 0 32 32" width="30" height="30"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffd479"/><stop offset="1" stop-color="#f6a821"/></linearGradient></defs><rect x="1.2" y="1.2" width="29.6" height="29.6" rx="9" fill="none" stroke="url(#bm)" stroke-width="1.6"/><path d="M7 20.5V11.5M11.5 23V9M16 25.5V6.5M20.5 23V9M25 20.5V11.5" stroke="url(#bm)" stroke-width="2.1" stroke-linecap="round"/></svg>
       </span>
       <span class="brand-txt">
         <b>ZEPHYR</b>
-        <i>MUSIC SERVER</i>
+        <i>MUSIC PLAYER</i>
       </span>
     </a>
     <nav class="links" id="nav-links" aria-label="页面导航">
@@ -144,17 +146,18 @@
       <div class="eyebrow rv" style="--d:0ms"><span class="dot"></span>SINGLE SOURCE OF TRUTH · 唯一下发源</div>
       <h1 class="rv" style="--d:70ms">把整片机群<br><span class="grad-warm">收敛到一台服务端</span></h1>
       <p class="lede rv" style="--d:150ms">
-        Zephyr Music Server 用一台 x86 Linux 主机统一管理数十至数百台 Hi-Fi 终端：
-        签名制品仓库、BOM 期望态、灰度下发、播放门控、席位授权与全量审计。
-        <b>纯 Go，无 CGO，SQLite 单文件，控制台内嵌在二进制里。</b>
+        Zephyr Music Player 用一台 x86 Linux 主机统一管理数十至数百台 Hi-Fi 终端：
+        签名制品仓库、BOM 期望态、灰度下发、播放门控、席位授权与全量审计，并以自有 ZAT 协议
+        （RAAT-like）把 SMB 媒体库的音频比特完美推送到终端出声。
+        <b>管理版纯 Go、SQLite 单文件、控制台内嵌；音频版 CGO + libFLAC + ALSA。</b>
       </p>
       <div class="hero-cta rv" style="--d:230ms">
         <a class="btn gold" href="#install">立即部署<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M3 8h10M9 4l4 4-4 4"/></svg></a>
         <a class="btn line" href="#demo">操纵机群演示</a>
-        <a class="btn ghost" href="https://github.com/Eyebright/zephyr-music-server/releases/tag/v0.2.0" target="_blank" rel="noopener">v0.2.0 下载</a>
+        <a class="btn ghost" href="https://github.com/Eyebright/zephyr-music-server/releases/tag/v0.3.0" target="_blank" rel="noopener">v0.3.0 下载</a>
       </div>
       <ul class="hero-chips rv" style="--d:310ms">
-        <li><b>0</b>CGO 依赖</li>
+        <li><b>8</b>能力域</li>
         <li><b>3</b>终端架构</li>
         <li><b>126</b>冒烟断言</li>
         <li><b>MIT</b>开源许可</li>
@@ -189,7 +192,7 @@
     <header class="sec-h rv">
       <span class="kicker">SCENARIOS · 适用范围</span>
       <h2>它管哪些机器，<span class="grad-warm">适合谁用</span></h2>
-      <p>从一间听音室到一片多终端 Hi-Fi 机群——Zephyr Music Server 把 Roon / HQPlayer 播放终端、x86 小主机与树莓派 ARM 终端收敛到一台 x86 Linux 服务端，统一编排、签名下发、灰度推进。下面这些场景，都是它的主场。</p>
+      <p>从一间听音室到一片多终端 Hi-Fi 机群——Zephyr Music Player 把 Roon / HQPlayer 播放终端、x86 小主机与树莓派 ARM 终端收敛到一台 x86 Linux 服务端，统一编排、签名下发、灰度推进。下面这些场景，都是它的主场。</p>
     </header>
     <div class="bento">
       <article class="cell rv" data-hue="amber">
@@ -238,7 +241,7 @@
   <div class="wrap">
     <header class="sec-h rv">
       <span class="kicker">01 · CAPABILITIES</span>
-      <h2>七个域，<span class="grad-cool">全部真实实现</span></h2>
+      <h2>八个域，<span class="grad-cool">全部真实实现</span></h2>
       <p>不是路线图，不是占位。以下每一项都在仓库里有对应的 Go 代码、API 路由与端到端冒烟断言。</p>
     </header>
     <div class="bento">
@@ -289,6 +292,13 @@
         <h3>终端 Agent</h3>
         <p>注册、心跳、快照；任务执行覆盖 apt、dpkg、配置渲染与 systemd 单元白名单；DAC 仲裁执行与播放保护本地门禁；自带本地控制台（服务、系统更新、网络诊断、电源）。以 root 运行，但每个动作都被白名单与开关约束。</p>
         <div class="agent-tags"><span>amd64</span><span>arm64</span><span>armhf</span><span>systemd 白名单</span><span>ALLOW_POWER</span><span>ALLOW_LOCAL</span><span>节点密钥门禁</span></div>
+      </article>
+      <article class="cell wide rv" data-hue="cyan">
+        <div class="cell-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M2 12h3l3-7 4 15 3-10 2 4h5"/></svg></div>
+        <h3>音频解决方案 · 自有 ZAT 协议</h3>
+        <p>不止编排别人的播放终端——Zephyr 自己就是一条完整音频链路：内核挂载 SMB/CIFS 媒体库、按文件头识别 WAV / FLAC 等格式、服务端 libFLAC 解码，经自有 ZAT 协议（RAAT-like，采样时钟 PTS、节点密钥鉴权、授权门禁）推流到终端，ALSA 比特完美出声。终端「正在播放」控制台支持暂停、停止、seek、音量与输出设备切换，并与播放门控联动。真实出声需音频版（CGO）；管理版 ALSA 为占位。</p>
+        <ul class="ticks"><li>SMB/CIFS 内核挂载 + 媒体库扫描入库，凭据不上命令行</li><li>WAV / FLAC 格式识别，libFLAC 真实解码</li><li>ZAT 推流：采样时钟 PTS · 节点密钥鉴权 · 授权门禁</li><li>终端 ALSA 比特完美输出 + 正在播放控制台</li></ul>
+        <div class="agent-tags"><span>SMB / CIFS</span><span>WAV · FLAC</span><span>ZAT 协议</span><span>libFLAC</span><span>ALSA</span><span>比特完美</span><span>音频版 CGO</span></div>
       </article>
     </div>
   </div>
@@ -489,8 +499,8 @@
         <div class="code" data-copy>
           <button class="copy" type="button" aria-label="复制服务端安装命令">复制</button>
 <pre><code>sudo apt-get update &amp;&amp; sudo apt-get install -y gnupg
-tar -xzf zephyr-music-server-0.2.0.tar.gz
-cd zephyr-music-server-0.2.0/server
+tar -xzf zephyr-music-server-0.3.0.tar.gz
+cd zephyr-music-server-0.3.0/server
 sudo ./install.sh
 curl -s http://127.0.0.1:8080/api/v1/health</code></pre>
         </div>
@@ -515,7 +525,7 @@ curl -s http://127.0.0.1:8080/api/v1/health</code></pre>
     </div>
     <div class="dl-card rv">
       <div class="dl-h">
-        <h3>v0.2.0 发布资产</h3>
+        <h3>v0.3.0 发布资产</h3>
         <div class="arch-tabs" id="arch-tabs" role="tablist" aria-label="终端架构">
           <button role="tab" aria-selected="true" data-arch="amd64" class="on">amd64</button>
           <button role="tab" aria-selected="false" data-arch="arm64">arm64</button>
@@ -523,23 +533,47 @@ curl -s http://127.0.0.1:8080/api/v1/health</code></pre>
         </div>
       </div>
       <div class="dl-grid">
-        <a class="dl-item" href="https://github.com/Eyebright/zephyr-music-server/releases/download/v0.2.0/zephyr-music-server-0.2.0.tar.gz">
+        <a class="dl-item" href="https://github.com/Eyebright/zephyr-music-server/releases/download/v0.3.0/zephyr-music-server-0.3.0.tar.gz">
           <span class="dl-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 19h16"/></svg></span>
-          <span class="dl-txt"><b>zephyr-music-server-0.2.0.tar.gz</b><i>服务端 + 三架构 deb + 安装器 · 32.5 MiB</i></span>
+          <span class="dl-txt"><b>zephyr-music-server-0.3.0.tar.gz</b><i>服务端 + 三架构 deb + 安装器 · 32.5 MiB</i></span>
           <span class="dl-go">下载</span>
         </a>
-        <a class="dl-item" id="dl-deb" href="https://github.com/Eyebright/zephyr-music-server/releases/download/v0.2.0/hifihub-agent_0.2.0_amd64.deb">
+        <a class="dl-item" id="dl-deb" href="https://github.com/Eyebright/zephyr-music-server/releases/download/v0.3.0/hifihub-agent_0.3.0_amd64.deb">
           <span class="dl-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 9h6v6H9z"/></svg></span>
-          <span class="dl-txt"><b id="dl-deb-name">hifihub-agent_0.2.0_amd64.deb</b><i id="dl-deb-meta">x86_64 终端 Agent · 4.0 MiB</i></span>
+          <span class="dl-txt"><b id="dl-deb-name">hifihub-agent_0.3.0_amd64.deb</b><i id="dl-deb-meta">x86_64 终端 Agent · 4.0 MiB</i></span>
           <span class="dl-go">下载</span>
         </a>
-        <a class="dl-item" href="https://github.com/Eyebright/zephyr-music-server/releases/tag/v0.2.0" target="_blank" rel="noopener">
+        <a class="dl-item" href="https://github.com/Eyebright/zephyr-music-server/releases/tag/v0.3.0" target="_blank" rel="noopener">
           <span class="dl-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
           <span class="dl-txt"><b>Release 说明与校验和</b><i>CI 全绿 · SHA256SUMS 随包发布</i></span>
           <span class="dl-go">查看</span>
         </a>
       </div>
-      <div class="dl-note">离线安装：<code>sudo dpkg -i agent/hifihub-agent_0.2.0_&lt;arch&gt;.deb &amp;&amp; sudo apt-get -f install -y</code></div>
+      <div class="dl-note">离线安装：<code>sudo dpkg -i agent/hifihub-agent_0.3.0_&lt;arch&gt;.deb &amp;&amp; sudo apt-get -f install -y</code></div>
+    </div>
+    <div class="dl-card rv">
+      <div class="dl-h">
+        <h3>音频版 bundle · CGO + libFLAC + ALSA</h3>
+        <span class="pill cyan">真实解码 · 比特完美出声</span>
+      </div>
+      <div class="dl-grid">
+        <a class="dl-item" href="https://github.com/Eyebright/zephyr-music-server/releases/download/v0.3.0/zephyr-music-server-0.3.0-audio-amd64.tar.gz">
+          <span class="dl-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 19h16"/></svg></span>
+          <span class="dl-txt"><b>zephyr-music-server-0.3.0-audio-amd64.tar.gz</b><i>x86_64 服务端 libFLAC + 终端 ALSA deb + 安装器</i></span>
+          <span class="dl-go">下载</span>
+        </a>
+        <a class="dl-item" href="https://github.com/Eyebright/zephyr-music-server/releases/download/v0.3.0/zephyr-music-server-0.3.0-audio-arm64.tar.gz">
+          <span class="dl-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 19h16"/></svg></span>
+          <span class="dl-txt"><b>zephyr-music-server-0.3.0-audio-arm64.tar.gz</b><i>arm64 服务端 libFLAC + 终端 ALSA deb + 安装器</i></span>
+          <span class="dl-go">下载</span>
+        </a>
+        <a class="dl-item" href="https://github.com/Eyebright/zephyr-music-server/blob/main/INSTALL.md" target="_blank" rel="noopener">
+          <span class="dl-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
+          <span class="dl-txt"><b>音频版部署说明 §10.1</b><i>CGO 构建 · ALSA null 回环 · FLAC 往返验证</i></span>
+          <span class="dl-go">查看</span>
+        </a>
+      </div>
+      <div class="dl-note">音频版与管理版引擎名 / 配置 / systemd 单元一致，可互相替换。部署真实播放请用音频版 bundle（其 <code>server/dist/</code> 内为音频 deb，终端经 <code>/dl/</code> 自助安装即获得播放能力）；armhf 音频包由 <code>build-audio-cross.sh</code> 产出。</div>
     </div>
   </div>
 </section>
@@ -556,25 +590,27 @@ curl -s http://127.0.0.1:8080/api/v1/health</code></pre>
       <div class="spec-card rv">
         <h3>服务端</h3>
         <table class="spec-t">
-          <tr><th>语言</th><td>Go 1.27+ · <code>CGO_ENABLED=0</code></td></tr>
+          <tr><th>语言</th><td>Go 1.27+ · 管理版 <code>CGO_ENABLED=0</code></td></tr>
           <tr><th>存储</th><td>SQLite 单文件（modernc.org/sqlite，纯 Go）</td></tr>
           <tr><th>控制台</th><td><code>go:embed</code> 内嵌 SPA，随二进制分发</td></tr>
           <tr><th>目标</th><td>x86_64 Linux + systemd（另提供 arm64 二进制）</td></tr>
           <tr><th>监听</th><td><code>0.0.0.0:8080</code>，TLS 由前置反向代理负责</td></tr>
-          <tr><th>依赖</th><td>gnupg（验签）· 无其他系统依赖</td></tr>
+          <tr><th>依赖</th><td>gnupg（验签）· cifs-utils（SMB 挂载）</td></tr>
+          <tr><th>音频版</th><td>CGO + libFLAC 解码（另需 <code>libflac8</code> / <code>libflac12</code>）</td></tr>
           <tr><th>许可</th><td>MIT</td></tr>
         </table>
       </div>
       <div class="spec-card rv">
         <h3>终端 Agent</h3>
         <table class="spec-t">
-          <tr><th>模块</th><td>独立 Go module，仅标准库</td></tr>
+          <tr><th>模块</th><td>独立 Go module · 管理版仅标准库</td></tr>
           <tr><th>架构</th><td>amd64 · arm64 · armhf（GOARM=7）</td></tr>
           <tr><th>打包</th><td>内置 <code>debpack</code> 生成 deb，无需 dpkg-deb / 交叉 gcc</td></tr>
           <tr><th>权限</th><td>root，受 systemd 单元白名单约束</td></tr>
           <tr><th>开关</th><td><code>ALLOW_POWER</code> · <code>ALLOW_LOCAL</code></td></tr>
           <tr><th>本地控制台</th><td>端口 8080，变更需节点密钥</td></tr>
           <tr><th>心跳</th><td>默认 15s，离线阈值 = 3× 心跳</td></tr>
+          <tr><th>音频版</th><td>CGO + ALSA（<code>libasound2</code>）比特完美输出</td></tr>
         </table>
       </div>
       <div class="spec-card rv">
@@ -606,7 +642,9 @@ curl -s http://127.0.0.1:8080/api/v1/health</code></pre>
       <details class="rv"><summary>灰度发布怎么推进？<span class="fq-i" aria-hidden="true"></span></summary><div class="fq-b"><p>环的百分比必须合计 100，绑定的 BOM 版本必须已发布。当前环仍有未完成任务时推进一步会返回 409，避免把故障扩散到下一环。删除灰度不会撤销已下发的任务，且支持撤销恢复。</p></div></details>
       <details class="rv"><summary>控制台的鉴权在哪里做？<span class="fq-i" aria-hidden="true"></span></summary><div class="fq-b"><p>在反向代理层。控制台假定可信 LAN，生产部署请在 Nginx / Caddy 前配置 TLS 与 OIDC 或 basic-auth。产品内不做 mock 角色切换，因为那不是真鉴权。</p></div></details>
       <details class="rv"><summary>误删了 BOM 版本或终端怎么办？<span class="fq-i" aria-hidden="true"></span></summary><div class="fq-b"><p>BOM 保留完整版本历史，可回滚到任意已发布版本；回滚会生成一个新的已发布版本而不是覆盖历史。终端注销后支持撤销恢复。破坏性操作在控制台都带撤销入口。</p></div></details>
-      <details class="rv"><summary>支持哪些终端硬件？<span class="fq-i" aria-hidden="true"></span></summary><div class="fq-b"><p>安装器自动识别 amd64、arm64 与 armhf，覆盖 x86 小主机、树莓派 4/5（64 位）与树莓派 2/3（32 位）。Agent 仅依赖标准库，deb 由内置 debpack 生成，不需要目标机上有构建工具。</p></div></details>
+      <details class="rv"><summary>支持哪些终端硬件？<span class="fq-i" aria-hidden="true"></span></summary><div class="fq-b"><p>安装器自动识别 amd64、arm64 与 armhf，覆盖 x86 小主机、树莓派 4/5（64 位）与树莓派 2/3（32 位）。管理版 Agent 仅依赖标准库，deb 由内置 debpack 生成，不需要目标机上有构建工具。</p></div></details>
+      <details class="rv"><summary>音频播放是真实的吗？管理版和音频版有什么区别？<span class="fq-i" aria-hidden="true"></span></summary><div class="fq-b"><p>真实。管理版纯 Go（<code>CGO_ENABLED=0</code>），ALSA 输出为占位，适用于无音频硬件的编排场景；音频版经 CGO + libFLAC 解码、终端 ALSA 比特完美出声，走自有 ZAT 协议（RAAT-like）推流。CI 在 amd64 / arm64 原生 runner 上编译音频后端并跑 ALSA <code>null</code> 回环 + FLAC 解码往返（断言 PCM 逐比特一致）。两版引擎名、配置与 systemd 单元一致，可互相替换。</p></div></details>
+      <details class="rv"><summary>媒体库怎么接入？支持哪些音频格式？<span class="fq-i" aria-hidden="true"></span></summary><div class="fq-b"><p>服务端用内核 <code>mount.cifs</code> 挂载 SMB/CIFS 共享（需 <code>cifs-utils</code>），扫描媒体库并按文件头识别音频格式（WAV / FLAC 等），入库为可播放曲目。播放时服务端解码并经 ZAT 推流到已授权终端，终端 ALSA 输出。挂载凭据写入受限文件，绝不出现在命令行或 API 响应里。</p></div></details>
     </div>
   </div>
 </section>
@@ -619,7 +657,7 @@ curl -s http://127.0.0.1:8080/api/v1/health</code></pre>
       <h2>把机群交给<span class="grad-warm">一个下发源</span></h2>
       <p>下载发布包，装上服务端，每台终端一条命令入网。</p>
       <div class="cta-btns">
-        <a class="btn gold lg" href="https://github.com/Eyebright/zephyr-music-server/releases/download/v0.2.0/zephyr-music-server-0.2.0.tar.gz">下载 v0.2.0</a>
+        <a class="btn gold lg" href="https://github.com/Eyebright/zephyr-music-server/releases/download/v0.3.0/zephyr-music-server-0.3.0.tar.gz">下载 v0.3.0</a>
         <a class="btn line lg" href="https://github.com/Eyebright/zephyr-music-server" target="_blank" rel="noopener">查看源码</a>
         <a class="btn ghost lg" href="https://github.com/Eyebright/zephyr-music-server/blob/main/INSTALL.md" target="_blank" rel="noopener">部署文档</a>
       </div>
@@ -635,9 +673,9 @@ curl -s http://127.0.0.1:8080/api/v1/health</code></pre>
       <div class="foot-brand">
         <div class="brand">
           <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" width="28" height="28"><rect x="1.2" y="1.2" width="29.6" height="29.6" rx="9" fill="none" stroke="#f6a821" stroke-width="1.6"/><path d="M7 20.5V11.5M11.5 23V9M16 25.5V6.5M20.5 23V9M25 20.5V11.5" stroke="#ffd479" stroke-width="2.1" stroke-linecap="round"/></svg></span>
-          <span class="brand-txt"><b>ZEPHYR</b><i>MUSIC SERVER</i></span>
+          <span class="brand-txt"><b>ZEPHYR</b><i>MUSIC PLAYER</i></span>
         </div>
-        <p>面向家庭与小型商用 Hi-Fi 机群的唯一下发源音乐服务管理平台。</p>
+        <p>面向家庭与小型商用 Hi-Fi 机群的音乐服务与终端推送平台：唯一下发源 + 自有 ZAT 协议比特完美推流。</p>
         <div class="foot-eq" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
       </div>
       <div class="foot-col"><h4>产品</h4><a href="#scenarios">适用范围</a><a href="#features">能力</a><a href="#architecture">架构</a><a href="#security">安全</a><a href="#demo">交互演示</a></div>
@@ -645,8 +683,8 @@ curl -s http://127.0.0.1:8080/api/v1/health</code></pre>
       <div class="foot-col"><h4>联系</h4><a href="mailto:services@zephyr.hk">services@zephyr.hk</a><a href="https://www.zephyr.hk" target="_blank" rel="noopener">www.zephyr.hk</a><a href="https://github.com/Eyebright/zephyr-music-server" target="_blank" rel="noopener">GitHub 仓库</a><a href="https://github.com/Eyebright/zephyr-music-server/issues" target="_blank" rel="noopener">问题反馈</a></div>
     </div>
     <div class="foot-bar">
-      <span>© 2026 Zephyr Music Server contributors · MIT License</span>
-      <span class="foot-ver">v0.2.0 · 纯 Go · 无 CGO · SQLite 单文件</span>
+      <span>© 2026 Zephyr Music Player contributors · MIT License</span>
+      <span class="foot-ver">v0.3.0 · 管理版纯 Go · 音频版 CGO + libFLAC + ALSA · SQLite 单文件</span>
     </div>
   </div>
 </footer>

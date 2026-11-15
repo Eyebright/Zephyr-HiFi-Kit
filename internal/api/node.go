@@ -115,6 +115,8 @@ func (a *API) nodeSubresource(w http.ResponseWriter, r *http.Request) {
 		a.nodeNetDiag(w, r)
 	case "commands":
 		a.listCommands(w, r)
+	case "play":
+		a.playStatus(w, r)
 	default:
 		writeError(w, http.StatusNotFound, "未知的终端子资源")
 	}

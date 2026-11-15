@@ -1,6 +1,6 @@
-# Zephyr Music Server — 安装与部署说明
+# Zephyr Music Player — 安装与部署说明
 
-版本 0.2.0 · 服务端 x86_64 / aarch64 Linux · 终端 Zephyr Music Player（Debian / 树莓派）
+版本 0.3.0 · 服务端 x86_64 / aarch64 Linux · 终端 Zephyr Music Player（Debian / 树莓派）
 
 本包交付**已编译、已测试**的完整确认功能集：
 
@@ -23,7 +23,7 @@
 ## 1. 包内容
 
 ```
-zephyr-music-server-0.2.0/
+zephyr-music-server-0.3.0/
 ├── server/
 │   ├── hifihub-server-linux-amd64      # x86_64 服务端单文件（内嵌管理控制台）
 │   ├── hifihub-server-linux-arm64      # aarch64 服务端单文件
@@ -32,15 +32,15 @@ zephyr-music-server-0.2.0/
 │   ├── server.env                      # 配置模板（enforce 模式）
 │   ├── hifihub-server.service          # systemd 单元（非 root 运行 + 沙箱加固）
 │   └── dist/                           # 终端自助下载目录（由 /dl/ 白名单暴露）
-│       ├── hifihub-agent_0.2.0_amd64.deb
-│       ├── hifihub-agent_0.2.0_arm64.deb
-│       ├── hifihub-agent_0.2.0_armhf.deb
+│       ├── hifihub-agent_0.3.0_amd64.deb
+│       ├── hifihub-agent_0.3.0_arm64.deb
+│       ├── hifihub-agent_0.3.0_armhf.deb
 │       ├── agent-install.sh            # 终端一键安装脚本
 │       └── SHA256SUMS
 ├── agent/
-│   ├── hifihub-agent_0.2.0_amd64.deb   # x86_64 终端
-│   ├── hifihub-agent_0.2.0_arm64.deb   # 树莓派 3/4/5 64 位、ARM 服务器
-│   └── hifihub-agent_0.2.0_armhf.deb   # 树莓派 2/3/4 32 位（ARMv7）
+│   ├── hifihub-agent_0.3.0_amd64.deb   # x86_64 终端
+│   ├── hifihub-agent_0.3.0_arm64.deb   # 树莓派 3/4/5 64 位、ARM 服务器
+│   └── hifihub-agent_0.3.0_armhf.deb   # 树莓派 2/3/4 32 位（ARMv7）
 ├── INSTALL.md                          # 本文件
 └── SHA256SUMS                          # 全部文件校验和
 ```
@@ -51,7 +51,7 @@ zephyr-music-server-0.2.0/
 校验完整性：
 
 ```sh
-cd zephyr-music-server-0.2.0
+cd zephyr-music-server-0.3.0
 sha256sum -c SHA256SUMS
 ```
 
@@ -65,7 +65,7 @@ sha256sum -c SHA256SUMS
 | 磁盘 | 二进制 ~12MB + SQLite + 制品缓存 + dist（.deb 为主要占用） | 二进制 ~9MB / deb ~4MB + 状态 JSON |
 | 内存 | 典型 ~20–60MB；单元硬上限 `MemoryMax=512M` | 典型 ~15–40MB；硬上限 `MemoryMax=120M` |
 | CPU | 空闲近 0（15s 清扫定时器） | 定时器 15s/10s/10s/10min + /proc 扫描，<1% |
-| 依赖 | 纯 Go 无 CGO；**enforce 模式需 `gnupg`** | root + systemd + apt/dpkg + alsa-utils |
+| 依赖 | 纯 Go 无 CGO；**enforce 需 `gnupg`**；SMB 挂载需 `cifs-utils`；音频版另需 `libflac8` | root + systemd + apt/dpkg + alsa-utils；音频版另需 `libasound2` |
 | 权限 | 专用非 root 用户 `hifihub-server` | root（动作受白名单限制，NFR-S5） |
 
 单台 modest x86 盒子即可管理数百终端；吞吐瓶颈为单写 SQLite，对家庭/SMB 机群足够。
@@ -81,8 +81,8 @@ sha256sum -c SHA256SUMS
 sudo apt-get update && sudo apt-get install -y gnupg
 
 # 解压后进入 server/ 目录运行安装器
-tar -xzf zephyr-music-server-0.2.0.tar.gz
-cd zephyr-music-server-0.2.0/server
+tar -xzf zephyr-music-server-0.3.0.tar.gz
+cd zephyr-music-server-0.3.0/server
 sudo ./install.sh
 ```
 
@@ -240,7 +240,7 @@ curl -fsSL http://<服务端IP>:8080/dl/agent-install.sh | sudo bash -s -- \
   --server http://<服务端IP>:8080 --token <一次性令牌>
 ```
 
-脚本会：按 `uname -m` 下载对应架构 deb（`/dl/hifihub-agent_0.2.0_<arch>.deb`）→
+脚本会：按 `uname -m` 下载对应架构 deb（`/dl/hifihub-agent_0.3.0_<arch>.deb`）→
 `dpkg -i` + `apt-get -f install` → 写入 `/etc/hifihub/agent.env`（SERVER_URL / TOKEN /
 LOCAL_BIND，保留其它自定义键，0600 root 属主）→ 启用并启动 `hifihub-agent`。
 重复执行安全（幂等）。可选参数：
@@ -257,10 +257,10 @@ LOCAL_BIND，保留其它自定义键，0600 root 属主）→ 启用并启动 `
 
 ### 5.2 离线安装（无网络直连服务端时）
 
-把 `agent/hifihub-agent_0.2.0_<arch>.deb` 拷到终端：
+把 `agent/hifihub-agent_0.3.0_<arch>.deb` 拷到终端：
 
 ```sh
-sudo dpkg -i hifihub-agent_0.2.0_arm64.deb
+sudo dpkg -i hifihub-agent_0.3.0_arm64.deb
 sudo apt-get -f install -y        # 修复依赖（alsa-utils 等）
 ```
 
@@ -391,7 +391,7 @@ curl -s $S/nodes/<NodeID>/netdiag               # DNS/TCP/mDNS/SSDP/组播探测
 | 下发被拒 `license_required` / `not_authorized` / `seat_limit` | 先激活许可证（4.4），再授权终端；席位满时注销闲置终端 |
 | `/dl/agent-install.sh` 404 | `HIFIHUB_DIST_DIR` 指向的目录缺文件；重跑 `install.sh` 或手动把 `server/dist/*` 拷入 |
 | 终端不上线 | 检查 `agent.env` 的 `SERVER_URL`/`TOKEN`；令牌是否过期/已用；`journalctl -u hifihub-agent -f` |
-| 命令一直 `pending` | Agent 命令轮询未运行（版本过旧/服务未起）；`systemctl status hifihub-agent`，确认 deb 为 0.2.0 |
+| 命令一直 `pending` | Agent 命令轮询未运行（版本过旧/服务未起）；`systemctl status hifihub-agent`，确认 deb 为 0.3.0 |
 | 任务停在 `waiting_idle` | 终端正在播放（播放门控生效）；等待空闲、关闭该终端播放保护，或调小 `HIFIHUB_IDLE_TIMEOUT` |
 | 终端界面代理 502 | 终端离线或本地 8080 未监听；核对节点 IP 与 `HIFIHUB_AGENT_LISTEN_ADDR`，检查终端防火墙 |
 | 本地控制台写操作 403 | 直连终端页面缺少 `X-Node-Secret`（设计如此）；从服务端控制台「终端界面」操作，或收紧 `ALLOW_LOCAL` |
@@ -408,7 +408,7 @@ curl -s $S/nodes/<NodeID>/netdiag               # DNS/TCP/mDNS/SSDP/组播探测
 服务端（保留配置与数据，可安全重装）：
 
 ```sh
-cd zephyr-music-server-0.2.0/server
+cd zephyr-music-server-0.3.0/server
 sudo ./uninstall.sh
 ```
 
@@ -429,7 +429,7 @@ sudo apt-get purge hifihub-agent           # 同时清除 conffile
 
 ```sh
 sh scripts/build-release.sh                # 产出 release/ bundle + tarball + SHA256SUMS
-VERSION=0.2.0 sh scripts/build-release.sh  # 指定版本号
+VERSION=0.3.0 sh scripts/build-release.sh  # 指定版本号
 ```
 
 脚本交叉编译服务端（linux amd64/arm64）与终端（amd64/arm64/armhf），用内置 `debpack`
@@ -447,3 +447,44 @@ sh scripts/smoke-test.sh
 被拒绝（NFR-S2）、下载完整性、一次性令牌注册与复用拒绝、许可证激活与席位门控、BOM
 校验/发布、任务状态机与播放门控（`waiting_idle` → 空闲恢复 → `done`）、命令通道往返、
 审计与 `/dl/` 白名单，结束后自动清理。
+
+### 10.1 音频版构建（CGO + libFLAC + ALSA，真实播放）
+
+上面的默认包是**纯 Go 管理版**：服务端只解码 WAV（FLAC 走占位返回错误），终端 Agent
+的 ALSA 播放为占位（`SETUP` 被拒绝），适用于无音频硬件的开发/管理场景。**真实的 ZAT
+音频解决方案**（服务端 libFLAC 解码 → 推流 → 终端 ALSA 出声）需要 **CGO 音频版**，只能
+在 **Linux** 上构建（Windows/macOS 无 CGO 工具链，默认仍走纯 Go 交叉编译）。
+
+构建依赖：`pkg-config libflac-dev libasound2-dev flac`（Debian/Ubuntu）。
+
+本机单架构音频包（在 amd64 / arm64 Linux 主机上）：
+
+```sh
+sudo apt-get install -y pkg-config libflac-dev libasound2-dev flac
+AUDIO=1 sh scripts/build-release.sh   # 产出 release/…-audio-<arch>/ bundle + tarball
+# 或仅构建并跑音频测试（ALSA null 回环 + FLAC 往返），产物在 bin/audio/：
+TEST=1 sh scripts/build-audio.sh
+```
+
+ARM 交叉音频包（在 x86_64 Linux 上，multiarch；无 ARM runner 时使用）：
+
+```sh
+sudo dpkg --add-architecture arm64 && sudo dpkg --add-architecture armhf
+sudo apt-get update
+sudo apt-get install -y gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf \
+    libasound2-dev:arm64 libasound2-dev:armhf libflac-dev:arm64
+sh scripts/build-audio-cross.sh       # 产出 bin/audio-cross/ 的 arm64/armhf 音频 deb
+```
+
+运行库依赖：音频版服务端需 `libflac8`（Ubuntu 24.04+ 为 `libflac12`，安装器会检测并
+提示）；音频版终端 deb 的 `Depends` 已含 `libasound2 | libasound2t64`，`dpkg -i` +
+`apt-get -f install` 会自动补齐。
+
+CI（`.github/workflows/ci.yml` 的 `audio` 任务）在 **amd64 与 arm64 原生 runner** 上编译
+CGO 音频后端并执行真实音频路径验证：ALSA `null` 回环（无需声卡）+ FLAC 解码往返（断言
+PCM 逐比特一致）；打 tag 时把音频 bundle 与音频 deb 追加到 GitHub Release。armhf 音频
+包由 `build-audio-cross.sh` 在备好的主机上产出（GitHub 无 armhf 原生 runner）。
+
+> 音频版与纯 Go 版的引擎名、配置/数据目录、systemd 单元完全一致，可互相替换，区别仅
+> 在于是否链接 libFLAC/ALSA。部署真实播放请使用音频版 bundle（其 `server/dist/` 内为
+> 音频 deb，终端经 `/dl/` 自助安装即获得播放能力）。

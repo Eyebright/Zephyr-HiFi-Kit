@@ -23,14 +23,17 @@ import (
 	"hifihub/server/internal/commands"
 	"hifihub/server/internal/config"
 	"hifihub/server/internal/keys"
+	"hifihub/server/internal/library"
 	"hifihub/server/internal/license"
 	"hifihub/server/internal/metrics"
+	"hifihub/server/internal/mount"
 	"hifihub/server/internal/node"
 	"hifihub/server/internal/repo"
 	"hifihub/server/internal/rollouts"
 	"hifihub/server/internal/signature"
 	"hifihub/server/internal/store"
 	"hifihub/server/internal/task"
+	"hifihub/server/internal/zatserver"
 )
 
 // setupFull builds a full API over a temporary SQLite store and returns the
@@ -72,10 +75,12 @@ func setupFull(t *testing.T, sigMode string) (base, root, dir string) {
 	tasks := task.New(st, nodes, boms, cat, lic, cfg.PlayGateEnabled, cfg.IdleWaitTimeout)
 	rolls := rollouts.New(st, nodes, tasks, boms)
 	met := metrics.New(cfg.DBPath)
+	lib := library.New(st, mount.NewManager(mount.ExecRunner{}, filepath.Join(dir, "cifs")), "/mnt/zephyr")
+	zat := zatserver.New("127.0.0.1:0", nodes, lib, st)
 	a := New(cfg, Deps{
 		Cat: cat, Repo: rp, Boms: boms, Nodes: nodes, Tasks: tasks,
 		License: lic, Keys: ks, Audit: aud, Alerts: alts, Commands: cmds,
-		Rollouts: rolls, Metrics: met,
+		Rollouts: rolls, Metrics: met, Library: lib, ZAT: zat,
 	})
 	srv := httptest.NewServer(a.Handler())
 	t.Cleanup(srv.Close)

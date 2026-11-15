@@ -5,6 +5,11 @@ let catalog = [];
 let nodeSecret = "";
 let lastIdentity = null;
 let gateBlockMsg = "";
+let lastPlayback = null;
+let npDevices = [];
+let npSeeking = false;
+let npVoluming = false;
+let npDevSig = "";
 
 function esc(s) {
   return String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
@@ -38,7 +43,7 @@ function renderBanner() {
     if (id.allow_local === false) {
       msg = "本地控制已禁用（ALLOW_LOCAL=false）。请通过服务端控制台操作。";
     } else if (id.playing && id.play_protect) {
-      msg = "播放保护已启用：终端正在播放，安装/升级/电源等操作已被拦截。请先停止播放。";
+      msg = "播放保护已启用：终端正在播放，安装/升级/电源等操作已被拦截。请先在「正在播放」卡片中停止。";
     }
   }
   if (msg) {
@@ -168,6 +173,7 @@ function renderDAC(holders) {
 }
 
 function renderDevices(devs) {
+  npDevices = devs || [];
   const panel = $("dev-panel");
   if (!devs || !devs.length) { panel.hidden = true; return; }
   panel.hidden = false;
@@ -396,6 +402,148 @@ async function netdiag() {
 }
 $("btn-netdiag").addEventListener("click", netdiag);
 
+// --- 正在播放 (ZAT) ---
+function fmtTime(ms) {
+  ms = Math.max(0, Math.floor(ms || 0));
+  const s = Math.floor(ms / 1000);
+  return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+}
+
+function npStateLabel(st) {
+  switch (st) {
+    case "playing": return "播放中";
+    case "paused": return "已暂停";
+    case "ready": return "就绪";
+    case "stopped": return "已停止";
+    case "authenticated": return "已连接";
+    default: return "空闲";
+  }
+}
+
+function renderPlaybackDevices(p, blocked) {
+  const sel = $("np-device");
+  const cur = p.device || p.alsa_device || "default";
+  const sig = npDevices.map((d) => d.hw).join("|");
+  if (sig !== npDevSig) {
+    npDevSig = sig;
+    sel.innerHTML = `<option value="default">默认 (default)</option>` +
+      npDevices.map((d) => `<option value="${esc(d.hw)}">${esc(d.name)} · ${esc(d.hw)}</option>`).join("");
+  }
+  if (cur !== "default" && !Array.from(sel.options).some((o) => o.value === cur)) {
+    const o = document.createElement("option");
+    o.value = cur; o.textContent = cur;
+    sel.appendChild(o);
+  }
+  if (document.activeElement !== sel) sel.value = cur;
+  sel.disabled = blocked;
+}
+
+function renderPlayback(p) {
+  lastPlayback = p;
+  // Playback controls bypass play-protection (PROTOCOL.md §11); only ALLOW_LOCAL
+  // disables them. Recompute every control's disabled state each render so a
+  // prior gate never leaves a stale flag.
+  const blocked = !!(lastIdentity && lastIdentity.allow_local === false);
+  $("np-panel").classList.toggle("playing", !!p.playing);
+
+  const conn = $("np-conn");
+  conn.textContent = p.connected ? "ZAT 已连接" : "ZAT 未连接";
+  conn.className = "pill " + (p.connected ? "ok" : "bad");
+
+  const st = $("np-state");
+  st.textContent = npStateLabel(p.state);
+  st.className = "np-state " + (p.playing ? "on" : p.state === "paused" ? "pause" : "");
+
+  $("np-title").textContent = p.title || (p.connected ? "等待播放" : "未连接");
+  $("np-artist").textContent = p.artist || "";
+  $("np-album").textContent = p.album || "";
+  const fmt = [];
+  if (p.codec) fmt.push(String(p.codec).toUpperCase());
+  if (p.rate) fmt.push((p.rate / 1000).toFixed(1).replace(/\.0$/, "") + " kHz");
+  if (p.channels) fmt.push(p.channels === 2 ? "立体声" : p.channels + " 声道");
+  $("np-format").textContent = fmt.join(" · ");
+
+  const rate = p.rate || 44100;
+  const posMS = p.pts ? (p.pts / rate) * 1000 : 0;
+  const durMS = p.duration_ms || 0;
+  const seek = $("np-seek");
+  if (!npSeeking) {
+    seek.max = durMS > 0 ? Math.round(durMS) : Math.max(Math.round(posMS), 1);
+    seek.value = Math.min(Math.round(posMS), Number(seek.max));
+    seek.disabled = blocked || !p.connected || durMS <= 0;
+  }
+  $("np-pos").textContent = fmtTime(posMS);
+  $("np-dur").textContent = durMS > 0 ? fmtTime(durMS) : "--:--";
+
+  $("np-buffer").style.width = Math.max(0, Math.min(100, (p.buffer_ms || 0) / 5)) + "%";
+  $("np-buffer-ms").textContent = (p.buffer_ms || 0) + " ms";
+
+  const volVal = p.volume == null ? 100 : p.volume;
+  const vol = $("np-volume");
+  if (!npVoluming) vol.value = volVal;
+  vol.disabled = blocked;
+  $("np-volume-val").textContent = volVal + "%";
+
+  const active = p.state === "playing" || p.state === "paused";
+  const pauseBtn = $("np-pause");
+  pauseBtn.textContent = p.state === "paused" ? "继续" : "暂停";
+  pauseBtn.disabled = blocked || !p.connected || !active;
+  $("np-stop").disabled = blocked || !p.connected || !(active || p.state === "ready");
+
+  renderPlaybackDevices(p, blocked);
+}
+
+async function loadPlayback() {
+  try { renderPlayback(await api("local/api/playback")); }
+  catch (e) { /* keep last good render; transient errors stay quiet */ }
+}
+
+async function npPost(path, body, okMsg) {
+  try {
+    const r = await api("local/api/playback/" + path, "POST", body);
+    gateBlockMsg = "";
+    if (okMsg) toast(okMsg, "ok");
+    loadPlayback();
+    return r;
+  } catch (e) {
+    if (e.status === 403) { gateBlockMsg = e.message; renderBanner(); }
+    toast(e.message, "err");
+    loadPlayback();
+    return null;
+  }
+}
+
+$("np-pause").addEventListener("click", async () => {
+  const r = await npPost("pause");
+  if (r) toast(r.paused ? "已暂停" : "继续播放", "ok");
+});
+$("np-stop").addEventListener("click", () => npPost("stop", undefined, "已停止"));
+
+const npSeek = $("np-seek");
+npSeek.addEventListener("input", () => {
+  npSeeking = true;
+  $("np-pos").textContent = fmtTime(parseInt(npSeek.value, 10));
+});
+npSeek.addEventListener("change", () => {
+  npSeeking = false;
+  const rate = (lastPlayback && lastPlayback.rate) || 44100;
+  npPost("seek", { pts: Math.round((parseInt(npSeek.value, 10) / 1000) * rate) });
+});
+
+const npVol = $("np-volume");
+npVol.addEventListener("input", () => {
+  npVoluming = true;
+  $("np-volume-val").textContent = npVol.value + "%";
+});
+npVol.addEventListener("change", () => {
+  npVoluming = false;
+  npPost("volume", { volume: parseInt(npVol.value, 10) });
+});
+
+$("np-device").addEventListener("change", (ev) => {
+  npPost("device", { device: ev.target.value }, "输出设备已设置（下次播放生效）");
+});
+
 async function loadSecret() {
   try {
     const r = await api("local/api/secret");
@@ -408,4 +556,6 @@ async function loadSecret() {
 
 loadSecret();
 loadStatus();
+loadPlayback();
 setInterval(loadStatus, 3000);
+setInterval(loadPlayback, 1000);

@@ -69,6 +69,8 @@ func main() {
 			log.Printf("commands: %v", err)
 		}
 	})
+	// ZAT sink: maintain the outbound audio connection (reconnects automatically).
+	go c.RunZAT(ctx)
 
 	<-ctx.Done()
 	log.Printf("shutting down")

@@ -22,8 +22,10 @@ import (
 	"hifihub/server/internal/config"
 	"hifihub/server/internal/domain"
 	"hifihub/server/internal/keys"
+	"hifihub/server/internal/library"
 	"hifihub/server/internal/license"
 	"hifihub/server/internal/metrics"
+	"hifihub/server/internal/mount"
 	"hifihub/server/internal/node"
 	"hifihub/server/internal/repo"
 	"hifihub/server/internal/rollouts"
@@ -31,6 +33,7 @@ import (
 	"hifihub/server/internal/store"
 	"hifihub/server/internal/task"
 	"hifihub/server/internal/web"
+	"hifihub/server/internal/zatserver"
 )
 
 func main() {
@@ -63,10 +66,25 @@ func main() {
 	tasks := task.New(st, nodes, boms, cat, lic, cfg.PlayGateEnabled, cfg.IdleWaitTimeout)
 	rolls := rollouts.New(st, nodes, tasks, boms)
 	met := metrics.New(cfg.DBPath)
+
+	// Media library (SMB mounts + scanned tracks) and the ZAT push-playback
+	// server: the Roon-like core of Zephyr Music Player.
+	if err := os.MkdirAll(cfg.MountDir, 0o755); err != nil {
+		logger.Error("create mount dir", "err", err)
+		os.Exit(1)
+	}
+	if err := os.MkdirAll(cfg.MountCredDir, 0o700); err != nil {
+		logger.Error("create mount cred dir", "err", err)
+		os.Exit(1)
+	}
+	mntMgr := mount.NewManager(mount.ExecRunner{}, cfg.MountCredDir)
+	lib := library.New(st, mntMgr, cfg.MountDir)
+	zat := zatserver.New(cfg.ZATAddr, nodes, lib, st)
+
 	a := api.New(cfg, api.Deps{
 		Cat: cat, Repo: rp, Boms: boms, Nodes: nodes, Tasks: tasks,
 		License: lic, Keys: ks, Audit: aud, Alerts: alts, Commands: cmds,
-		Rollouts: rolls, Metrics: met,
+		Rollouts: rolls, Metrics: met, Library: lib, ZAT: zat,
 	})
 
 	// Root mux: REST API under /api/v1/, agent distribution files under /dl/,
@@ -87,6 +105,13 @@ func main() {
 	defer stop()
 
 	go backgroundLoop(ctx, nodes, tasks, alts)
+
+	go func() {
+		logger.Info("zat server listening", "addr", cfg.ZATAddr)
+		if err := zat.ListenAndServe(ctx); err != nil {
+			logger.Error("zat server", "err", err)
+		}
+	}()
 
 	go func() {
 		logger.Info("hifihub-server listening",

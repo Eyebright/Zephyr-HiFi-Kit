@@ -55,6 +55,15 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /local/api/os/check", s.osCheck)
 	s.mux.HandleFunc("POST /local/api/os/upgrade", s.osUpgrade)
 	s.mux.HandleFunc("POST /local/api/netdiag", s.netdiag)
+
+	// ZAT playback: read is open; controls are gated by ALLOW_LOCAL + secret but
+	// NOT play-protection (you must be able to stop/pause while playing).
+	s.mux.HandleFunc("GET /local/api/playback", s.playback)
+	s.mux.HandleFunc("POST /local/api/playback/pause", s.playbackPause)
+	s.mux.HandleFunc("POST /local/api/playback/stop", s.playbackStop)
+	s.mux.HandleFunc("POST /local/api/playback/volume", s.playbackVolume)
+	s.mux.HandleFunc("POST /local/api/playback/seek", s.playbackSeek)
+	s.mux.HandleFunc("POST /local/api/playback/device", s.playbackDevice)
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -77,6 +86,20 @@ func ctx(r *http.Request) context.Context {
 // GET routes are never gated; power is additionally gated by ALLOW_POWER in the
 // backend. An empty stored secret (pre-registration) skips the secret check.
 func (s *Server) gate(w http.ResponseWriter, r *http.Request) bool {
+	if !s.gateBase(w, r) {
+		return false
+	}
+	g := s.backend.GateState()
+	if g.Playing && g.PlayProtect {
+		writeErr(w, http.StatusForbidden, "FR-3.10：终端正在播放，请先停止播放再执行此操作。")
+		return false
+	}
+	return true
+}
+
+// gateBase enforces ALLOW_LOCAL and the node secret, without play-protection.
+// Playback controls use this so stop/pause remain available during playback.
+func (s *Server) gateBase(w http.ResponseWriter, r *http.Request) bool {
 	g := s.backend.GateState()
 	if !g.AllowLocal {
 		writeErr(w, http.StatusForbidden, "本地控制已禁用（ALLOW_LOCAL=false），请通过服务端控制台操作。")
@@ -84,10 +107,6 @@ func (s *Server) gate(w http.ResponseWriter, r *http.Request) bool {
 	}
 	if g.Secret != "" && r.Header.Get("X-Node-Secret") != g.Secret {
 		writeErr(w, http.StatusForbidden, "缺少或错误的节点密钥（X-Node-Secret），无法执行本地操作。")
-		return false
-	}
-	if g.Playing && g.PlayProtect {
-		writeErr(w, http.StatusForbidden, "FR-3.10：终端正在播放，请先停止播放再执行此操作。")
 		return false
 	}
 	return true
@@ -249,4 +268,76 @@ func (s *Server) secret(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"secret": s.backend.Secret()})
+}
+
+func (s *Server) playback(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, s.backend.Playback())
+}
+
+func (s *Server) playbackPause(w http.ResponseWriter, r *http.Request) {
+	if !s.gateBase(w, r) {
+		return
+	}
+	paused, err := s.backend.PlaybackPause()
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "paused": paused})
+}
+
+func (s *Server) playbackStop(w http.ResponseWriter, r *http.Request) {
+	if !s.gateBase(w, r) {
+		return
+	}
+	if err := s.backend.PlaybackStop(); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (s *Server) playbackVolume(w http.ResponseWriter, r *http.Request) {
+	if !s.gateBase(w, r) {
+		return
+	}
+	var b struct {
+		Volume int `json:"volume"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&b)
+	if err := s.backend.PlaybackVolume(b.Volume); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "volume": b.Volume})
+}
+
+func (s *Server) playbackSeek(w http.ResponseWriter, r *http.Request) {
+	if !s.gateBase(w, r) {
+		return
+	}
+	var b struct {
+		PTS uint64 `json:"pts"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&b)
+	if err := s.backend.PlaybackSeek(b.PTS); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "pts": b.PTS})
+}
+
+func (s *Server) playbackDevice(w http.ResponseWriter, r *http.Request) {
+	if !s.gateBase(w, r) {
+		return
+	}
+	var b struct {
+		Device string `json:"device"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&b)
+	if err := s.backend.PlaybackDevice(b.Device); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "device": b.Device})
 }

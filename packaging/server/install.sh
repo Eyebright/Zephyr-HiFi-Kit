@@ -1,5 +1,5 @@
 #!/bin/sh
-# Zephyr Music Server installer — x86_64 / aarch64 Linux with systemd.
+# Zephyr Music Player installer — x86_64 / aarch64 Linux with systemd.
 # Installs the single-file binary, a hardened systemd unit, an editable
 # conffile and the GPG trust-root home used by enforce-mode verification.
 set -eu
@@ -33,6 +33,11 @@ if ! command -v gpg >/dev/null 2>&1; then
   log "      安装：apt-get install -y gnupg   （或 dnf install -y gnupg2）"
 fi
 
+if ! command -v mount.cifs >/dev/null 2>&1; then
+  log "警告：未找到 mount.cifs。SMB/CIFS 媒体库挂载依赖 cifs-utils。"
+  log "      安装：apt-get install -y cifs-utils   （或 dnf install -y cifs-utils）"
+fi
+
 # --- dedicated unprivileged service user ---
 if ! id "$SVC_USER" >/dev/null 2>&1; then
   NOLOGIN=$(command -v nologin || echo /usr/sbin/nologin)
@@ -43,6 +48,12 @@ fi
 # --- binary ---
 log "安装二进制 -> $BIN_DST"
 install -m 0755 "$BIN" "$BIN_DST"
+
+# --- audio runtime library (only the CGO server links libFLAC for FLAC decode) ---
+if command -v ldd >/dev/null 2>&1 && ldd "$BIN_DST" 2>/dev/null | grep -qi 'libFLAC.*not found'; then
+  log "警告：音频服务端需要 libFLAC 运行库，当前缺失，FLAC 解码将无法启动。"
+  log "      安装：apt-get install -y libflac8   （Ubuntu 24.04+ 为 libflac12）"
+fi
 
 # --- conffile (preserve any existing edits) ---
 mkdir -p "$CONF_DIR"

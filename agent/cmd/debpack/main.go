@@ -75,8 +75,10 @@ func bakeVersion(script []byte, version string) []byte {
 }
 
 // buildDeb assembles the full .deb ar archive from its constituent parts.
-// installSh must already have its @VERSION@ placeholder substituted.
-func buildDeb(agentBin, unit, env, postinst, prerm, installSh []byte, version, arch string) ([]byte, error) {
+// installSh must already have its @VERSION@ placeholder substituted. When audio
+// is true the package is the CGO ZAT sink: it links libasound at runtime, so the
+// ALSA shared library is added to Depends (the t64 alternate covers Ubuntu 24.04+).
+func buildDeb(agentBin, unit, env, postinst, prerm, installSh []byte, version, arch string, audio bool) ([]byte, error) {
 	dataTar, err := buildTar([]entry{
 		{"./usr/bin/hifihub-agent", agentBin, 0o755},
 		{"./lib/systemd/system/hifihub-agent.service", unit, 0o644},
@@ -87,19 +89,31 @@ func buildDeb(agentBin, unit, env, postinst, prerm, installSh []byte, version, a
 		return nil, fmt.Errorf("data tar: %w", err)
 	}
 
+	depends := "systemd, apt, dpkg, alsa-utils"
+	shortDesc := "HiFiHub terminal agent and local web console"
+	longDesc := ` Local console to install, enable, disable and uninstall server-provided
+ audio services (RoonBridge, NAA, AirPlay, QPlay), monitor terminal
+ performance, and reboot or shutdown. Applications are distributed solely
+ by the HiFiHub management server.`
+	if audio {
+		depends += ", libasound2 | libasound2t64"
+		shortDesc = "HiFiHub terminal agent with ZAT audio playback"
+		longDesc = ` Terminal agent with the ZAT audio sink: receives PCM pushed by the
+ music server and renders it bit-perfect through ALSA, plus the local web
+ console for service management, terminal monitoring and power control.
+ Requires the CGO audio build (Linux + libasound).`
+	}
+
 	control := fmt.Sprintf(`Package: hifihub-agent
 Version: %s
 Architecture: %s
 Maintainer: HiFiHub <hifihub@localhost>
-Depends: systemd, apt, dpkg, alsa-utils
+Depends: %s
 Section: sound
 Priority: optional
-Description: HiFiHub terminal agent and local web console
- Local console to install, enable, disable and uninstall server-provided
- audio services (RoonBridge, NAA, AirPlay, QPlay), monitor terminal
- performance, and reboot or shutdown. Applications are distributed solely
- by the HiFiHub management server.
-`, version, arch)
+Description: %s
+%s
+`, version, arch, depends, shortDesc, longDesc)
 
 	controlTar, err := buildTar([]entry{
 		{"./control", []byte(control), 0o644},
@@ -125,6 +139,7 @@ func main() {
 	version := flag.String("version", "0.1.0", "package version")
 	out := flag.String("out", "", "output .deb path")
 	pkgdir := flag.String("pkgdir", "packaging", "directory with unit/env/postinst/prerm/install.sh")
+	audio := flag.Bool("audio", false, "CGO ZAT audio build: add libasound runtime dependency")
 	flag.Parse()
 	if *bin == "" || *out == "" {
 		fmt.Fprintln(os.Stderr, "debpack: -bin and -out are required")
@@ -139,7 +154,7 @@ func main() {
 		readFile(filepath.Join(*pkgdir, "postinst")),
 		readFile(filepath.Join(*pkgdir, "prerm")),
 		installSh,
-		*version, *arch,
+		*version, *arch, *audio,
 	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "debpack: %v\n", err)

@@ -503,6 +503,17 @@ func (s *Service) SetAuthorized(nodeID string, authorized bool) error {
 	return affected(res, err)
 }
 
+// SetPlaying records live playback state for a node: the playing flag, active
+// protocol, DAC-holder PID and a refreshed heartbeat. The ZAT server calls this
+// when a terminal starts/stops a stream so the play gate (FR-3.10) and console
+// reflect reality without waiting for the agent's next heartbeat.
+func (s *Service) SetPlaying(nodeID string, playing bool, proto string, dacPID int) error {
+	res, err := s.db.Exec(`UPDATE nodes SET playing=?,active_proto=?,dac_holder_pid=?,last_seen=?,status=?
+		WHERE node_id=?`,
+		boolInt(playing), proto, dacPID, time.Now().Unix(), domain.NodeOnline, nodeID)
+	return affected(res, err)
+}
+
 // AuthorizedCount returns the number of currently authorized nodes (seats used).
 func (s *Service) AuthorizedCount() (int, error) {
 	var c int

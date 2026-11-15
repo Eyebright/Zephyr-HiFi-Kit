@@ -29,6 +29,13 @@ type Config struct {
 	// is_playing=false before any service-affecting step.
 	PlayGateEnabled bool
 	IdleWaitTimeout time.Duration
+
+	// ZATAddr is the Zephyr Audio Transport listen address terminals dial into.
+	ZATAddr string
+	// MountDir is the parent directory for SMB/CIFS media-library mount points.
+	MountDir string
+	// MountCredDir holds transient 0600 CIFS credential files (root-owned).
+	MountCredDir string
 }
 
 // Load reads configuration from the environment, applying defaults.
@@ -47,6 +54,9 @@ func Load() Config {
 	c.ArtifactsDir = env("HIFIHUB_ARTIFACTS_DIR", c.DataDir+"/artifacts")
 	c.DBPath = env("HIFIHUB_DB_PATH", c.DataDir+"/hifihub.db")
 	c.DistDir = env("HIFIHUB_DIST_DIR", "/var/lib/hifihub-server/dist")
+	c.ZATAddr = env("HIFIHUB_ZAT_ADDR", "0.0.0.0:7800")
+	c.MountDir = env("HIFIHUB_MOUNT_DIR", "/mnt/zephyr")
+	c.MountCredDir = env("HIFIHUB_MOUNT_CRED_DIR", c.DataDir+"/cifs")
 	c.OfflineAfter = 3 * c.HeartbeatInterval
 	return c
 }

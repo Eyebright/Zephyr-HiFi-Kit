@@ -6,6 +6,7 @@ package config
 import (
 	"bufio"
 	"net"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -15,6 +16,7 @@ import (
 // Config holds all runtime settings for the terminal agent.
 type Config struct {
 	ServerURL    string        // e.g. http://192.168.1.10:8080
+	ZATAddr      string        // server ZAT source TCP addr (default: ServerURL host:7800)
 	Token        string        // one-time registration token (first boot only)
 	NodeID       string        // persisted after successful registration
 	Alias        string        // human-friendly terminal name
@@ -43,7 +45,7 @@ func Default() Config {
 		CommandPoll:  10 * time.Second,
 		AllowPower:   true,
 		AllowLocal:   true,
-		AgentVersion: "0.1.0",
+		AgentVersion: "0.3.0",
 	}
 }
 
@@ -85,6 +87,16 @@ func Load() Config {
 	if c.ListenAddr == "" {
 		c.ListenAddr = net.JoinHostPort(c.LocalBind, "8080")
 	}
+	// Derive the ZAT source address from the server URL host unless set explicitly.
+	if c.ZATAddr == "" {
+		host := c.ServerURL
+		if u, err := url.Parse(c.ServerURL); err == nil && u.Host != "" {
+			host = u.Hostname()
+		}
+		if host != "" {
+			c.ZATAddr = net.JoinHostPort(host, "7800")
+		}
+	}
 	return c
 }
 
@@ -92,6 +104,8 @@ func apply(c *Config, key, val string) {
 	switch strings.ToUpper(key) {
 	case "SERVER_URL":
 		c.ServerURL = strings.TrimRight(val, "/")
+	case "ZAT_ADDR":
+		c.ZATAddr = val
 	case "TOKEN":
 		c.Token = val
 	case "NODE_ID":
