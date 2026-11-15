@@ -50,11 +50,21 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            release/zephyr-music-server-*.tar.gz \
-            release/zephyr-music-server-*/agent/*.deb \
-            --title "Zephyr Music Player $GITHUB_REF_NAME" \
-            --generate-notes
+          # Idempotent: re-pointing an existing tag refreshes its assets in place
+          # instead of failing on "release already exists" (which would also block
+          # the audio job that needs this one).
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" \
+              release/zephyr-music-server-*.tar.gz \
+              release/zephyr-music-server-*/agent/*.deb \
+              --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              release/zephyr-music-server-*.tar.gz \
+              release/zephyr-music-server-*/agent/*.deb \
+              --title "Zephyr Music Player $GITHUB_REF_NAME" \
+              --generate-notes
+          fi
 
       - name: Upload bundle artifact (non-tag builds)
         if: github.ref_type != 'tag'
