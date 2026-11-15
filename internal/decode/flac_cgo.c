@@ -26,7 +26,9 @@ static void zat_ecb(const FLAC__StreamDecoder *d,
 
 FLAC__StreamDecoder *zatFLACNew(void) { return FLAC__stream_decoder_new(); }
 
-FLAC__StreamDecoderInitStatus zatFLACInitFILE(FLAC__StreamDecoder *d, FILE *f,
-                                              void *cd) {
-    return FLAC__stream_decoder_init_FILE(d, f, zat_wcb, zat_mcb, zat_ecb, cd);
+/* init_file (filename-based) opens and owns the FILE internally; libFLAC closes
+   it on finish/delete, so the Go side must never fopen/fclose it itself. */
+FLAC__StreamDecoderInitStatus zatFLACInitFile(FLAC__StreamDecoder *d,
+                                              const char *path, void *cd) {
+    return FLAC__stream_decoder_init_file(d, path, zat_wcb, zat_mcb, zat_ecb, cd);
 }

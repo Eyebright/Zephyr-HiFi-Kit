@@ -6,10 +6,9 @@ package decode
 #cgo pkg-config: flac
 #include <FLAC/stream_decoder.h>
 #include <stdlib.h>
-#include <stdio.h>
 
 extern FLAC__StreamDecoder* zatFLACNew(void);
-extern FLAC__StreamDecoderInitStatus zatFLACInitFILE(FLAC__StreamDecoder* d, FILE* f, void* cd);
+extern FLAC__StreamDecoderInitStatus zatFLACInitFile(FLAC__StreamDecoder* d, const char* path, void* cd);
 */
 import "C"
 
@@ -29,7 +28,6 @@ import (
 // run on the same goroutine (libFLAC is synchronous), so no lock guards buf.
 type flacDecoder struct {
 	dec          *C.FLAC__StreamDecoder
-	file         *C.FILE
 	handle       uintptr
 	format       PCMFormat
 	totalSamples uint64
@@ -83,23 +81,16 @@ func openFLAC(path string, pr media.ProbeResult) (Decoder, error) {
 	}
 	cpath := C.CString(path)
 	defer C.free(unsafe.Pointer(cpath))
-	cmode := C.CString("rb")
-	defer C.free(unsafe.Pointer(cmode))
-	f := C.fopen(cpath, cmode)
-	if f == nil {
-		return nil, fmt.Errorf("decode: cannot open %s", path)
-	}
 	dec := C.zatFLACNew()
 	if dec == nil {
-		C.fclose(f)
 		return nil, errors.New("decode: FLAC__stream_decoder_new failed")
 	}
-	d := &flacDecoder{dec: dec, file: f, format: format, totalSamples: pr.TotalSamples}
+	d := &flacDecoder{dec: dec, format: format, totalSamples: pr.TotalSamples}
 	d.handle = registerFLAC(d)
-	if st := C.zatFLACInitFILE(dec, f, unsafe.Pointer(d.handle)); st != C.FLAC__STREAM_DECODER_INIT_STATUS_OK {
+	// init_file opens and owns the FILE; libFLAC closes it on finish/delete.
+	if st := C.zatFLACInitFile(dec, cpath, unsafe.Pointer(d.handle)); st != C.FLAC__STREAM_DECODER_INIT_STATUS_OK {
 		unregisterFLAC(d.handle)
 		C.FLAC__stream_decoder_delete(dec)
-		C.fclose(f)
 		return nil, fmt.Errorf("decode: FLAC init failed (%d)", int(st))
 	}
 	return d, nil
@@ -134,10 +125,6 @@ func (d *flacDecoder) Close() error {
 		C.FLAC__stream_decoder_finish(d.dec)
 		C.FLAC__stream_decoder_delete(d.dec)
 		d.dec = nil
-	}
-	if d.file != nil {
-		C.fclose(d.file)
-		d.file = nil
 	}
 	unregisterFLAC(d.handle)
 	return nil
