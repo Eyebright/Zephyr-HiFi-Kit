@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -196,6 +197,8 @@ func (s *Service) Mount(ctx context.Context, id string) (Mount, error) {
 	if err != nil {
 		return m, err
 	}
+	// Best-effort: mount.cifs needs this dir and surfaces the real error if absent.
+	_ = os.MkdirAll(m.Target, 0o755)
 	if err := s.mounts.Mount(ctx, m.spec()); err != nil {
 		s.setStatus(id, StatusError, err.Error(), 0)
 		return s.GetMount(id)
