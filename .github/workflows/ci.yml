@@ -12,6 +12,12 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Management bundle is pure-Go: the CGO libFLAC/ALSA audio backend is built
+    # and tested separately in the audio job. Without this, Linux defaults to
+    # CGO_ENABLED=1 and `go test ./...` fails on the decode/player cgo files
+    # (libflac-dev / libasound2-dev are not installed in this job).
+    env:
+      CGO_ENABLED: 0
     steps:
       - uses: actions/checkout@v4
 
