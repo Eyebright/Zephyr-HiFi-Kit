@@ -359,6 +359,16 @@ CREATE TABLE IF NOT EXISTS server_state (
   value TEXT NOT NULL DEFAULT ''
 );
 
+CREATE TABLE IF NOT EXISTS update_nodes (
+  node_id      TEXT PRIMARY KEY,
+  target       TEXT NOT NULL DEFAULT '',
+  state        TEXT NOT NULL DEFAULT 'pending',
+  attempts     INTEGER NOT NULL DEFAULT 0,
+  last_attempt INTEGER NOT NULL DEFAULT 0,
+  command_id   TEXT NOT NULL DEFAULT '',
+  detail       TEXT NOT NULL DEFAULT ''
+);
+
 CREATE TABLE IF NOT EXISTS mounts (
   id         TEXT PRIMARY KEY,
   host       TEXT NOT NULL,

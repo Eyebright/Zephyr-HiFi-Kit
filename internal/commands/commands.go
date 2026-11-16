@@ -30,7 +30,7 @@ var ErrPlaying = errors.New("FR-3.10：终端正在播放且开启了播放保�
 func (s *Service) Create(nodeID, typ string, params domain.CommandParams) (domain.Command, error) {
 	var c domain.Command
 	switch typ {
-	case domain.CommandOSCheck, domain.CommandOSUpgrade, domain.CommandNetdiag:
+	case domain.CommandOSCheck, domain.CommandOSUpgrade, domain.CommandNetdiag, domain.CommandAgentUpgrade:
 	default:
 		return c, fmt.Errorf("无效的命令类型：%s", typ)
 	}
@@ -42,7 +42,7 @@ func (s *Service) Create(nodeID, typ string, params domain.CommandParams) (domai
 	if err != nil {
 		return c, err
 	}
-	if typ == domain.CommandOSUpgrade && playing == 1 && protect == 1 {
+	if (typ == domain.CommandOSUpgrade || typ == domain.CommandAgentUpgrade) && playing == 1 && protect == 1 {
 		return c, ErrPlaying
 	}
 	c = domain.Command{

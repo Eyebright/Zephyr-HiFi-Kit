@@ -273,7 +273,8 @@
   /* ─────────── marquee ─────────── */
   var MQ = ["GPG 强制验签", "BOM 期望态", "灰度环推进", "播放门控 FR-3.10", "席位授权", "全量审计", "DAC 仲裁",
     "一次性注册令牌", "systemd 白名单", "mDNS / SSDP 诊断", "版本历史回滚", "CSV / JSON 导出", "命令通道", "信任根分工",
-    "SMB 媒体库", "ZAT 推流协议", "libFLAC 解码", "ALSA 比特完美", "音频格式识别", "正在播放控制台"];
+    "SMB 媒体库", "ZAT 推流协议", "libFLAC 解码", "ALSA 比特完美", "音频格式识别", "正在播放控制台",
+    "服务端自升级", "终端版本收敛", "SHA256 + GPG 校验", "原子置换重启", "失败退避重试"];
   var mq = $("#mq-track");
   if (mq) {
     var html = MQ.map(function (t) { return '<span class="mq-i"><b>' + t + "</b></span>"; }).join("");
@@ -1070,21 +1071,21 @@
     ta.remove();
   }
   var DEBS = {
-    amd64: ["hifihub-agent_0.3.0_amd64.deb", "x86_64 终端 Agent · 4.0 MiB"],
-    arm64: ["hifihub-agent_0.3.0_arm64.deb", "树莓派 4/5 · 64 位 · 3.6 MiB"],
-    armhf: ["hifihub-agent_0.3.0_armhf.deb", "树莓派 2/3 · 32 位 · 3.9 MiB"],
-    android: ["zephyr-terminal-0.3.0.apk", "安卓终端 · Android 8.0+ · arm64 / armv7"]
+    amd64: ["hifihub-agent_0.4.0_amd64.deb", "x86_64 终端 Agent · 4.0 MiB"],
+    arm64: ["hifihub-agent_0.4.0_arm64.deb", "树莓派 4/5 · 64 位 · 3.6 MiB"],
+    armhf: ["hifihub-agent_0.4.0_armhf.deb", "树莓派 2/3 · 32 位 · 3.9 MiB"],
+    android: ["zephyr-terminal-0.4.0.apk", "安卓终端 · Android 8.0+ · arm64 / armv7"]
   };
   var DL_NOTES = {
     android: "安卓安装：下载 APK → 允许「安装未知应用」→ 安装并启动「Zephyr 终端」→ 填服务端地址与一次性令牌（控制台「添加终端」向导架构选 Android）。",
-    linux: "离线安装：<code>sudo dpkg -i agent/hifihub-agent_0.3.0_&lt;arch&gt;.deb &amp;&amp; sudo apt-get -f install -y</code>"
+    linux: "离线安装：<code>sudo dpkg -i agent/hifihub-agent_0.4.0_&lt;arch&gt;.deb &amp;&amp; sudo apt-get -f install -y</code>"
   };
   $$("#arch-tabs button").forEach(function (b) {
     b.addEventListener("click", function () {
       $$("#arch-tabs button").forEach(function (x) { x.classList.remove("on"); x.setAttribute("aria-selected", "false"); });
       b.classList.add("on"); b.setAttribute("aria-selected", "true");
       var a = b.dataset.arch, d = DEBS[a], link = $("#dl-deb");
-      if (link) link.href = "https://github.com/Eyebright/zephyr-music-server/releases/download/v0.3.0/" + d[0];
+      if (link) link.href = "https://github.com/Eyebright/zephyr-music-server/releases/download/v0.4.0/" + d[0];
       var n = $("#dl-deb-name"), m = $("#dl-deb-meta");
       if (n) n.textContent = d[0]; if (m) m.textContent = d[1];
       var note = $("#dl-note"); if (note) note.innerHTML = (a === "android" ? DL_NOTES.android : DL_NOTES.linux);

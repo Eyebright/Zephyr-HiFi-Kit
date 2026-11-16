@@ -41,7 +41,7 @@ jobs:
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             VERSION="${GITHUB_REF_NAME#v}"
           else
-            VERSION="0.3.0"
+            VERSION="0.4.0"
           fi
           VERSION="$VERSION" sh scripts/build-release.sh
 
@@ -105,7 +105,7 @@ jobs:
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             VERSION="${GITHUB_REF_NAME#v}"
           else
-            VERSION="0.3.0"
+            VERSION="0.4.0"
           fi
           TEST=1 AUDIO=1 VERSION="$VERSION" sh scripts/build-release.sh
 
@@ -191,7 +191,7 @@ jobs:
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             VERSION="${GITHUB_REF_NAME#v}"
           else
-            VERSION="0.3.0"
+            VERSION="0.4.0"
           fi
           VERSION="$VERSION" sh scripts/build-android.sh
 

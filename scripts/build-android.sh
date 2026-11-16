@@ -17,7 +17,7 @@ set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$ROOT"
 
-VERSION="${VERSION:-0.3.0}"
+VERSION="${VERSION:-0.4.0}"
 ABIS="${ABIS:-arm64-v8a armeabi-v7a}"
 
 if [ -x "$HOME/sdk/go/bin/go" ]; then

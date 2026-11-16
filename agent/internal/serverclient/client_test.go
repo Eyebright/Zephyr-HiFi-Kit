@@ -97,3 +97,34 @@ func TestReportPhase(t *testing.T) {
 		t.Fatalf("phase: %v %+v", err, j)
 	}
 }
+
+func TestDownloadDist(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /dl/hifihub-agent_0.4.0_amd64.deb", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("agent-deb-bytes"))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	c := New(srv.URL)
+	dest := filepath.Join(t.TempDir(), "updates", "a.deb")
+	sum, err := c.DownloadDist(context.Background(), "/dl/hifihub-agent_0.4.0_amd64.deb", dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := sha256.Sum256([]byte("agent-deb-bytes"))
+	if sum != hex.EncodeToString(want[:]) {
+		t.Fatalf("hash=%s", sum)
+	}
+	if b, _ := os.ReadFile(dest); string(b) != "agent-deb-bytes" {
+		t.Fatalf("dest=%q", b)
+	}
+	if _, err := c.DownloadDist(context.Background(), "dl/relative.deb", dest); err == nil {
+		t.Fatal("relative path must be rejected")
+	}
+	if _, err := c.DownloadDist(context.Background(), "/dl/../secret", dest); err == nil {
+		t.Fatal("traversal path must be rejected")
+	}
+	if _, err := c.DownloadDist(context.Background(), "/dl/missing.deb", dest); err == nil {
+		t.Fatal("404 must surface as error")
+	}
+}

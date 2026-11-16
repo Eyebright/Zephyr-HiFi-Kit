@@ -318,9 +318,10 @@ const (
 
 // Command types for the server->agent channel (FR-6).
 const (
-	CommandOSCheck   = "os-check"
-	CommandOSUpgrade = "os-upgrade"
-	CommandNetdiag   = "netdiag"
+	CommandOSCheck      = "os-check"
+	CommandOSUpgrade    = "os-upgrade"
+	CommandNetdiag      = "netdiag"
+	CommandAgentUpgrade = "agent-upgrade"
 )
 
 // Command is a queued server->agent instruction and its eventual result.
@@ -340,6 +341,47 @@ type Command struct {
 // CommandParams carries optional command arguments.
 type CommandParams struct {
 	Packages []string `json:"packages,omitempty"`
+	// agent-upgrade: the exact signed-chain artifact the terminal must install.
+	Version string `json:"version,omitempty"`
+	Arch    string `json:"arch,omitempty"`
+	SHA256  string `json:"sha256,omitempty"`
+	URL     string `json:"url,omitempty"`
+}
+
+// ServerUpdateState is the persisted self-update status of the management
+// server: what it runs, what the feed offers, and where the apply pipeline is.
+type ServerUpdateState struct {
+	Current    string `json:"current"`
+	Latest     string `json:"latest,omitempty"`
+	Available  bool   `json:"available"`
+	State      string `json:"state"` // idle|checking|staged|applying|restarting|failed|offline
+	Detail     string `json:"detail,omitempty"`
+	CheckedAt  int64  `json:"checked_at,omitempty"`
+	StagedAt   int64  `json:"staged_at,omitempty"`
+	AutoApply  bool   `json:"auto_apply"`
+	FeedURL    string `json:"feed_url,omitempty"`
+	LastError  string `json:"last_error,omitempty"`
+	RestartReq bool   `json:"restart_required,omitempty"`
+}
+
+// FleetUpdatePolicy controls server-driven terminal convergence.
+type FleetUpdatePolicy struct {
+	Enabled     bool `json:"enabled"`
+	MaxParallel int  `json:"max_parallel"`
+	MaxAttempts int  `json:"max_attempts"`
+	RingPercent int  `json:"ring_percent"` // canary ring size as % of fleet
+}
+
+// NodeUpdateState tracks one terminal's convergence toward the server version.
+type NodeUpdateState struct {
+	NodeID      string `json:"node_id"`
+	Current     string `json:"current"`
+	Target      string `json:"target"`
+	State       string `json:"state"` // converged|pending|upgrading|waiting_idle|suspended|unsupported
+	Attempts    int    `json:"attempts"`
+	LastAttempt int64  `json:"last_attempt,omitempty"`
+	CommandID   string `json:"command_id,omitempty"`
+	Detail      string `json:"detail,omitempty"`
 }
 
 // OSPackage is one upgradable OS package reported by the agent.

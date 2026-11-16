@@ -70,6 +70,10 @@ func New(cfg config.Config) (*Core, error) {
 	// wraps its own 120s context. Playback gates read live DAC + cached policy.
 	cmdRun := systemctrl.ExecRunner{Timeout: 900 * time.Second}
 	c.cmdExec = commands.New(cmdRun, cfg.ServerURL, c.isPlaying, c.playProtectCached)
+	// agent-upgrade converges this terminal to the server's version: download the
+	// pinned deb from our own server, verify sha256, install detached, restart via
+	// the deb postinst. Idempotent by version so a post-restart re-poll won't loop.
+	c.cmdExec.SetUpgrade(arch, cfg.AgentVersion, cfg.DataDir, client.DownloadDist)
 	// ZAT sink: dials the server source, renders PCM, drives the play gate. The
 	// credential getter reads live state so registration is picked up on reconnect.
 	c.zat = zatclient.New(cfg.ZATAddr, cfg.AgentVersion,

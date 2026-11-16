@@ -27,6 +27,7 @@ import (
 	"hifihub/server/internal/repo"
 	"hifihub/server/internal/rollouts"
 	"hifihub/server/internal/task"
+	"hifihub/server/internal/update"
 	"hifihub/server/internal/zatserver"
 )
 
@@ -46,6 +47,7 @@ type Deps struct {
 	Metrics  *metrics.Collector
 	Library  *library.Service
 	ZAT      *zatserver.Server
+	Update   *update.Service
 }
 
 // API aggregates the services and the router.
@@ -65,6 +67,7 @@ type API struct {
 	met    *metrics.Collector
 	lib    *library.Service
 	zat    *zatserver.Server
+	upd    *update.Service
 	mux    *http.ServeMux
 }
 
@@ -73,7 +76,7 @@ func New(cfg config.Config, d Deps) *API {
 	a := &API{
 		cfg: cfg, cat: d.Cat, repo: d.Repo, boms: d.Boms, nodes: d.Nodes, tasks: d.Tasks,
 		lic: d.License, keys: d.Keys, aud: d.Audit, alerts: d.Alerts, cmds: d.Commands,
-		rolls: d.Rollouts, met: d.Metrics, lib: d.Library, zat: d.ZAT, mux: http.NewServeMux(),
+		rolls: d.Rollouts, met: d.Metrics, lib: d.Library, zat: d.ZAT, upd: d.Update, mux: http.NewServeMux(),
 	}
 	a.routes()
 	return a
@@ -176,6 +179,16 @@ func (a *API) routes() {
 	a.route("GET /api/v1/rollouts/{id}", a.getRollout)
 	a.route("POST /api/v1/rollouts/{id}/advance", a.advanceRollout)
 	a.route("DELETE /api/v1/rollouts/{id}", a.deleteRollout)
+
+	// Version convergence: server self-update + fleet auto-iteration.
+	a.route("GET /api/v1/update/status", a.updateStatus)
+	a.route("POST /api/v1/update/check", a.updateCheck)
+	a.route("POST /api/v1/update/apply", a.updateApply)
+	a.route("POST /api/v1/update/auto", a.updateAuto)
+	a.route("GET /api/v1/update/fleet", a.updateFleet)
+	a.route("POST /api/v1/update/fleet/policy", a.updateFleetPolicy)
+	a.route("POST /api/v1/update/fleet/converge", a.updateFleetConverge)
+	a.route("POST /api/v1/update/fleet/{id}/retry", a.updateFleetRetry)
 
 	// Media library: SMB mounts + scanned tracks (Zephyr Music Player).
 	a.route("GET /api/v1/mounts", a.listMounts)

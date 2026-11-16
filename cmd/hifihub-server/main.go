@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"syscall"
 	"time"
@@ -32,6 +33,7 @@ import (
 	"hifihub/server/internal/signature"
 	"hifihub/server/internal/store"
 	"hifihub/server/internal/task"
+	"hifihub/server/internal/update"
 	"hifihub/server/internal/web"
 	"hifihub/server/internal/zatserver"
 )
@@ -82,10 +84,34 @@ func main() {
 	lib := library.New(st, mntMgr, cfg.MountDir)
 	zat := zatserver.New(cfg.ZATAddr, nodes, lib, st)
 
+	// Version convergence: self-upgrade from the official release feed and poll
+	// terminals to this server's version. Restart swaps the running unit via
+	// systemd; without systemd the upgrade stages and waits for a manual restart.
+	var restart func() error
+	if _, err := exec.LookPath("systemctl"); err == nil {
+		restart = func() error {
+			return exec.Command("systemctl", "restart", "hifihub-server.service").Start()
+		}
+	}
+	upd := update.New(st, nodes, cmds, tasks, lic, verifier, update.NewFeed(cfg.UpdateFeedURL), update.Options{
+		Current:      metrics.Version,
+		FeedURL:      cfg.UpdateFeedURL,
+		SelfEnabled:  cfg.UpdateSelfEnabled,
+		AutoApply:    cfg.UpdateAutoApply,
+		FleetEnabled: cfg.UpdateFleetEnabled,
+		Interval:     cfg.UpdateInterval,
+		MaxParallel:  cfg.UpdateMaxParallel,
+		MaxAttempts:  cfg.UpdateMaxAttempts,
+		RingPercent:  cfg.UpdateRingPercent,
+		DistDir:      cfg.DistDir,
+		StageDir:     cfg.UpdateStageDir,
+		Restart:      restart,
+	})
+
 	a := api.New(cfg, api.Deps{
 		Cat: cat, Repo: rp, Boms: boms, Nodes: nodes, Tasks: tasks,
 		License: lic, Keys: ks, Audit: aud, Alerts: alts, Commands: cmds,
-		Rollouts: rolls, Metrics: met, Library: lib, ZAT: zat,
+		Rollouts: rolls, Metrics: met, Library: lib, ZAT: zat, Update: upd,
 	})
 
 	// Root mux: REST API under /api/v1/, agent distribution files under /dl/,
@@ -106,6 +132,7 @@ func main() {
 	defer stop()
 
 	go backgroundLoop(ctx, nodes, tasks, alts)
+	go updateLoop(ctx, upd, cfg.UpdateInterval)
 
 	go func() {
 		logger.Info("zat server listening", "addr", cfg.ZATAddr)
@@ -134,6 +161,26 @@ func main() {
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Error("shutdown", "err", err)
+	}
+}
+
+// updateLoop drives version convergence on its own cadence: one immediate pass
+// at boot, then every interval. Tick self-checks the feed (auto-applying when
+// enabled and idle) and iterates the fleet toward this server's version.
+func updateLoop(ctx context.Context, upd *update.Service, interval time.Duration) {
+	if interval <= 0 {
+		interval = 10 * time.Minute
+	}
+	upd.Tick(ctx)
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			upd.Tick(ctx)
+		}
 	}
 }
 

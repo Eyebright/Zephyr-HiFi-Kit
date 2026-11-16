@@ -357,7 +357,8 @@ const S = {
   nodeFilter: "all", nodeSort: { key: "alias", dir: 1 }, sel: new Set(),
   alertFilter: "open", auditFilter: "all",
   jobBom: "", jobSel: new Set(),
-  mounts: [], tracks: [], libMount: "", play: {}
+  mounts: [], tracks: [], libMount: "", play: {},
+  upd: { server: null, policy: null, fleet: null, disabled: false, busy: false }
 };
 const NAV = [
   { id: "overview", name: "总览", icon: "gauge" },
@@ -420,7 +421,10 @@ function setView(v) {
   setTimeout(() => el.classList.remove("view-enter"), 1000);
   refreshFor(v);
   if (v === "overview" || v === "nodes") poll("view:main", () => refreshFor(v, true), 4000);
-  else if (v === "deliver") poll("view:main", () => refreshDeliverLive(), 2000);
+  else if (v === "deliver") {
+    poll("view:main", () => refreshDeliverLive(), 2000);
+    poll("view:upd", () => refreshUpdateLive(), 4000);
+  }
   else if (v === "library") poll("view:main", () => refreshLibraryLive(), 3000);
 }
 
@@ -691,7 +695,7 @@ async function deleteNodes(ids) {
 
 /* ================= ADD-NODE WIZARD ================= */
 const WZ = { step: 1, alias: "", group: "", arch: "amd64", distro: "debian", ttl: 1800, note: "", token: "", expiresAt: 0, nodeId: "", node: null };
-const ANDROID_APK = "https://github.com/Eyebright/zephyr-music-server/releases/download/v0.3.0/zephyr-terminal-0.3.0.apk";
+const ANDROID_APK = "https://github.com/Eyebright/zephyr-music-server/releases/download/v0.4.0/zephyr-terminal-0.4.0.apk";
 function installCmd() {
   if (WZ.arch === "android") return `1. 下载安装 APK：${ANDROID_APK}\n2. 启动「Zephyr 终端」，服务端地址填 ${location.origin}\n3. 注册令牌填 ${WZ.token}`;
   return `curl -fsSL ${location.origin}/dl/agent-install.sh | sudo bash -s -- --server ${location.origin} --token ${WZ.token}`;
@@ -1696,6 +1700,10 @@ function shellDeliver() {
       <div id="dl-jobs"></div>
     </section>
     <section class="card mt16 stagger" style="--i:2">
+      ${secHead(`${icon("arrowUp", 17)} 自动更新`, `<span class="hint">服务端自升级 · 终端跟随服务端版本收敛 · 每 4 秒刷新</span>`)}
+      <div id="upd-body">${UPD_SHELL}</div>
+    </section>
+    <section class="card mt16 stagger" style="--i:3">
       ${secHead(`${icon("branch", 17)} 灰度发布`, `<button class="btn primary sm" data-act="ro-create">${icon("plus", 14)} 新建灰度</button>`)}
       <div id="dl-rollouts"></div>
     </section>`;
@@ -1713,6 +1721,7 @@ async function refreshDeliver() {
   S.rollouts = Array.isArray(rollouts) ? rollouts : [];
   S.license = lic;
   paintDlGate(); paintDlForm(); paintJobsStrip(); paintRollouts();
+  refreshUpdate();
 }
 async function refreshDeliverLive() {
   try {
@@ -1983,6 +1992,221 @@ async function roDelete(id) {
       }, undoText: "撤销"
     });
     await refreshDeliverLive();
+  } catch (e) { toast(e.message, "err"); }
+}
+
+/* ================= AUTO UPDATE ================= */
+const UPD_SHELL = `<div class="upd-grid">
+  <div class="upd-pane" id="upd-server"></div>
+  <div class="upd-pane" id="upd-policy"></div>
+</div>
+<div id="upd-fleet" class="mt16"></div>`;
+const UPD_STATE_ZH = {
+  idle: ["待机", "muted"], checking: ["检查中", "info"], staged: ["已暂存", "info"],
+  applying: ["升级中", "info"], restarting: ["重启中", "warn"], failed: ["失败", "err"], offline: ["更新源不可达", "warn"]
+};
+const FLEET_STATE_ZH = {
+  converged: ["已对齐", "ok"], pending: ["待下发", "info"], upgrading: ["升级中", "info"],
+  waiting_idle: ["等待空闲", "warn"], suspended: ["已挂起", "err"], unsupported: ["不在范围", "muted"], offline: ["离线", "muted"]
+};
+function updStateBadge(st) {
+  const s = st && st.state;
+  if (s === "idle" && st.available) return badge("发现新版本", "gold");
+  const x = UPD_STATE_ZH[s] || [s || "待机", "muted"];
+  return badge(x[0], x[1]);
+}
+function fleetStateBadge(s) { const x = FLEET_STATE_ZH[s] || [s || "待下发", "muted"]; return badge(x[0], x[1]); }
+async function refreshUpdate() {
+  try {
+    const [status, fleet] = await Promise.all([api("GET", "/update/status"), api("GET", "/update/fleet").catch(() => null)]);
+    S.upd.disabled = false;
+    S.upd.server = status && status.server;
+    S.upd.policy = status && status.policy;
+    if (fleet) S.upd.fleet = fleet;
+    paintUpdateServer(); paintUpdatePolicy(); paintUpdateFleet();
+  } catch (e) {
+    S.upd.disabled = e.status === 503;
+    const el = $("#upd-body");
+    if (el) el.innerHTML = `<div class="banner warn">${icon("info", 15)}<span>${esc(S.upd.disabled ? "更新服务未启用。" : "更新状态加载失败：" + e.message)}</span></div>`;
+  }
+}
+async function refreshUpdateLive() {
+  if (S.upd.busy) return;
+  try {
+    const [status, fleet] = await Promise.all([api("GET", "/update/status"), api("GET", "/update/fleet").catch(() => S.upd.fleet)]);
+    S.upd.disabled = false;
+    S.upd.server = status && status.server;
+    S.upd.policy = status && status.policy;
+    if (fleet) S.upd.fleet = fleet;
+    const body = $("#upd-body");
+    if (body && !$("#upd-server")) body.innerHTML = UPD_SHELL;
+    paintUpdateServer(); paintUpdatePolicy(); paintUpdateFleet();
+  } catch (e) { /* 连接状态由 api 层处理；服务端重启期间静默等待回连 */ }
+}
+function paintUpdateServer() {
+  const el = $("#upd-server"); if (!el) return;
+  const st = S.upd.server;
+  if (!st) { el.innerHTML = `<div class="upd-pane-t">${icon("server", 15)} 服务端自升级</div>` + empty("refresh", "正在读取更新状态…", "", true); return; }
+  const busy = st.state === "checking" || st.state === "applying" || st.state === "restarting";
+  const canApply = st.available && !busy;
+  let h = `<div class="upd-pane-t">${icon("server", 15)} 服务端自升级 ${updStateBadge(st)}</div>`;
+  h += `<div class="ver-flow">
+    <div class="vf-box"><div class="vf-lbl">当前运行</div><div class="vf-ver">v${esc(st.current || "—")}</div></div>
+    <div class="vf-arrow ${st.available ? "hot" : ""}">${icon("chevR", 20)}</div>
+    <div class="vf-box ${st.available ? "new" : ""}"><div class="vf-lbl">发布源最新</div><div class="vf-ver">${st.latest ? "v" + esc(st.latest) : "—"}</div></div>
+  </div>`;
+  if (st.state === "restarting") h += `<div class="banner info"><span class="spin"></span><span>新版本已就位，服务正在重启，控制台将自动重连…</span></div>`;
+  else if (st.state === "applying") h += `<div class="banner info"><span class="spin"></span><span>${esc(st.detail || "正在下载并校验发布包…")}</span></div>`;
+  else if (st.state === "failed") h += `<div class="banner err">${icon("alert", 15)}<span>${esc(st.last_error || st.detail || "升级失败")}</span></div>`;
+  else if (st.state === "offline") h += `<div class="banner warn">${icon("wifi", 15)}<span>${esc(st.detail || "无法访问发布源，回连后自动重试。")}</span></div>`;
+  else if (st.available) h += `<div class="banner ok">${icon("arrowUp", 15)}<span>发现新版本 v${esc(st.latest)}，${st.auto_apply ? "空闲时将自动升级。" : "可立即手动升级。"}</span></div>`;
+  else if (st.detail) h += `<div class="hint mb12">${esc(st.detail)}</div>`;
+  h += `<div class="kv mb12">` +
+    kvRow("更新源", `<span class="mono upd-feed" title="${esc(st.feed_url || "")}">${esc(st.feed_url || "官方发布源")}</span>`) +
+    kvRow("最近检查", st.checked_at ? ago(st.checked_at) : "尚未检查") +
+    (st.staged_at ? kvRow("暂存时间", fmtTime(st.staged_at)) : "") +
+    `</div>`;
+  h += `<label class="switch mb12"><input type="checkbox" id="upd-auto" data-change="upd-auto" ${st.auto_apply ? "checked" : ""} ${busy ? "disabled" : ""}><span class="track"></span><span class="sw-lbl">自动升级（检测到新版本且空闲时自动应用）</span></label>`;
+  h += `<div class="btn-row">
+    <button class="btn cyan sm" data-act="upd-check" ${busy ? "disabled" : ""}>${icon("refresh", 14)} 立即检查</button>
+    <button class="btn primary sm" data-act="upd-apply" ${canApply ? "" : "disabled"}>${icon("arrowUp", 14)} ${st.available ? "升级到 v" + esc(st.latest) : "立即升级"}</button>
+  </div>`;
+  el.innerHTML = h;
+}
+function paintUpdatePolicy() {
+  const el = $("#upd-policy"); if (!el) return;
+  const p = S.upd.policy;
+  if (!p) { el.innerHTML = `<div class="upd-pane-t">${icon("sliders", 15)} 终端收敛策略</div>` + empty("sliders", "正在读取策略…", "", true); return; }
+  // Skip rebuilding while the operator is interacting with a control, so a live
+  // refresh never yanks an open select or steals focus mid-change.
+  if (el.contains(document.activeElement) && el.dataset.built) { syncUpdatePolicy(); return; }
+  const opt = (v, cur, lbl) => `<option value="${v}" ${Number(cur) === v ? "selected" : ""}>${lbl || v}</option>`;
+  el.innerHTML = `<div class="upd-pane-t">${icon("sliders", 15)} 终端收敛策略 <span class="hint">改动即时生效</span></div>
+    <label class="switch mb12"><input type="checkbox" id="upd-en" data-change="upd-policy" ${p.enabled ? "checked" : ""}><span class="track"></span><span class="sw-lbl">启用终端自动收敛（服务端轮询下发 agent-upgrade）</span></label>
+    <div class="f-row">
+      <div class="field"><label>并行上限</label><select id="upd-mp" class="inp" data-change="upd-policy">${[1, 2, 3, 4, 6, 8, 12, 16].map(v => opt(v, p.max_parallel, v + " 台")).join("")}</select><div class="f-hint">同时升级的终端数。</div></div>
+      <div class="field"><label>失败挂起阈值</label><select id="upd-ma" class="inp" data-change="upd-policy">${[1, 2, 3, 4, 5, 6, 8, 10].map(v => opt(v, p.max_attempts, v + " 次")).join("")}</select><div class="f-hint">连续失败达到次数后挂起。</div></div>
+    </div>
+    <div class="field"><label>金丝雀环比例</label><select id="upd-rp" class="inp" data-change="upd-policy">${[5, 10, 20, 25, 50, 100].map(v => opt(v, p.ring_percent, v + "%")).join("")}</select><div class="f-hint">首环放量比例；整环对齐后才推进下一环。</div></div>
+    <div class="banner info">${icon("shield", 15)}<span>播放保护（FR-3.10）与授权门禁始终生效：播放中的终端等待空闲，未授权终端不下发。升级包经 SHA256 校验后由终端 detached 安装。</span></div>
+    <div class="btn-row"><button class="btn cyan sm" data-act="upd-converge">${icon("send", 14)} 立即收敛一轮</button><div class="spacer"></div><span class="hint">目标版本 v${esc((S.upd.fleet && S.upd.fleet.target) || (S.upd.server && S.upd.server.current) || "—")}</span></div>`;
+  el.dataset.built = "1";
+}
+function syncUpdatePolicy() {
+  const p = S.upd.policy; if (!p) return;
+  const en = $("#upd-en"), mp = $("#upd-mp"), ma = $("#upd-ma"), rp = $("#upd-rp");
+  if (en && document.activeElement !== en) en.checked = !!p.enabled;
+  if (mp && document.activeElement !== mp) mp.value = String(p.max_parallel);
+  if (ma && document.activeElement !== ma) ma.value = String(p.max_attempts);
+  if (rp && document.activeElement !== rp) rp.value = String(p.ring_percent);
+}
+function paintUpdateFleet() {
+  const el = $("#upd-fleet"); if (!el) return;
+  const rep = S.upd.fleet;
+  if (!rep || !Array.isArray(rep.nodes)) { el.innerHTML = ""; return; }
+  const nodes = rep.nodes;
+  if (!nodes.length) { el.innerHTML = empty("server", "暂无终端，添加并授权后自动纳入版本收敛", `<button class="btn primary sm" data-act="goto-add-node">${icon("plus", 13)} 添加终端</button>`, true); return; }
+  const c = rep.counts || {};
+  const parts = nodes.filter(r => r.state !== "offline" && r.state !== "unsupported");
+  const conv = parts.filter(r => r.state === "converged").length;
+  const pct = parts.length ? Math.round(conv / parts.length * 100) : 100;
+  const stat = (k, lbl, color) => c[k] ? `<span class="ust" style="--uc:var(--${color})"><i></i>${lbl} <b>${c[k]}</b></span>` : "";
+  let h = `<div class="upd-stats">
+    ${stat("converged", "已对齐", "green")}${stat("upgrading", "升级中", "cyan")}${stat("pending", "待下发", "blue")}
+    ${stat("waiting_idle", "等待空闲", "amber")}${stat("suspended", "已挂起", "red")}${stat("unsupported", "不在范围", "faint")}${stat("offline", "离线", "faint")}
+    <span class="spacer"></span><span class="tag-mono">目标 v${esc(rep.target || "—")}</span>
+  </div>`;
+  h += meter(`收敛进度 · 第 ${(rep.ring || 0) + 1} 环（每环 ${rep.ring_size || 1} 台）`, pct, `${conv}/${parts.length} 台已对齐`, pct === 100 ? "green" : "cyan");
+  const list = nodes.filter(r => { const n = S.nodes.find(x => x.node_id === r.node_id); return hit(n && n.alias, r.node_id, r.current, r.target, r.state, r.detail); });
+  if (!list.length) { el.innerHTML = h + empty("search", "没有匹配的终端", "", true); return; }
+  h += `<div class="tbl-wrap mt12"><table class="tbl"><thead><tr><th>终端</th><th>版本</th><th>状态</th><th>尝试</th><th>最近尝试</th><th>说明</th><th style="text-align:right">操作</th></tr></thead><tbody>` +
+    list.map(r => {
+      const n = S.nodes.find(x => x.node_id === r.node_id);
+      const alias = n ? (n.alias || shortId(r.node_id)) : shortId(r.node_id);
+      const same = r.current && r.current === r.target;
+      return `<tr>
+        <td><button class="btn ghost xs" data-act="node-open" data-id="${esc(r.node_id)}">${esc(alias)}</button><div class="sub mono">${esc(shortId(r.node_id))}${n && n.arch ? " · " + esc(n.arch) : ""}</div></td>
+        <td class="mono nowrap">${same ? `<span class="txt-ok">${esc(r.current)}</span>` : `${esc(r.current || "—")} <span class="vf-mini">→</span> <span class="txt-gold">${esc(r.target || "—")}</span>`}</td>
+        <td>${fleetStateBadge(r.state)}</td>
+        <td class="mono">${r.attempts || 0}${r.state === "suspended" ? " / " + ((rep.policy && rep.policy.max_attempts) || 3) : ""}</td>
+        <td class="sub nowrap">${r.last_attempt ? ago(r.last_attempt) : "—"}</td>
+        <td class="sub upd-detail" title="${esc(r.detail || "")}">${esc(r.detail || "—")}</td>
+        <td class="acts">${r.state === "suspended" ? `<button class="btn cyan xs" data-act="upd-retry" data-id="${esc(r.node_id)}">${icon("undo", 12)} 重试</button>` : ""}</td>
+      </tr>`;
+    }).join("") + `</tbody></table></div>`;
+  el.innerHTML = h;
+}
+async function updCheck() {
+  const btn = $('[data-act="upd-check"]');
+  if (btn) { btn.disabled = true; btn.innerHTML = `<span class="spin">${icon("refresh", 14)}</span> 检查中…`; }
+  try {
+    const st = await api("POST", "/update/check");
+    S.upd.server = st;
+    if (st.state === "offline") toast("更新源不可达：" + (st.detail || "网络异常"), "warn");
+    else if (st.available) toast(`发现新版本 v${st.latest}`, "ok");
+    else toast(`已是最新版本 v${st.current}`, "info");
+    paintUpdateServer();
+  } catch (e) { toast(e.message, "err"); }
+  finally { paintUpdateServer(); }
+}
+async function updApply() {
+  const st = S.upd.server; if (!st || !st.available) return;
+  const ok = await confirmDlg({
+    title: "升级服务端", danger: false, okText: "升级并重启",
+    message: `将下载 v${st.latest} 官方发布包，校验 SHA256 与 GPG 签名后替换二进制并重启服务。控制台会短暂断连并自动恢复；播放保护生效或存在进行中任务时将被拒绝。`
+  });
+  if (!ok) return;
+  S.upd.busy = true;
+  try {
+    const r = await api("POST", "/update/apply");
+    S.upd.server = r;
+    toast(r && r.state === "restarting" ? "升级完成，服务正在重启…" : "升级流程已启动", "ok");
+    paintUpdateServer();
+  } catch (e) {
+    toast(e.status === 409 ? "播放保护或进行中任务阻止了升级，空闲后重试" : e.message, e.status === 409 ? "warn" : "err");
+  } finally { S.upd.busy = false; }
+}
+async function updAuto(el) {
+  const want = el.checked;
+  try {
+    const st = await api("POST", "/update/auto", { auto_apply: want });
+    S.upd.server = st;
+    toast(want ? "已开启自动升级" : "已关闭自动升级", "ok");
+  } catch (e) { toast(e.message, "err"); }
+  paintUpdateServer();
+}
+async function updPolicySave() {
+  const body = {
+    enabled: checked("upd-en"),
+    max_parallel: Number(val("upd-mp")) || 2,
+    max_attempts: Number(val("upd-ma")) || 3,
+    ring_percent: Number(val("upd-rp")) || 20
+  };
+  try {
+    const p = await api("POST", "/update/fleet/policy", body);
+    S.upd.policy = p;
+    if (S.upd.fleet) S.upd.fleet.policy = p;
+    toast("收敛策略已保存", "ok");
+    paintUpdateFleet();
+  } catch (e) { toast(e.message, "err"); syncUpdatePolicy(); }
+}
+async function updConverge() {
+  const btn = $('[data-act="upd-converge"]');
+  if (btn) { btn.disabled = true; btn.innerHTML = `<span class="spin">${icon("send", 14)}</span> 收敛中…`; }
+  try {
+    const rep = await api("POST", "/update/fleet/converge");
+    S.upd.fleet = rep;
+    const c = rep.counts || {};
+    toast(`收敛一轮完成：${c.converged || 0} 台已对齐，${c.upgrading || 0} 台升级中`, "ok");
+    paintUpdateFleet(); paintUpdatePolicy();
+  } catch (e) { toast(e.message, "err"); }
+  finally { paintUpdatePolicy(); }
+}
+async function updRetry(id) {
+  try {
+    await api("POST", `/update/fleet/${enc(id)}/retry`);
+    toast("已重置失败计数，下一轮将重新下发", "ok");
+    await refreshUpdateLive();
   } catch (e) { toast(e.message, "err"); }
 }
 
@@ -2651,6 +2875,10 @@ Object.assign(ACT, {
   "ro-ring-del": ds => roRingDel(Number(ds.i)),
   "ro-advance": ds => roAdvance(ds.id),
   "ro-delete": ds => roDelete(ds.id),
+  "upd-check": () => updCheck(),
+  "upd-apply": () => updApply(),
+  "upd-converge": () => updConverge(),
+  "upd-retry": ds => updRetry(ds.id),
   "lic-open": () => openLicenseActivate(),
   "lic-submit": () => licSubmit(),
   "key-import": () => openKeyImport(),
@@ -2693,6 +2921,8 @@ const CHG = {
   "dl-node": (el, ds) => { if (el.checked) S.jobSel.add(ds.id); else S.jobSel.delete(ds.id); paintDlForm(); },
   "dl-node-all": el => { S.nodes.filter(n => n.authorized).forEach(n => { if (el.checked) S.jobSel.add(n.node_id); else S.jobSel.delete(n.node_id); }); paintDlForm(); },
   "ro-pct": () => paintRoSum(),
+  "upd-auto": el => updAuto(el),
+  "upd-policy": () => updPolicySave(),
   "lic-pfile": el => fileToText(el, txt => { const t = $("#lic-payload"); if (t) t.value = txt; }),
   "lic-sfile": el => fileToText(el, txt => { const t = $("#lic-sig"); if (t) t.value = txt; }),
   "gpg-file": el => fileToText(el, txt => { const t = $("#gpg-armored"); if (t) t.value = txt; }),
@@ -2753,7 +2983,7 @@ function paintSearch() {
   else if (v === "nodes") paintNodeTable();
   else if (v === "library") { paintMounts(); paintTracks(); }
   else if (v === "catalog") { paintApps(); paintBoms(); }
-  else if (v === "deliver") paintRollouts();
+  else if (v === "deliver") { paintRollouts(); paintUpdateFleet(); }
   else if (v === "keys") paintLicNodes();
   else if (v === "audit") paintAudit();
 }

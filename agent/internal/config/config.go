@@ -45,7 +45,7 @@ func Default() Config {
 		CommandPoll:  10 * time.Second,
 		AllowPower:   true,
 		AllowLocal:   true,
-		AgentVersion: "0.3.0",
+		AgentVersion: "0.4.0",
 	}
 }
 

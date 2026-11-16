@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -107,12 +108,18 @@ type Policy struct {
 	OfflineAfter   int             `json:"offline_after"`
 }
 
-// CommandParams carries optional command arguments (os-upgrade package list).
+// CommandParams carries optional command arguments. os-upgrade uses Packages;
+// agent-upgrade uses the exact signed-chain artifact the terminal must install.
 type CommandParams struct {
-	Packages []string `json:"packages"`
+	Packages []string `json:"packages,omitempty"`
+	Version  string   `json:"version,omitempty"`
+	Arch     string   `json:"arch,omitempty"`
+	SHA256   string   `json:"sha256,omitempty"`
+	URL      string   `json:"url,omitempty"`
 }
 
-// Command is a server-issued terminal command (os-check|os-upgrade|netdiag).
+// Command is a server-issued terminal command
+// (os-check|os-upgrade|netdiag|agent-upgrade).
 type Command struct {
 	ID        string        `json:"id"`
 	NodeID    string        `json:"node_id"`
@@ -351,6 +358,42 @@ func (c *Client) Download(ctx context.Context, appID, version, arch, dest string
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("download %s %s: status %d", appID, version, resp.StatusCode)
+	}
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return "", err
+	}
+	f, err := os.Create(dest)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(io.MultiWriter(f, h), resp.Body); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// DownloadDist fetches a server-root-relative distribution path (e.g.
+// "/dl/hifihub-agent_0.4.0_amd64.deb") to dest and returns its sha256 hex. The
+// path is always resolved against this agent's own management server, never an
+// arbitrary host, so a command cannot redirect the download elsewhere.
+func (c *Client) DownloadDist(ctx context.Context, path, dest string) (string, error) {
+	if !strings.HasPrefix(path, "/") || strings.Contains(path, "..") {
+		return "", fmt.Errorf("invalid distribution path %q", path)
+	}
+	root := strings.TrimSuffix(c.base, "/api/v1")
+	req, err := http.NewRequestWithContext(ctx, "GET", root+path, nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("download %s: status %d", path, resp.StatusCode)
 	}
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return "", err

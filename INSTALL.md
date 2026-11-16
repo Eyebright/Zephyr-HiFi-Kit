@@ -1,6 +1,6 @@
 # Zephyr Music Player — 安装与部署说明
 
-版本 0.3.0 · 服务端 x86_64 / aarch64 Linux · 终端 Zephyr Music Player（Debian / 树莓派）
+版本 0.4.0 · 服务端 x86_64 / aarch64 Linux · 终端 Zephyr Music Player（Debian / 树莓派）
 
 本包交付**已编译、已测试**的完整确认功能集：
 
@@ -23,7 +23,7 @@
 ## 1. 包内容
 
 ```
-zephyr-music-server-0.3.0/
+zephyr-music-server-0.4.0/
 ├── server/
 │   ├── hifihub-server-linux-amd64      # x86_64 服务端单文件（内嵌管理控制台）
 │   ├── hifihub-server-linux-arm64      # aarch64 服务端单文件
@@ -32,15 +32,15 @@ zephyr-music-server-0.3.0/
 │   ├── server.env                      # 配置模板（enforce 模式）
 │   ├── hifihub-server.service          # systemd 单元（非 root 运行 + 沙箱加固）
 │   └── dist/                           # 终端自助下载目录（由 /dl/ 白名单暴露）
-│       ├── hifihub-agent_0.3.0_amd64.deb
-│       ├── hifihub-agent_0.3.0_arm64.deb
-│       ├── hifihub-agent_0.3.0_armhf.deb
+│       ├── hifihub-agent_0.4.0_amd64.deb
+│       ├── hifihub-agent_0.4.0_arm64.deb
+│       ├── hifihub-agent_0.4.0_armhf.deb
 │       ├── agent-install.sh            # 终端一键安装脚本
 │       └── SHA256SUMS
 ├── agent/
-│   ├── hifihub-agent_0.3.0_amd64.deb   # x86_64 终端
-│   ├── hifihub-agent_0.3.0_arm64.deb   # 树莓派 3/4/5 64 位、ARM 服务器
-│   └── hifihub-agent_0.3.0_armhf.deb   # 树莓派 2/3/4 32 位（ARMv7）
+│   ├── hifihub-agent_0.4.0_amd64.deb   # x86_64 终端
+│   ├── hifihub-agent_0.4.0_arm64.deb   # 树莓派 3/4/5 64 位、ARM 服务器
+│   └── hifihub-agent_0.4.0_armhf.deb   # 树莓派 2/3/4 32 位（ARMv7）
 ├── INSTALL.md                          # 本文件
 └── SHA256SUMS                          # 全部文件校验和
 ```
@@ -51,7 +51,7 @@ zephyr-music-server-0.3.0/
 校验完整性：
 
 ```sh
-cd zephyr-music-server-0.3.0
+cd zephyr-music-server-0.4.0
 sha256sum -c SHA256SUMS
 ```
 
@@ -81,8 +81,8 @@ sha256sum -c SHA256SUMS
 sudo apt-get update && sudo apt-get install -y gnupg
 
 # 解压后进入 server/ 目录运行安装器
-tar -xzf zephyr-music-server-0.3.0.tar.gz
-cd zephyr-music-server-0.3.0/server
+tar -xzf zephyr-music-server-0.4.0.tar.gz
+cd zephyr-music-server-0.4.0/server
 sudo ./install.sh
 ```
 
@@ -103,6 +103,10 @@ HIFIHUB_DIST_DIR=/var/lib/hifihub-server/dist
 HIFIHUB_SIGNATURE_MODE=enforce      # 生产必须 enforce（NFR-S2）
 HIFIHUB_PLAY_GATE=true              # FR-3.10 播放门控
 HIFIHUB_IDLE_TIMEOUT=120m
+HIFIHUB_UPDATE_SELF=true            # 服务端自升级（检测发布源新版本）
+HIFIHUB_UPDATE_AUTO=true            # 检测到新版本后空闲时自动升级
+HIFIHUB_UPDATE_FLEET=true           # 终端跟随服务端版本自动收敛
+HIFIHUB_UPDATE_INTERVAL=10m         # 轮询周期
 ```
 
 改后重启：`sudo systemctl restart hifihub-server`
@@ -240,7 +244,7 @@ curl -fsSL http://<服务端IP>:8080/dl/agent-install.sh | sudo bash -s -- \
   --server http://<服务端IP>:8080 --token <一次性令牌>
 ```
 
-脚本会：按 `uname -m` 下载对应架构 deb（`/dl/hifihub-agent_0.3.0_<arch>.deb`）→
+脚本会：按 `uname -m` 下载对应架构 deb（`/dl/hifihub-agent_0.4.0_<arch>.deb`）→
 `dpkg -i` + `apt-get -f install` → 写入 `/etc/hifihub/agent.env`（SERVER_URL / TOKEN /
 LOCAL_BIND，保留其它自定义键，0600 root 属主）→ 启用并启动 `hifihub-agent`。
 重复执行安全（幂等）。可选参数：
@@ -257,10 +261,10 @@ LOCAL_BIND，保留其它自定义键，0600 root 属主）→ 启用并启动 `
 
 ### 5.2 离线安装（无网络直连服务端时）
 
-把 `agent/hifihub-agent_0.3.0_<arch>.deb` 拷到终端：
+把 `agent/hifihub-agent_0.4.0_<arch>.deb` 拷到终端：
 
 ```sh
-sudo dpkg -i hifihub-agent_0.3.0_arm64.deb
+sudo dpkg -i hifihub-agent_0.4.0_arm64.deb
 sudo apt-get -f install -y        # 修复依赖（alsa-utils 等）
 ```
 
@@ -307,7 +311,7 @@ journalctl -u hifihub-agent -f
 
 **安装三步**
 
-1. 从 Release 下载 `zephyr-terminal-0.3.0.apk`（控制台「添加终端」向导架构选 Android
+1. 从 Release 下载 `zephyr-terminal-0.4.0.apk`（控制台「添加终端」向导架构选 Android
    后也给出同款下载链接），在系统设置允许「安装未知应用」后安装。
 2. 启动「Zephyr 终端」，填写服务端地址（`http://<服务端IP>:8080`）、注册令牌（控制台
    「终端管理 → 添加终端」向导、架构选 **Android** 签发的一次性令牌）与可选别名。
@@ -416,7 +420,7 @@ curl -s $S/nodes/<NodeID>/netdiag               # DNS/TCP/mDNS/SSDP/组播探测
 | 下发被拒 `license_required` / `not_authorized` / `seat_limit` | 先激活许可证（4.4），再授权终端；席位满时注销闲置终端 |
 | `/dl/agent-install.sh` 404 | `HIFIHUB_DIST_DIR` 指向的目录缺文件；重跑 `install.sh` 或手动把 `server/dist/*` 拷入 |
 | 终端不上线 | 检查 `agent.env` 的 `SERVER_URL`/`TOKEN`；令牌是否过期/已用；`journalctl -u hifihub-agent -f` |
-| 命令一直 `pending` | Agent 命令轮询未运行（版本过旧/服务未起）；`systemctl status hifihub-agent`，确认 deb 为 0.3.0 |
+| 命令一直 `pending` | Agent 命令轮询未运行（版本过旧/服务未起）；`systemctl status hifihub-agent`，确认 deb 为 0.4.0 |
 | 任务停在 `waiting_idle` | 终端正在播放（播放门控生效）；等待空闲、关闭该终端播放保护，或调小 `HIFIHUB_IDLE_TIMEOUT` |
 | 终端界面代理 502 | 终端离线或本地 8080 未监听；核对节点 IP 与 `HIFIHUB_AGENT_LISTEN_ADDR`，检查终端防火墙 |
 | 本地控制台写操作 403 | 直连终端页面缺少 `X-Node-Secret`（设计如此）；从服务端控制台「终端界面」操作，或收紧 `ALLOW_LOCAL` |
@@ -433,7 +437,7 @@ curl -s $S/nodes/<NodeID>/netdiag               # DNS/TCP/mDNS/SSDP/组播探测
 服务端（保留配置与数据，可安全重装）：
 
 ```sh
-cd zephyr-music-server-0.3.0/server
+cd zephyr-music-server-0.4.0/server
 sudo ./uninstall.sh
 ```
 
@@ -454,7 +458,7 @@ sudo apt-get purge hifihub-agent           # 同时清除 conffile
 
 ```sh
 sh scripts/build-release.sh                # 产出 release/ bundle + tarball + SHA256SUMS
-VERSION=0.3.0 sh scripts/build-release.sh  # 指定版本号
+VERSION=0.4.0 sh scripts/build-release.sh  # 指定版本号
 ```
 
 脚本交叉编译服务端（linux amd64/arm64）与终端（amd64/arm64/armhf），用内置 `debpack`
@@ -528,7 +532,7 @@ export ANDROID_HOME=/opt/android-sdk
 export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/26.3.11579264"
 # 可选 release 签名（不设则 debug 签名，仍可安装）：
 # export KEYSTORE_FILE=/path/release.keystore KEYSTORE_PASSWORD=… KEY_ALIAS=… KEY_PASSWORD=…
-VERSION=0.3.0 sh scripts/build-android.sh   # 产出 release/zephyr-terminal-0.3.0.apk
+VERSION=0.4.0 sh scripts/build-android.sh   # 产出 release/zephyr-terminal-0.4.0.apk
 ```
 
 脚本对 `arm64-v8a` 与 `armeabi-v7a` 各交叉编译一份 `libzatagent.so` 放入
@@ -544,3 +548,65 @@ Gradle，构建 APK 并用 NDK `llvm-readelf` 校验两个 ABI 的 `libzatjni.so
 依赖 `libzatagent.so`、APK 内 native 库齐全；`android-aaudio` 任务在 API 34 x86_64 模拟器
 上交叉编译并运行 player 测试，验证 AAudio `open/write/drain/close`（S16/S24/S32）真实
 出声路径。打 tag 时把 `zephyr-terminal-<version>.apk` 追加到 GitHub Release。
+
+---
+
+## 11. 自动更新（服务端自升级 + 终端版本收敛）
+
+v0.4.0 起，服务端周期性检测发布源的最新版本并自动升级自身；终端 Agent 版本跟随
+服务端版本，由服务端轮询逐环下发 `agent-upgrade` 命令自动收敛，无需逐台手动操作。
+控制台「服务下发 → 自动更新」面板提供实时状态与全部操作。
+
+### 11.1 服务端自升级
+
+- 发布源默认为 GitHub Releases（`HIFIHUB_UPDATE_FEED` 可指向内网镜像，JSON 结构与
+  GitHub releases API 一致：`tag_name` + `assets[].{name,browser_download_url,digest,size}`）。
+- 升级管线：下载 bundle → feed 公布的 `sha256:` 摘要校验 → 若发布 `.asc` 则用已导入
+  信任根做 GPG 验签 → 解包后逐文件核对 bundle 内 `SHA256SUMS` → 刷新 `/dl/` 终端分发
+  集 → 原子置换二进制（先写 `.new` 再 rename）→ 重启 systemd 服务。
+- 播放保护（FR-3.10）：任一终端播放中或有任务在途时拒绝升级，置 `waiting_idle`，
+  空闲后自动继续；控制台「升级到 vX」按钮同样受此门禁。
+- `HIFIHUB_UPDATE_AUTO=false` 时只检测不自动安装，可在控制台手动触发。
+
+### 11.2 终端跟随收敛
+
+- 目标版本恒等于服务端当前运行版本；服务端每轮对每台终端判定状态：
+  `converged`（心跳版本已对齐）/ `pending` / `upgrading` / `waiting_idle`（播放中）/
+  `suspended`（连续失败达上限）/ `unsupported`（未授权、架构不在范围或 `/dl/` 缺 deb）/
+  `offline`。
+- 灰度环推进：按 `ring_percent` 分批，整环全部对齐后才进入下一环；`max_parallel`
+  限制同时在途命令数；失败按 60s×次数 退避重试，达 `max_attempts` 挂起，控制台可一键重试。
+- 终端侧执行：下载 deb → SHA256 校验 → `dpkg -i` → 重启 agent 服务；服务端只在
+  心跳报告目标版本后才判定收敛，重启未回连不会被误判完成。
+- 安卓终端经 APK 升级，不在 deb 自动收敛范围（面板标记 `unsupported` 并说明）。
+
+### 11.3 配置项
+
+| 环境变量 | 默认 | 说明 |
+|---|---|---|
+| `HIFIHUB_UPDATE_FEED` | GitHub Releases | 发布源 URL；离线 LAN 指向内网镜像 |
+| `HIFIHUB_UPDATE_SELF` | `true` | 服务端自升级开关 |
+| `HIFIHUB_UPDATE_AUTO` | `true` | 检测到新版本后自动安装 |
+| `HIFIHUB_UPDATE_FLEET` | `true` | 终端收敛开关 |
+| `HIFIHUB_UPDATE_INTERVAL` | `10m` | 轮询周期 |
+| `HIFIHUB_UPDATE_MAX_PARALLEL` | `2` | 同时在途升级命令上限（1–16） |
+| `HIFIHUB_UPDATE_MAX_ATTEMPTS` | `3` | 连续失败挂起阈值（1–10） |
+| `HIFIHUB_UPDATE_RING_PERCENT` | `20` | 每环终端百分比（5–100） |
+| `HIFIHUB_UPDATE_STAGE_DIR` | `<DataDir>/update` | 下载/解包暂存目录 |
+
+策略也可在控制台「自动更新 → 收敛策略」实时修改（持久化到数据库，重启保留）。
+
+### 11.4 REST 接口
+
+```sh
+S=http://127.0.0.1:8080/api/v1
+curl -s $S/update/status                 # 服务端状态 + 收敛策略
+curl -s -X POST $S/update/check          # 立即检测发布源
+curl -s -X POST $S/update/apply          # 立即自升级（播放/任务门禁，409=忙）
+curl -s -X POST $S/update/auto -H 'Content-Type: application/json' -d '{"auto_apply":false}'
+curl -s $S/update/fleet                  # 收敛快照（干跑，不下发）
+curl -s -X POST $S/update/fleet/policy -H 'Content-Type: application/json' \
+  -d '{"enabled":true,"max_parallel":4,"max_attempts":3,"ring_percent":25}'
+curl -s -X POST $S/update/fleet/converge # 强制立即收敛一轮（忽略退避）
+curl -s -X POST $S/update/fleet/<NodeID>/retry   # 重置挂起终端的失败计数
+```

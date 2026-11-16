@@ -158,13 +158,13 @@ TCP 保证有序可靠，简化垂直切片）。v0.2 再拆分控制/音频通�
 
 ```jsonc
 // HELLO (sink→source)
-{ "node_id": "n-abc", "secret_sha256": "<hex>", "agent_version": "0.3.0",
+{ "node_id": "n-abc", "secret_sha256": "<hex>", "agent_version": "0.4.0",
   "caps": { "codecs": ["pcm"], "formats": ["S16_LE","S24_LE","S32_LE"],
             "rates": [44100,48000,88200,96000,176400,192000],
             "max_channels": 2, "alsa_devices": ["hw:0,0","hw:1,0"] } }
 
 // HELLO_ACK (source→sink)
-{ "session_id": "s-123", "server_version": "0.3.0",
+{ "session_id": "s-123", "server_version": "0.4.0",
   "caps": { "codecs": ["flac","wav"] }, "prebuffer_ms": 250 }
 
 // SETUP (source→sink)

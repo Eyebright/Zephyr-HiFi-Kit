@@ -5,12 +5,12 @@
 # debpack tool (no dpkg-deb needed), and assembles a self-contained release
 # bundle + tarball + SHA256SUMS. Runs on Linux or Windows Git Bash.
 #
-#   sh scripts/build-release.sh            # default version 0.3.0
-#   VERSION=0.3.0 sh scripts/build-release.sh
+#   sh scripts/build-release.sh            # default version 0.4.0
+#   VERSION=0.4.0 sh scripts/build-release.sh
 #   AUDIO=1 sh scripts/build-release.sh    # native Linux CGO audio bundle (amd64/arm64)
 set -eu
 
-VERSION="${VERSION:-0.3.0}"
+VERSION="${VERSION:-0.4.0}"
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$ROOT"
 
