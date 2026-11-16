@@ -36,26 +36,24 @@
   }
 
   /* ─────────── audio ─────────── */
-  // BGM: 《故乡的小路》 (陈克正 词 / 崔蕾 曲), 1=F, 7/4 (3/4+4/4), ♩=72.
+  // BGM: "The Ludlows" (James Horner · Legends of the Fall), 1=D, 3/4, ♩=63.
   // Transcribed melody (top voice), encoded as [semitone-from-1, octave, beats].
-  // Semitones: 1=0 2=2 3=4 4=5 #4=6 5=7 6=9 7=11. Rendered as a soft music box.
-  var BGM_SPB = 60 / 72;
+  // Semitones: 1=0 2=2 3=4 4=5 5=7 6=9 7=11. Rendered as a soft music box.
+  var BGM_SPB = 60 / 63;
   var BGM = [
-    /* 故乡的小路，是我童年走过的路， */
-    [4,0,1.5],[4,0,.25],[4,0,.25],[4,0,.5],[2,0,.5],[0,0,3],[4,0,.5],[5,0,.5],
-    [7,0,1.5],[6,0,.5],[9,0,.5],[7,0,.25],[7,0,.25],[4,0,3],[7,-1,.5],[0,0,.5],
-    /* 路旁盛开的小花，给我欢乐和幸福， */
-    [4,0,1.5],[4,0,.25],[4,0,.25],[5,0,.5],[4,0,.5],[2,0,3],[4,0,.5],[5,0,.5],
-    [7,0,1.5],[7,0,.25],[7,0,.25],[2,0,.5],[0,0,.5],[0,0,3],[0,0,1],
-    /* 弯弯的小路，梦中我恩念的路， */
-    [9,0,1.5],[9,0,.25],[9,0,.25],[11,0,.5],[0,1,.5],[7,0,3],[9,0,.5],[7,0,.5],
-    [4,0,1.5],[7,-1,.5],[0,0,.5],[2,0,.5],[4,0,3],[0,0,1],
-    /* 路旁的小花，时刻向我倾诉。 */
-    [9,0,1.5],[9,0,.25],[9,0,.25],[11,0,.5],[0,1,.5],[7,0,3],[5,0,.5],[4,0,.5],
-    [2,0,1.5],[7,-1,.5],[2,0,.5],[0,0,.5],[0,0,3],[0,0,1],
-    [null,0,2]
+    /* pickup + opening yearning phrase */
+    [null,0,1],[7,0,.5],[7,1,.5],[5,1,1],
+    [4,1,1.5],[0,1,.5],[5,1,.5],[4,1,.5],
+    [2,1,2],[0,1,.5],[2,1,.5],
+    [4,1,1.5],[2,1,.5],[0,1,1],
+    /* answering phrase */
+    [5,0,2],[0,1,.5],[9,0,.5],
+    [7,0,1.5],[9,0,.5],[7,0,.5],[5,0,.5],
+    [4,0,2],[5,0,.5],[7,0,.5],
+    [9,0,3],
+    [null,0,3]
   ];
-  var BGM_BASE = 349.228; // F4 = degree 1
+  var BGM_BASE = 293.665; // D4 = degree 1
   var Audio2 = {
     ctx: null, master: null, analyser: null, data: null, on: true, started: false, nodes: [],
     musicGain: null, musicTimer: null, mIdx: 0, mNext: 0, mPlayed: 0,
@@ -76,9 +74,9 @@
       lp.connect(this.analyser);
       this.analyser.connect(this.master);
       this.master.connect(this.ctx.destination);
-      // F-major bed (F2 C3 F3 A3 C4) so the ambient pad is consonant with the
-      // 《故乡的小路》 melody (1=F) instead of the previous A-major drone.
-      var freqs = [87.31, 130.81, 174.61, 220, 261.63];
+      // D-major bed (D2 A2 D3 F#3 A3) so the ambient pad is consonant with
+      // "The Ludlows" melody (1=D).
+      var freqs = [73.42, 110, 146.83, 185, 220];
       var self = this;
       freqs.forEach(function (f, i) {
         var o = self.ctx.createOscillator();
@@ -184,7 +182,7 @@
     Audio2.resume();
     if (!bgmAnnounced && Audio2.on) {
       bgmAnnounced = true;
-      toast("背景音乐：《故乡的小路》", "info");
+      toast("背景音乐：《The Ludlows》", "info");
     }
     document.removeEventListener("pointerdown", unlock);
     document.removeEventListener("keydown", unlock);
