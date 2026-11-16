@@ -173,6 +173,80 @@ func TestApplyVolume(t *testing.T) {
 	}
 }
 
+func TestSetDeviceFromSource(t *testing.T) {
+	fp := &testPlayer{}
+	src := newFakeSource(t)
+	defer src.close()
+	c := newTestClient(src.addr(), fp)
+	done := runClient(c)
+
+	src.accept()
+	if fr := src.read(); fr.Type != zat.TypeHello {
+		t.Fatalf("expected HELLO, got %s", fr.Type)
+	}
+	src.send(zat.TypeHelloAck, zat.HelloAck{ServerVersion: "zat/0.1", PrebufferMS: 200})
+	src.send(zat.TypeSetDevice, zat.SetDevice{Device: "hw:1,0"})
+
+	deadline := time.Now().Add(3 * time.Second)
+	for c.PreferredDevice() != "hw:1,0" {
+		if time.Now().After(deadline) {
+			t.Fatal("SET_DEVICE did not set the preferred device")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	// Idle STATUS (no session yet) must carry the preferred device.
+	var sawPref bool
+	for time.Now().Before(deadline) && !sawPref {
+		_ = src.conn.SetReadDeadline(time.Now().Add(1200 * time.Millisecond))
+		fr, err := zat.ReadFrame(src.conn)
+		if err != nil {
+			break
+		}
+		if fr.Type == zat.TypeStatus {
+			var st zat.Status
+			_ = json.Unmarshal(fr.Payload, &st)
+			if st.PrefDevice == "hw:1,0" && st.SessionID == "" {
+				sawPref = true
+			}
+		}
+	}
+	if !sawPref {
+		t.Fatal("idle STATUS never reported pref_device")
+	}
+
+	// The preferred device overrides the SETUP suggestion.
+	deadline = time.Now().Add(3 * time.Second)
+	src.send(zat.TypeSetup, zat.Setup{SessionID: "s-1", TrackID: "trk-1", Format: zat.S16LE, Rate: 44100, Channels: 2, ALSADevice: "hw:0,0"})
+	var ack zat.SetupAck
+	for time.Now().Before(deadline) {
+		_ = src.conn.SetReadDeadline(time.Now().Add(1200 * time.Millisecond))
+		fr, err := zat.ReadFrame(src.conn)
+		if err != nil {
+			t.Fatalf("setup ack: %v", err)
+		}
+		if fr.Type == zat.TypeSetupAck {
+			_ = json.Unmarshal(fr.Payload, &ack)
+			break
+		}
+	}
+	if !ack.OK {
+		t.Fatalf("setup ack not ok: %+v", ack)
+	}
+	fp.mu.Lock()
+	dev := fp.device
+	fp.mu.Unlock()
+	if dev != "hw:1,0" {
+		t.Fatalf("player opened %q, want preferred hw:1,0", dev)
+	}
+	src.send(zat.TypeStop, zat.Stop{SessionID: "s-1"})
+	src.close()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("client did not finish")
+	}
+}
+
 func TestHandshakePlaybackRoundTrip(t *testing.T) {
 	fp := &testPlayer{}
 	src := newFakeSource(t)

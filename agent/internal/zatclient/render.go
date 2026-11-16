@@ -130,6 +130,7 @@ func (s *session) snapshotLocked() Snapshot {
 		TrackID: trackID, Title: s.meta.Title, Artist: s.meta.Artist, Album: s.meta.Album,
 		DurationMS: s.meta.DurationMS, Codec: s.meta.Codec, Rate: s.setup.Rate, Channels: s.setup.Channels,
 		PTS: s.pts, BufferMS: s.bufferMSLocked(), Volume: s.volume, ALSADevice: s.device,
+		PrefDevice: s.c.PreferredDevice(),
 	}
 }
 
@@ -253,6 +254,10 @@ func (s *session) readLoop(ctx context.Context, prebufferMS int) error {
 			var v zat.Volume
 			_ = json.Unmarshal(fr.Payload, &v)
 			s.setVolume(v.Volume)
+		case zat.TypeSetDevice:
+			var d zat.SetDevice
+			_ = json.Unmarshal(fr.Payload, &d)
+			s.c.SetDevice(d.Device)
 		case zat.TypeTrackMeta:
 			var m zat.TrackMeta
 			if json.Unmarshal(fr.Payload, &m) == nil {
@@ -389,11 +394,11 @@ func (s *session) statusLoop(ctx context.Context) {
 			st := zat.Status{
 				SessionID: sid, State: string(s.state), PTS: s.pts,
 				BufferMS: s.bufferMSLocked(), ALSADevice: s.device,
+				PrefDevice: s.c.PreferredDevice(),
 			}
 			s.mu.Unlock()
-			if sid == "" {
-				continue
-			}
+			// Report even before the first SETUP so the source can monitor the
+			// live connection and the preferred device while idle.
 			if err := s.write(zat.TypeStatus, st); err != nil {
 				return
 			}

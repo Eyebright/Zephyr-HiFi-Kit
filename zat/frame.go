@@ -40,6 +40,7 @@ const (
 	TypePong      Type = 0x0E
 	TypeAudio     Type = 0x10
 	TypeTrackMeta Type = 0x11
+	TypeSetDevice Type = 0x12
 )
 
 // String renders a type for logs/audit (never includes secrets).
@@ -77,6 +78,8 @@ func (t Type) String() string {
 		return "AUDIO"
 	case TypeTrackMeta:
 		return "TRACK_META"
+	case TypeSetDevice:
+		return "SET_DEVICE"
 	default:
 		return fmt.Sprintf("UNKNOWN(0x%02x)", byte(t))
 	}

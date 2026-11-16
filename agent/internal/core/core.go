@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -142,7 +143,7 @@ func (c *Core) Identity(ctx context.Context) ui.Identity {
 		arb = "auto"
 	}
 	return ui.Identity{
-		NodeID: s.NodeID, Alias: alias, Arch: c.arch, Registered: s.Registered,
+		NodeID: s.NodeID, Alias: alias, IP: localIP(), Arch: c.arch, Registered: s.Registered,
 		ServerURL: c.cfg.ServerURL, ServerReachable: c.client.Health(ctx) == nil,
 		SystemAvailable: c.ctl.Available(), AllowPower: c.cfg.AllowPower,
 		AllowLocal: c.cfg.AllowLocal, AgentVersion: c.cfg.AgentVersion,
@@ -150,33 +151,97 @@ func (c *Core) Identity(ctx context.Context) ui.Identity {
 	}
 }
 
-// Services builds the service cards from local inventory and systemd state.
-func (c *Core) Services(ctx context.Context) []ui.ServiceStatus {
-	apps := c.st.Snapshot().Apps
-	var out []ui.ServiceStatus
-	for _, def := range model.PrimaryServices() {
-		ss := ui.ServiceStatus{
-			AppID: def.AppID, Name: def.Name, Protocol: def.Protocol, Category: def.Category,
-			Description: def.Description, Primary: true, OccupiesDAC: def.OccupiesDAC,
-			Helpers: model.HelpersFor(def.AppID), ConfigFields: def.ConfigFields,
+// localIP reports the primary outbound IPv4 address. The UDP dial sends no
+// packets; it only selects the route. Falls back to the first non-loopback
+// interface address when no default route exists.
+func localIP() string {
+	if conn, err := net.Dial("udp4", "8.8.8.8:53"); err == nil {
+		defer conn.Close()
+		if a, ok := conn.LocalAddr().(*net.UDPAddr); ok && !a.IP.IsUnspecified() {
+			return a.IP.String()
 		}
-		if a, ok := apps[def.AppID]; ok {
-			ss.Installed = true
-			ss.Version = a.Version
-			ss.Enabled = a.Enabled
-			ss.Config = a.Config
+	}
+	ifaces, _ := net.Interfaces()
+	for _, i := range ifaces {
+		if i.Flags&net.FlagUp == 0 || i.Flags&net.FlagLoopback != 0 {
+			continue
 		}
-		if us, err := c.ctl.Status(def.Units[0]); err == nil {
-			ss.Running = us.Running()
-			ss.ActiveState = us.ActiveState
-			ss.SubState = us.SubState
-			if us.Enabled {
-				ss.Enabled = true
+		addrs, _ := i.Addrs()
+		for _, a := range addrs {
+			if ipn, ok := a.(*net.IPNet); ok && ipn.IP.To4() != nil && !ipn.IP.IsLoopback() {
+				return ipn.IP.String()
 			}
 		}
-		out = append(out, ss)
+	}
+	return ""
+}
+
+// Services builds the service cards from local inventory, systemd state and a
+// live process scan. Primary services always render; extra audio-protocol
+// services render only when detected locally and not managed by the server.
+func (c *Core) Services(ctx context.Context) []ui.ServiceStatus {
+	apps := c.st.Snapshot().Apps
+	procs := audio.ServiceProcesses(audio.RealProc{})
+	var out []ui.ServiceStatus
+	for _, def := range model.PrimaryServices() {
+		out = append(out, c.serviceStatus(def, apps, procs))
+	}
+	for _, def := range model.AutoServices() {
+		ss := c.serviceStatus(def, apps, procs)
+		// Server-managed helpers stay hidden behind their primary's card; a
+		// server-installed standalone renderer still gets its own card.
+		if ss.Installed && (ss.Source != "server" || def.HelperFor == "") {
+			out = append(out, ss)
+		}
 	}
 	return out
+}
+
+// serviceStatus resolves one service card: server inventory first, then the
+// systemd unit, then live processes (which also prove existence for services
+// started outside systemd, e.g. moode's own shairport-sync).
+func (c *Core) serviceStatus(def model.ServiceDef, apps map[string]model.InstalledApp, procs map[string][]audio.ServiceProc) ui.ServiceStatus {
+	ss := ui.ServiceStatus{
+		AppID: def.AppID, Name: def.Name, Protocol: def.Protocol, Category: def.Category,
+		Description: def.Description, Primary: true, OccupiesDAC: def.OccupiesDAC,
+		Helpers: model.HelpersFor(def.AppID), ConfigFields: def.ConfigFields,
+	}
+	if a, ok := apps[def.AppID]; ok {
+		ss.Installed = true
+		ss.Version = a.Version
+		ss.Enabled = a.Enabled
+		ss.Config = a.Config
+		ss.Source = "server"
+	}
+	if us, err := c.ctl.Status(def.Units[0]); err == nil {
+		ss.Running = us.Running()
+		ss.ActiveState = us.ActiveState
+		ss.SubState = us.SubState
+		if us.Enabled {
+			ss.Enabled = true
+		}
+		// A unit file present on the system proves the service is installed
+		// even when the agent never installed it (pre-existing terminal image).
+		if us.LoadState == "loaded" {
+			ss.Unit = def.Units[0]
+			if !ss.Installed {
+				ss.Installed = true
+				ss.Source = "system"
+			}
+		}
+	}
+	if hs := procs[def.AppID]; len(hs) > 0 {
+		ss.Running = true
+		ss.Process = hs[0].Comm
+		for _, h := range hs {
+			ss.PIDs = append(ss.PIDs, h.PID)
+		}
+		if !ss.Installed {
+			ss.Installed = true
+			ss.Source = "system"
+		}
+	}
+	return ss
 }
 
 // Metrics returns a performance snapshot.
@@ -197,13 +262,18 @@ func (c *Core) Catalog(ctx context.Context) ([]ui.CatalogEntry, error) {
 	if err != nil {
 		return nil, err
 	}
-	primary := map[string]bool{}
+	installable := map[string]bool{}
 	for _, d := range model.PrimaryServices() {
-		primary[d.AppID] = true
+		installable[d.AppID] = true
+	}
+	for _, d := range model.AutoServices() {
+		if d.HelperFor == "" {
+			installable[d.AppID] = true
+		}
 	}
 	var out []ui.CatalogEntry
 	for _, a := range apps {
-		if !primary[a.AppID] {
+		if !installable[a.AppID] {
 			continue
 		}
 		vs, err := c.client.ListVersions(ctx, a.AppID)
@@ -220,6 +290,9 @@ func (c *Core) Catalog(ctx context.Context) ([]ui.CatalogEntry, error) {
 			versions = append(versions, v.Version)
 		}
 		out = append(out, ui.CatalogEntry{AppID: a.AppID, Name: a.Name, Versions: versions})
+	}
+	if out == nil {
+		out = []ui.CatalogEntry{}
 	}
 	return out, nil
 }
@@ -545,3 +618,30 @@ func (c *Core) PlaybackVolume(v int) error { return c.zat.SetVolume(v) }
 
 // PlaybackDevice sets a local preferred ALSA device (overrides the server suggestion).
 func (c *Core) PlaybackDevice(dev string) error { c.zat.SetDevice(dev); return nil }
+
+// PlaybackQueue returns the server-side playlist (the queue lives on the server).
+func (c *Core) PlaybackQueue(ctx context.Context) (serverclient.QueueState, error) {
+	s := c.st.Snapshot()
+	if !s.Registered {
+		return serverclient.QueueState{}, fmt.Errorf("终端未注册，无服务端播放列表")
+	}
+	return c.client.Queue(ctx, s.NodeID)
+}
+
+// PlaybackNext plays the next queue entry via the server.
+func (c *Core) PlaybackNext(ctx context.Context) error {
+	s := c.st.Snapshot()
+	if !s.Registered {
+		return fmt.Errorf("终端未注册，无服务端播放列表")
+	}
+	return c.client.QueueNext(ctx, s.NodeID)
+}
+
+// PlaybackPrev plays the previous queue entry via the server.
+func (c *Core) PlaybackPrev(ctx context.Context) error {
+	s := c.st.Snapshot()
+	if !s.Registered {
+		return fmt.Errorf("终端未注册，无服务端播放列表")
+	}
+	return c.client.QueuePrev(ctx, s.NodeID)
+}

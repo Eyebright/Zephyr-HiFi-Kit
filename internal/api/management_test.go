@@ -117,6 +117,33 @@ func TestDLWhitelist(t *testing.T) {
 	}
 }
 
+func TestLicenseReceipt(t *testing.T) {
+	base := setup(t, "dev")
+	if s, _ := doJSON(t, "GET", base+"/license/receipt", nil); s != 409 {
+		t.Fatalf("receipt without license: %d", s)
+	}
+	activateDevLicense(t, base, 2)
+	nid := registerNode(t, base, "receipt-a")
+	if s, b := doJSON(t, "POST", base+"/nodes/"+nid+"/authorize", nil); s != 200 {
+		t.Fatalf("authorize: %d %s", s, b)
+	}
+	s, b := doJSON(t, "GET", base+"/license/receipt", nil)
+	if s != 200 {
+		t.Fatalf("receipt: %d %s", s, b)
+	}
+	r := mustJSON(t, b)
+	if r["key"] != "TEST-KEY-001" || r["seats"].(float64) != 2 || r["used"].(float64) != 1 {
+		t.Fatalf("receipt fields: %s", b)
+	}
+	if r["server_id"] == "" || r["activated_at"].(float64) == 0 || r["exported_at"].(float64) == 0 {
+		t.Fatalf("receipt meta: %s", b)
+	}
+	s, b2 := doJSON(t, "GET", base+"/license/receipt", nil)
+	if s != 200 || mustJSON(t, b2)["server_id"] != r["server_id"] {
+		t.Fatalf("server_id not stable: %s vs %s", b, b2)
+	}
+}
+
 func TestLicenseSeatGate(t *testing.T) {
 	base := setup(t, "dev")
 	nid := registerNode(t, base, "seat-a")

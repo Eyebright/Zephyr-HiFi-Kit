@@ -198,3 +198,19 @@ func TestUninstallEnableDisableConfigure(t *testing.T) {
 		t.Fatalf("uninstall should disable units: %v", units.calls)
 	}
 }
+
+func TestDisableLeavesSystemHelpersAlone(t *testing.T) {
+	// moode owns MPD: disabling a pre-existing upmpdcli must not stop mpd.service.
+	payload := "x"
+	e, _, units, _, _, _ := newExec(t, payload, sha(payload))
+	if err := e.Disable("upmpdcli"); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(units.calls, ";")
+	if !strings.Contains(joined, "stop upmpdcli.service") {
+		t.Fatalf("upmpdcli unit not stopped: %v", units.calls)
+	}
+	if strings.Contains(joined, "mpd.service") {
+		t.Fatalf("system-owned helper must not be touched: %v", units.calls)
+	}
+}

@@ -406,4 +406,11 @@ CREATE TABLE IF NOT EXISTS tracks (
   UNIQUE(mount_id, rel_path)
 );
 CREATE INDEX IF NOT EXISTS idx_tracks_mount ON tracks(mount_id);
+
+CREATE TABLE IF NOT EXISTS node_queue (
+  node_id    TEXT PRIMARY KEY,
+  track_ids  TEXT NOT NULL DEFAULT '[]',
+  position   INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL DEFAULT 0
+);
 `

@@ -59,11 +59,14 @@ func (s *Server) routes() {
 	// ZAT playback: read is open; controls are gated by ALLOW_LOCAL + secret but
 	// NOT play-protection (you must be able to stop/pause while playing).
 	s.mux.HandleFunc("GET /local/api/playback", s.playback)
+	s.mux.HandleFunc("GET /local/api/playback/queue", s.playbackQueue)
 	s.mux.HandleFunc("POST /local/api/playback/pause", s.playbackPause)
 	s.mux.HandleFunc("POST /local/api/playback/stop", s.playbackStop)
 	s.mux.HandleFunc("POST /local/api/playback/volume", s.playbackVolume)
 	s.mux.HandleFunc("POST /local/api/playback/seek", s.playbackSeek)
 	s.mux.HandleFunc("POST /local/api/playback/device", s.playbackDevice)
+	s.mux.HandleFunc("POST /local/api/playback/next", s.playbackNext)
+	s.mux.HandleFunc("POST /local/api/playback/prev", s.playbackPrev)
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -272,6 +275,37 @@ func (s *Server) secret(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) playback(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, s.backend.Playback())
+}
+
+func (s *Server) playbackQueue(w http.ResponseWriter, r *http.Request) {
+	q, err := s.backend.PlaybackQueue(ctx(r))
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, q)
+}
+
+func (s *Server) playbackNext(w http.ResponseWriter, r *http.Request) {
+	if !s.gateBase(w, r) {
+		return
+	}
+	if err := s.backend.PlaybackNext(ctx(r)); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (s *Server) playbackPrev(w http.ResponseWriter, r *http.Request) {
+	if !s.gateBase(w, r) {
+		return
+	}
+	if err := s.backend.PlaybackPrev(ctx(r)); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 func (s *Server) playbackPause(w http.ResponseWriter, r *http.Request) {

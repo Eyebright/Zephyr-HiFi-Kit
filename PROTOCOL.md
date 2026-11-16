@@ -137,6 +137,7 @@ TCP 保证有序可靠，简化垂直切片）。v0.2 再拆分控制/音频通�
 | 0x0E | PONG | 双向 | JSON | 保活响应 |
 | 0x10 | AUDIO | source→sink | 二进制 | PCM 帧（见 5.3） |
 | 0x11 | TRACK_META | source→sink | JSON | 正在播放元数据（标题/艺术家/专辑/时长/封面 URL） |
+| 0x12 | SET_DEVICE | source→sink | JSON | 首选 ALSA 输出设备（下次 SETUP 生效，覆盖 SETUP 建议） |
 
 ### 5.3 音频帧 payload（二进制，大端）
 
@@ -182,10 +183,13 @@ TCP 保证有序可靠，简化垂直切片）。v0.2 再拆分控制/音频通�
 { "session_id": "s-123", "pts": 4800000 }          // SEEK
 { "session_id": "s-123", "volume": 80 }            // VOLUME
 
-// STATUS (sink→source, 每 ~500ms)
+// STATUS (sink→source, 每 ~500ms；会话建立前也上报，session_id 为空)
 { "session_id": "s-123", "state": "playing", "pts": 4800000,
   "buffer_ms": 240, "underruns": 0, "alsa_device": "hw:1,0",
-  "clock_ppm": 0, "dac_holder_pid": 4242 }
+  "pref_device": "hw:1,0", "clock_ppm": 0, "dac_holder_pid": 4242 }
+
+// SET_DEVICE (source→sink；与终端本地控制台设备选择同语义，下次 SETUP 生效)
+{ "device": "hw:1,0" }
 
 // TRACK_META (source→sink)
 { "track_id":"t-1","title":"…","artist":"…","album":"…",

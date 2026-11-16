@@ -69,7 +69,7 @@ curl -fsSL http://<服务端IP>:8080/dl/agent-install.sh | \
 
 离线环境可用包内 deb：`sudo dpkg -i agent/hifihub-agent_0.4.0_<arch>.deb && sudo apt-get -f install -y`。
 
-完整部署、密钥分工、许可证签发与排障见 [INSTALL.md](INSTALL.md)。
+完整部署、密钥分工、许可证激活与排障见 [INSTALL.md](INSTALL.md)。
 
 ---
 

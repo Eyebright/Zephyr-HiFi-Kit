@@ -72,3 +72,43 @@ func TestPCMPlaybackRegex(t *testing.T) {
 		}
 	}
 }
+
+func TestServiceProcesses(t *testing.T) {
+	got := ServiceProcesses(fakeProc{
+		pids: []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12},
+		comm: map[int]string{
+			1: "systemd", 2: "shairport-sync", 3: "shairport-sync-", 4: "networkaudiod",
+			5: "RoonBridge", 6: "RAATServer", 7: "upmpdcli", 8: "mpd",
+			9: "spotifyd", 10: "snapclient", 11: "squeezelite", 12: "gmediarenderer",
+		},
+	})
+	want := map[string]int{
+		"shairport-sync": 2, "networkaudiod": 1, "roonbridge": 2, "upmpdcli": 1,
+		"mpd": 1, "spotifyd": 1, "snapclient": 1, "squeezelite": 1, "gmediarenderer": 1,
+	}
+	if len(got) != len(want) {
+		t.Fatalf("unexpected discoveries: %v", got)
+	}
+	for app, n := range want {
+		if len(got[app]) != n {
+			t.Errorf("%s: expected %d processes, got %v", app, n, got[app])
+		}
+	}
+	if got["shairport-sync"][0].PID != 2 || got["shairport-sync"][1].PID != 3 {
+		t.Errorf("shairport pids not in order: %v", got["shairport-sync"])
+	}
+	if got["mpd"][0].Comm != "mpd" {
+		t.Errorf("mpd comm lost: %v", got["mpd"])
+	}
+}
+
+func TestServiceProcessesMPDAlone(t *testing.T) {
+	// A pure-MPD terminal (no upmpdcli process) must not light the QPlay card.
+	got := ServiceProcesses(fakeProc{pids: []int{1, 2}, comm: map[int]string{1: "mpd", 2: "systemd"}})
+	if _, ok := got["upmpdcli"]; ok {
+		t.Fatal("bare mpd must not be attributed to upmpdcli")
+	}
+	if len(got) != 1 || len(got["mpd"]) != 1 {
+		t.Fatalf("expected only mpd discovered, got %v", got)
+	}
+}

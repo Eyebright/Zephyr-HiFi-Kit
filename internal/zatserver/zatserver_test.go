@@ -392,3 +392,81 @@ func TestStartPlayNotConnected(t *testing.T) {
 		t.Fatalf("expected ErrNotConnected, got %v", err)
 	}
 }
+
+func TestSetDeviceAndStatusReport(t *testing.T) {
+	h := setup(t)
+	nodeID, secret := h.register(t, "ep-dev", true)
+	conn, err := net.Dial("tcp", h.srv.Addr())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
+	hello := zat.Hello{NodeID: nodeID, SecretSHA256: hash(secret), AgentVersion: "test",
+		Caps: zat.Caps{MaxChannels: 2, ALSADevices: []string{"hw:0,0", "hw:1,0"}}}
+	f, _ := zat.ControlFrame(zat.TypeHello, 1, hello)
+	if err := zat.WriteFrame(conn, f); err != nil {
+		t.Fatal(err)
+	}
+	ack, err := zat.ReadFrame(conn)
+	if err != nil || ack.Type != zat.TypeHelloAck {
+		t.Fatalf("hello ack: %v %s", err, ack.Type)
+	}
+
+	st, err := h.srv.Status(nodeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.Connected || len(st.Devices) != 2 || st.Devices[1] != "hw:1,0" {
+		t.Fatalf("device caps not reported: %+v", st)
+	}
+	if err := h.srv.SetDevice(nodeID, "hw:9,9"); err != ErrUnknownDevice {
+		t.Fatalf("expected ErrUnknownDevice, got %v", err)
+	}
+	if err := h.srv.SetDevice(nodeID, "hw:1,0"); err != nil {
+		t.Fatalf("SetDevice: %v", err)
+	}
+	fr, err := zat.ReadFrame(conn)
+	if err != nil || fr.Type != zat.TypeSetDevice {
+		t.Fatalf("expected SET_DEVICE, got %v %s", err, fr.Type)
+	}
+	var sd zat.SetDevice
+	_ = json.Unmarshal(fr.Payload, &sd)
+	if sd.Device != "hw:1,0" {
+		t.Fatalf("SET_DEVICE payload wrong: %+v", sd)
+	}
+	n, err := h.nodes.Get(nodeID)
+	if err != nil || n.DacDevice != "hw:1,0" {
+		t.Fatalf("dac_device not persisted: %+v %v", n, err)
+	}
+
+	// The terminal echoes its preferred/opened device in STATUS.
+	stf, _ := zat.ControlFrame(zat.TypeStatus, 2, zat.Status{
+		State: "authenticated", ALSADevice: "hw:1,0", PrefDevice: "hw:1,0", BufferMS: 0})
+	if err := zat.WriteFrame(conn, stf); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		st, _ = h.srv.Status(nodeID)
+		if st.ALSADevice == "hw:1,0" && st.PrefDevice == "hw:1,0" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if st.ALSADevice != "hw:1,0" || st.PrefDevice != "hw:1,0" {
+		t.Fatalf("STATUS device report not adopted: %+v", st)
+	}
+	if st.ConfiguredDevice != "hw:1,0" {
+		t.Fatalf("configured device wrong: %+v", st)
+	}
+
+	_ = conn.Close()
+	deadline = time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) && h.srv.Connected(nodeID) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err := h.srv.SetDevice(nodeID, "hw:0,0"); err != ErrNotConnected {
+		t.Fatalf("expected ErrNotConnected after disconnect, got %v", err)
+	}
+}

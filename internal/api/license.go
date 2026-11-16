@@ -11,6 +11,16 @@ func (a *API) getLicense(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, l)
 }
 
+func (a *API) getLicenseReceipt(w http.ResponseWriter, _ *http.Request) {
+	rec, err := a.lic.Receipt()
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	w.Header().Set("Content-Disposition", `attachment; filename="license-receipt.json"`)
+	writeJSON(w, http.StatusOK, rec)
+}
+
 func (a *API) activateLicense(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		PayloadB64 string `json:"payload_b64"`

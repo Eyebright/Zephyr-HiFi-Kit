@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/google/uuid"
+
 	"hifihub/server/internal/domain"
 	"hifihub/server/internal/signature"
 	"hifihub/server/internal/store"
@@ -115,6 +117,61 @@ func (s *Service) Activate(payloadB64, sigB64 string) (domain.License, error) {
 		return l, err
 	}
 	return s.Get()
+}
+
+// Receipt is the plaintext activation receipt exported for the offline issuer's
+// ledger. The server holds only public keys, so the receipt is unsigned: it
+// records state for bookkeeping and never participates in gating decisions.
+type Receipt struct {
+	Key         string `json:"key"`
+	Account     string `json:"account"`
+	Seats       int    `json:"seats"`
+	Used        int    `json:"used"`
+	ExpiresAt   int64  `json:"expires_at"`
+	ActivatedAt int64  `json:"activated_at"`
+	ServerID    string `json:"server_id"`
+	ExportedAt  int64  `json:"exported_at"`
+}
+
+// Receipt returns the activation receipt of the current license. It requires
+// an activated, unexpired license (ErrInactive otherwise).
+func (s *Service) Receipt() (Receipt, error) {
+	l, err := s.RequireActive()
+	if err != nil {
+		return Receipt{}, err
+	}
+	var used int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM nodes WHERE authorized=1`).Scan(&used); err != nil {
+		return Receipt{}, err
+	}
+	id, err := s.serverID()
+	if err != nil {
+		return Receipt{}, err
+	}
+	return Receipt{
+		Key: l.Key, Account: l.Account, Seats: l.Seats, Used: used,
+		ExpiresAt: l.ExpiresAt, ActivatedAt: l.ActivatedAt,
+		ServerID: id, ExportedAt: time.Now().Unix(),
+	}, nil
+}
+
+// serverID returns the stable per-instance fingerprint, generating and
+// persisting it on first use.
+func (s *Service) serverID() (string, error) {
+	var id string
+	err := s.db.QueryRow(`SELECT value FROM server_state WHERE key='server.id'`).Scan(&id)
+	if err == nil && id != "" {
+		return id, nil
+	}
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return "", err
+	}
+	id = uuid.NewString()
+	if _, err := s.db.Exec(`INSERT INTO server_state(key,value) VALUES('server.id',?)
+		ON CONFLICT(key) DO UPDATE SET value=excluded.value`, id); err != nil {
+		return "", err
+	}
+	return id, nil
 }
 
 // verify checks the detached signature using the configured verifier. In dev

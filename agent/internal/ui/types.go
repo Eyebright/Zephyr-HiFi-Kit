@@ -20,6 +20,7 @@ import (
 type Identity struct {
 	NodeID          string `json:"node_id"`
 	Alias           string `json:"alias"`
+	IP              string `json:"ip"`
 	Arch            string `json:"arch"`
 	Registered      bool   `json:"registered"`
 	ServerURL       string `json:"server_url"`
@@ -51,11 +52,15 @@ type ServiceStatus struct {
 	Description  string              `json:"description,omitempty"`
 	Primary      bool                `json:"primary"`
 	Installed    bool                `json:"installed"`
+	Source       string              `json:"source,omitempty"`
 	Version      string              `json:"version,omitempty"`
 	Enabled      bool                `json:"enabled"`
 	Running      bool                `json:"running"`
 	ActiveState  string              `json:"active_state,omitempty"`
 	SubState     string              `json:"sub_state,omitempty"`
+	Unit         string              `json:"unit,omitempty"`
+	Process      string              `json:"process,omitempty"`
+	PIDs         []int               `json:"pids,omitempty"`
 	OccupiesDAC  bool                `json:"occupies_dac"`
 	Helpers      []string            `json:"helpers,omitempty"`
 	Config       map[string]string   `json:"config,omitempty"`
@@ -121,4 +126,9 @@ type Backend interface {
 	PlaybackSeek(pts uint64) error
 	PlaybackVolume(v int) error
 	PlaybackDevice(dev string) error
+	// The playlist lives server-side: queue reads and prev/next proxy to the
+	// management server, which owns queue position and auto-advance.
+	PlaybackQueue(ctx context.Context) (serverclient.QueueState, error)
+	PlaybackNext(ctx context.Context) error
+	PlaybackPrev(ctx context.Context) error
 }

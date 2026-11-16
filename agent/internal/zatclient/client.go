@@ -41,6 +41,7 @@ type Snapshot struct {
 	BufferMS   int    `json:"buffer_ms"`
 	Volume     int    `json:"volume"`
 	ALSADevice string `json:"alsa_device,omitempty"`
+	PrefDevice string `json:"pref_device,omitempty"`
 	Detail     string `json:"detail,omitempty"`
 }
 
@@ -81,6 +82,7 @@ func (c *Client) SetDevice(dev string) {
 	c.mu.Lock()
 	c.prefDevice = dev
 	c.mu.Unlock()
+	c.setSnap(func(sn *Snapshot) { sn.PrefDevice = dev })
 }
 
 // PreferredDevice returns the local device override ("" = use server suggestion).

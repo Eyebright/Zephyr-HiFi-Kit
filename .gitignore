@@ -9,6 +9,9 @@ dist/
 *.tar.gz
 *.asc.bak
 
+# license issuer (private: never commit source, docs, ledgers or key material)
+license-manager/
+
 # runtime state & smoke data
 data-smoke/
 *.db

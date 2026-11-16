@@ -108,6 +108,26 @@ type Policy struct {
 	OfflineAfter   int             `json:"offline_after"`
 }
 
+// QueueTrack is one server-side playlist entry with resolved library metadata.
+type QueueTrack struct {
+	TrackID    string `json:"track_id"`
+	Title      string `json:"title"`
+	Artist     string `json:"artist"`
+	Album      string `json:"album"`
+	DurationMS int    `json:"duration_ms"`
+	Codec      string `json:"codec"`
+	Decodable  bool   `json:"decodable"`
+	Missing    bool   `json:"missing"`
+}
+
+// QueueState is the node's server-side playback queue.
+type QueueState struct {
+	NodeID    string       `json:"node_id"`
+	Tracks    []QueueTrack `json:"tracks"`
+	Position  int          `json:"position"`
+	UpdatedAt int64        `json:"updated_at"`
+}
+
 // CommandParams carries optional command arguments. os-upgrade uses Packages;
 // agent-upgrade uses the exact signed-chain artifact the terminal must install.
 type CommandParams struct {
@@ -343,6 +363,23 @@ func (c *Client) ReportPhase(ctx context.Context, id, phase, state, detail strin
 	body := map[string]string{"phase": phase, "state": state, "detail": detail}
 	err := c.do(ctx, "POST", "/jobs/"+id+"/phases", body, &j)
 	return j, err
+}
+
+// Queue returns the node's server-side playback queue.
+func (c *Client) Queue(ctx context.Context, nodeID string) (QueueState, error) {
+	var q QueueState
+	err := c.do(ctx, "GET", "/nodes/"+nodeID+"/queue", nil, &q)
+	return q, err
+}
+
+// QueueNext advances the server queue and starts the next track.
+func (c *Client) QueueNext(ctx context.Context, nodeID string) error {
+	return c.do(ctx, "POST", "/nodes/"+nodeID+"/queue/next", nil, nil)
+}
+
+// QueuePrev goes back one queue entry (restarting the current one at the head).
+func (c *Client) QueuePrev(ctx context.Context, nodeID string) error {
+	return c.do(ctx, "POST", "/nodes/"+nodeID+"/queue/prev", nil, nil)
 }
 
 // Download streams an artifact to dest and returns its SHA-256 hex digest.

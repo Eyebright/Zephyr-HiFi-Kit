@@ -538,6 +538,23 @@ select.inp option { background: var(--card); color: var(--text); }
   .tiles.c4 { grid-template-columns: 1fr; }
   .brand-sub { display: none; }
 }
+/* Playback queue (node drawer) */
+.q-list { display: flex; flex-direction: column; gap: 4px; }
+.q-row {
+  display: flex; align-items: center; gap: 10px; padding: 6px 8px;
+  border: 1px solid var(--soft); border-radius: var(--r-sm); background: var(--surface);
+}
+.q-row.cur { border-color: rgba(52,211,235,.45); background: rgba(52,211,235,.08); }
+.q-idx {
+  flex: none; width: 20px; display: flex; align-items: center; justify-content: center;
+  color: var(--faint); font-size: 12px;
+}
+.q-row.cur .q-idx { color: var(--cyan); }
+.q-info { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.q-title { font-size: 13px; font-weight: 600; }
+.q-sub { font-size: 11px; }
+.q-acts { flex: none; display: flex; gap: 4px; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }

@@ -353,7 +353,7 @@ const S = {
   view: "overview", search: "",
   health: null, metrics: null,
   nodes: [], apps: [], boms: [], pubBoms: [], jobs: [], rollouts: [], alerts: [], keys: [], license: null, audit: [],
-  nodeApps: {}, nodeOs: {},
+  nodeApps: {}, nodeOs: {}, nodePlay: {}, nodeQueue: {}, nodeSvc: {}, nodeLib: {},
   nodeFilter: "all", nodeSort: { key: "alias", dir: 1 }, sel: new Set(),
   alertFilter: "open", auditFilter: "all",
   jobBom: "", jobSel: new Set(),
@@ -832,16 +832,30 @@ async function openNodeDrawer(id) {
   let apps = [];
   try { const a = await api("GET", `/nodes/${enc(id)}/apps`); apps = Array.isArray(a) ? a : (a && a.apps) || []; } catch (e) { /* aux */ }
   S.nodeApps[id] = apps;
+  try { const st = await api("GET", `/nodes/${enc(id)}/local/api/status`); S.nodeSvc[id] = (st && st.services) || []; } catch (e) { S.nodeSvc[id] = null; }
+  S.nodeLib[id] = await loadNodeLib(n.arch);
+  try { S.nodePlay[id] = await api("GET", `/nodes/${enc(id)}/play`); } catch (e) { S.nodePlay[id] = { node_id: id, connected: false }; }
+  try { S.nodeQueue[id] = await api("GET", `/nodes/${enc(id)}/queue`); } catch (e) { S.nodeQueue[id] = { node_id: id, tracks: [], position: 0 }; }
   openDrawer(esc(n.alias || shortId(id)), esc(id), nodeDrawerBody(n, apps),
     `<button class="btn primary" data-act="node-console" data-id="${esc(id)}">${icon("terminal", 15)} 控制该主机</button>`,
-    { ctx: { kind: "node", id }, onClose: () => stopPoll("node:poll") });
+    { ctx: { kind: "node", id }, onClose: () => { stopPoll("node:poll"); stopPoll("node:play"); } });
+  poll("node:play", async () => {
+    if (!drawerCtx || drawerCtx.kind !== "node" || drawerCtx.id !== id) return;
+    try { S.nodePlay[id] = await api("GET", `/nodes/${enc(id)}/play`); } catch (e) { return; }
+    try { S.nodeQueue[id] = await api("GET", `/nodes/${enc(id)}/queue`); } catch (e) { /* keep last */ }
+    paintNodePlay(id);
+  }, 1000, true);
   poll("node:poll", async () => {
     if (!drawerCtx || drawerCtx.kind !== "node" || drawerCtx.id !== id) return;
+    // Never rebuild the body while the device picker is being operated.
+    const devSel = $("#node-play-dev");
+    if (devSel && document.activeElement === devSel) return;
     try {
       const nn = await api("GET", `/nodes/${enc(id)}`);
       let aa = S.nodeApps[id] || [];
       try { const a = await api("GET", `/nodes/${enc(id)}/apps`); aa = Array.isArray(a) ? a : (a && a.apps) || []; } catch (e) { /* aux */ }
       S.nodeApps[id] = aa;
+      try { const st = await api("GET", `/nodes/${enc(id)}/local/api/status`); S.nodeSvc[id] = (st && st.services) || []; } catch (e) { /* keep last */ }
       setDrawerBody(nodeDrawerBody(nn, aa));
       setDrawerTitle(esc(nn.alias || shortId(id)), esc(id));
     } catch (e) { /* keep last good paint */ }
@@ -862,6 +876,8 @@ function nodeDrawerBody(n, apps) {
     tile("wifi", "网络诊断", "一键自检", "node-net", "cyan", id) +
     tile("terminal", "终端界面", "远程控制", "node-console", "violet", id) +
     `</div>`;
+  h += nodePlaySection(n, S.nodePlay[id]);
+  h += nodeQueueSection(n, S.nodeQueue[id]);
   const cpu = Number(n.cpu) || 0, mem = Number(n.mem_mb) || 0, temp = Number(n.temp_c) || 0;
   h += `<div class="d-sec"><span class="lbl">资源</span>` +
     meter("CPU", cpu, cpu.toFixed(1) + " %", "cyan") +
@@ -887,14 +903,193 @@ function nodeDrawerBody(n, apps) {
     kvRow("最近心跳", fmtTime(n.last_seen)) +
     (n.note ? kvRow("备注", esc(n.note)) : "") +
     `</div></div>`;
-  h += `<div class="d-sec"><span class="lbl">已安装应用 (${apps.length})</span>`;
-  if (apps.length) {
+  const svcs = S.nodeSvc[id];
+  const inst = svcs ? svcs.filter(s => s.installed) : null;
+  h += `<div class="d-sec"><span class="lbl">已安装音频服务 (${inst ? inst.length : apps.length})</span>`;
+  if (inst) {
+    if (inst.length) {
+      h += `<div class="tbl-wrap"><table class="tbl" style="min-width:0"><thead><tr><th>服务</th><th>版本</th><th>来源</th><th>状态</th></tr></thead><tbody>` +
+        inst.map(s => `<tr><td>${esc(s.name)}${s.protocol ? ` <span class="sub">${esc(s.protocol.toUpperCase())}</span>` : ""}<div class="sub cell-mono">${esc(s.unit || s.process || "—")}</div></td><td class="cell-mono">${esc(s.version || "—")}</td><td>${s.source === "system" ? badge("系统已有", "info") : badge("服务端", "ok")}</td><td>${s.running ? badge("运行中", "ok") : badge("已停用", "muted")}</td></tr>`).join("") +
+        `</tbody></table></div>`;
+    } else h += empty("box", "终端未检测到已安装的音频服务", "", true);
+  } else if (apps.length) {
     h += `<div class="tbl-wrap"><table class="tbl" style="min-width:0"><thead><tr><th>应用</th><th>版本</th><th>服务</th><th>状态</th></tr></thead><tbody>` +
       apps.map(a => `<tr><td class="cell-mono">${esc(a.app_id || a.id || "—")}</td><td class="cell-mono">${esc(a.version || "—")}</td><td class="cell-mono">${esc(a.unit || "—")}<div class="sub">${esc(a.source || "")}</div></td><td>${a.enabled ? badge("启用", "ok") : badge("停用", "muted")}</td></tr>`).join("") +
       `</tbody></table></div>`;
   } else h += empty("box", "暂无已安装应用上报", "", true);
   h += `</div>`;
+  const lib = S.nodeLib[id] || [];
+  h += `<div class="d-sec"><span class="lbl">可下发服务库 · ${esc(n.arch || "—")}</span>`;
+  if (lib.length) {
+    h += `<div class="tbl-wrap"><table class="tbl" style="min-width:0"><thead><tr><th>服务</th><th>该架构可用版本</th><th>终端</th></tr></thead><tbody>` +
+      lib.map(l => `<tr><td>${esc(l.name)}<div class="sub cell-mono">${esc(l.app_id)}</div></td><td class="cell-mono">${l.versions.map(esc).join(", ")}</td><td>${inst && inst.some(s => s.app_id === l.app_id) ? badge("已安装", "ok") : badge("可下发", "info")}</td></tr>`).join("") +
+      `</tbody></table></div>`;
+  } else h += empty("box", `暂无适用于 ${esc(n.arch || "该架构")} 的已发布制品`, "在应用仓库为对应架构上传并发布制品后自动匹配", true);
+  h += `</div>`;
   return h;
+}
+
+// loadNodeLib matches the distributable catalog to one machine type: only
+// non-banned, non-revoked artifacts built for the node's arch are offered.
+async function loadNodeLib(arch) {
+  let apps = [];
+  try { apps = await api("GET", "/apps"); } catch (e) { return []; }
+  const out = [];
+  for (const a of apps) {
+    let vs = [];
+    try { vs = await api("GET", `/apps/${enc(a.app_id)}/versions`); } catch (e) { continue; }
+    const ok = (vs || []).filter(v => v.arch === arch && !v.banned && v.lifecycle !== "revoked");
+    if (!ok.length) continue;
+    const versions = [...new Set(ok.map(v => v.version))];
+    out.push({ app_id: a.app_id, name: a.name || a.app_id, versions });
+  }
+  return out;
+}
+
+/* ---- node playback monitor + ALSA device picker ---- */
+function nodePlayDevs(p) {
+  const devs = Array.isArray(p.devices) ? p.devices.slice() : [];
+  if (!devs.includes("default")) devs.unshift("default");
+  const cur = p.pref_device || p.configured_device || "default";
+  if (!devs.includes(cur)) devs.push(cur);
+  return { devs, cur };
+}
+function nodePlayOpts(devs, cur) {
+  return devs.map(d => `<option value="${esc(d)}" ${d === cur ? "selected" : ""}>${esc(d === "default" ? "default（系统默认）" : d)}</option>`).join("");
+}
+function nodePlayMon(p) {
+  p = p || {};
+  if (!p.connected) {
+    return `<div class="kv">` + kvRow("状态", badge("ZAT 未连接", "muted")) +
+      kvRow("说明", `<span class="txt-faint">终端 Agent 连接 ZAT 服务后自动上报播放状态与设备列表。</span>`) + `</div>`;
+  }
+  const st = p.state || "idle";
+  const stBadge = p.playing ? badge("播放中", "ok")
+    : st === "paused" ? badge("已暂停", "warn")
+    : st === "stopped" ? badge("已停止", "muted")
+    : st === "ready" ? badge("就绪", "info")
+    : badge("已连接 · 空闲", "muted");
+  const hasTrack = !!(p.track_id || p.title);
+  const elapsed = p.rate && p.pts ? p.pts / p.rate * 1000 : 0;
+  const total = p.duration_ms || 0;
+  let h = `<div class="kv">` +
+    kvRow("状态", stBadge) +
+    kvRow("曲目", hasTrack ? `<b>${esc(p.title || "—")}</b>` : `<span class="txt-faint">空闲 · 未推流</span>`) +
+    (hasTrack ? kvRow("艺术家 / 专辑", esc([p.artist, p.album].filter(Boolean).join(" · ") || "—")) : "") +
+    `</div>`;
+  if (hasTrack && total) h += meter("进度", elapsed / total * 100, fmtDur(elapsed) + " / " + fmtDur(total), "cyan");
+  h += `<div class="kv mt8">` +
+    kvRow("缓冲", `<span class="mono">${p.buffer_ms != null ? p.buffer_ms : 0} ms</span>` + (p.underruns ? ` ${badge("underrun ×" + p.underruns, "warn")}` : "")) +
+    kvRow("格式", hasTrack ? `<span class="mono">${esc(p.codec || "—")} · ${p.rate ? (p.rate / 1000) + " kHz" : "—"} · ${p.channels || "—"} ch</span>` : `<span class="txt-faint">—</span>`) +
+    kvRow("当前输出", `<span class="mono">${esc(p.alsa_device || "—")}</span>`) +
+    `</div>`;
+  return h;
+}
+function nodePlaySection(n, p) {
+  p = p || {};
+  const { devs, cur } = nodePlayDevs(p);
+  const q = S.nodeQueue[n.node_id] || {};
+  const ql = (q.tracks || []).length;
+  const qpos = q.position || 0;
+  return `<div class="d-sec"><span class="lbl">播放监控</span>
+    <div id="node-play-mon">${nodePlayMon(p)}</div>
+    <div class="field mt8"><label>ALSA 输出设备</label>
+      <select id="node-play-dev" class="inp mono" data-change="node-device" data-id="${esc(n.node_id)}" data-sig="${esc(devs.join("|"))}" ${p.connected ? "" : "disabled"}>${nodePlayOpts(devs, cur)}</select>
+    </div>
+    <div class="f-hint">设备列表由终端实时上报；选择后下次播放生效，与终端本地控制台同语义。</div>
+    <div class="acts mt8" id="node-play-acts" style="${p.connected ? "" : "display:none"}">
+      <button class="btn xs" id="node-q-prev" data-act="queue-prev" data-id="${esc(n.node_id)}" ${p.connected && ql ? "" : "disabled"}>${icon("chevL", 13)} 上一首</button>
+      <button class="btn xs" id="node-q-next" data-act="queue-next" data-id="${esc(n.node_id)}" ${p.connected && ql && qpos < ql - 1 ? "" : "disabled"}>下一首 ${icon("chevR", 13)}</button>
+      <span id="node-stop-wrap" style="${p.playing ? "" : "display:none"}"><button class="btn xs danger" data-act="play-stop" data-id="${esc(n.node_id)}">${icon("stop", 13)} 停止播放</button></span>
+    </div>
+  </div>`;
+}
+function paintNodePlay(id) {
+  if (!drawerCtx || drawerCtx.kind !== "node" || drawerCtx.id !== id) return;
+  const p = S.nodePlay[id] || {};
+  const mon = $("#node-play-mon");
+  if (mon) mon.innerHTML = nodePlayMon(p);
+  const q = S.nodeQueue[id] || {};
+  const ql = (q.tracks || []).length;
+  const qpos = q.position || 0;
+  const acts = $("#node-play-acts");
+  if (acts) acts.style.display = p.connected ? "" : "none";
+  const stopWrap = $("#node-stop-wrap");
+  if (stopWrap) stopWrap.style.display = p.playing ? "" : "none";
+  const prev = $("#node-q-prev"), next = $("#node-q-next");
+  if (prev) prev.disabled = !p.connected || !ql;
+  if (next) next.disabled = !p.connected || !ql || qpos >= ql - 1;
+  const qlist = $("#node-queue-list");
+  if (qlist) qlist.innerHTML = nodeQueueList(id, q);
+  const sel = $("#node-play-dev");
+  if (!sel) return;
+  const { devs, cur } = nodePlayDevs(p);
+  const sig = devs.join("|");
+  if (sel.dataset.sig !== sig) { sel.innerHTML = nodePlayOpts(devs, cur); sel.dataset.sig = sig; }
+  sel.disabled = !p.connected;
+  if (document.activeElement !== sel && sel.value !== cur) sel.value = cur;
+}
+
+/* ---- server-side playback queue ---- */
+function nodeQueueSection(n, q) {
+  const tracks = (q && q.tracks) || [];
+  return `<div class="d-sec"><span class="lbl">播放队列 (${tracks.length})</span>
+    <div id="node-queue-list">${nodeQueueList(n.node_id, q)}</div>
+    <div class="f-hint">队列保存在服务端；曲目自然播完自动续播下一首，终端「上一首 / 下一首」与此处同步。</div>
+  </div>`;
+}
+function nodeQueueList(id, q) {
+  const tracks = (q && q.tracks) || [];
+  if (!tracks.length) return empty("music", "队列为空", "在媒体库「推送播放」或「加入队列」添加曲目", true);
+  const pos = q.position || 0;
+  let h = `<div class="q-list">` + tracks.map((t, i) => `
+    <div class="q-row ${i === pos ? "cur" : ""}">
+      <span class="q-idx mono">${i === pos ? icon("speaker", 12) : i + 1}</span>
+      <span class="q-info">
+        <span class="q-title truncate">${esc(t.title || t.track_id)}${t.missing ? " " + badge("缺失", "warn") : ""}</span>
+        <span class="q-sub txt-faint">${esc([t.artist, t.album].filter(Boolean).join(" · ") || "—")}${t.duration_ms ? " · " + fmtDur(t.duration_ms) : ""}</span>
+      </span>
+      <span class="q-acts">
+        ${i !== pos ? `<button class="btn xs ghost" data-act="queue-jump" data-id="${esc(id)}" data-idx="${i}" title="播放此曲">${icon("play", 12)}</button>` : ""}
+        <button class="btn xs ghost" data-act="queue-remove" data-id="${esc(id)}" data-idx="${i}" title="移出队列">${icon("x", 12)}</button>
+      </span>
+    </div>`).join("") + `</div>`;
+  h += `<div class="acts mt8"><button class="btn xs ghost" data-act="queue-clear" data-id="${esc(id)}">${icon("trash", 12)} 清空队列</button></div>`;
+  return h;
+}
+async function nodeQueueRefresh(id) {
+  try { S.nodeQueue[id] = await api("GET", `/nodes/${enc(id)}/queue`); } catch (e) { /* keep last */ }
+  paintNodePlay(id);
+}
+async function queueMove(id, dir) {
+  try {
+    await api("POST", `/nodes/${enc(id)}/queue/${dir}`);
+    toast(dir === "next" ? "播放下一首" : "播放上一首", "ok");
+  } catch (e) { toast(e.message, "err"); }
+  nodeQueueRefresh(id);
+}
+async function queueJump(id, idx) {
+  try { await api("POST", `/nodes/${enc(id)}/queue/jump`, { index: idx }); toast("播放所选曲目", "ok"); }
+  catch (e) { toast(e.message, "err"); }
+  nodeQueueRefresh(id);
+}
+async function queueRemove(id, idx) {
+  const q = S.nodeQueue[id]; if (!q) return;
+  const ids = (q.tracks || []).map(t => t.track_id);
+  if (idx < 0 || idx >= ids.length) return;
+  ids.splice(idx, 1);
+  let pos = q.position || 0;
+  if (idx < pos) pos--;
+  if (pos >= ids.length) pos = ids.length - 1;
+  if (pos < 0) pos = 0;
+  try { S.nodeQueue[id] = await api("PUT", `/nodes/${enc(id)}/queue`, { track_ids: ids, position: pos }); toast("已移出队列", "ok"); }
+  catch (e) { toast(e.message, "err"); }
+  paintNodePlay(id);
+}
+async function queueClear(id) {
+  try { S.nodeQueue[id] = await api("PUT", `/nodes/${enc(id)}/queue`, { track_ids: [], position: 0 }); toast("队列已清空", "ok"); }
+  catch (e) { toast(e.message, "err"); }
+  paintNodePlay(id);
 }
 
 /* ================= OS UPDATES ================= */
@@ -2235,7 +2430,7 @@ function paintLicense() {
   const el = $("#lic-card"); if (!el) return;
   const lic = S.license;
   const used = S.nodes.filter(n => n.authorized).length;
-  let h = secHead(`${icon("shield", 17)} 许可证`, `<button class="btn violet sm" data-act="lic-open">${icon("key", 14)} ${lic && lic.status === "activated" ? "重新激活" : "激活"}</button>`);
+  let h = secHead(`${icon("shield", 17)} 许可证`, `${lic && lic.status === "activated" ? `<button class="btn ghost sm" data-act="lic-receipt">${icon("download", 14)} 导出激活回执</button>` : ""}<button class="btn violet sm" data-act="lic-open">${icon("key", 14)} ${lic && lic.status === "activated" ? "重新激活" : "激活"}</button>`);
   if (!lic || lic.status === "none") {
     h += empty("lock", "尚未激活授权", `<button class="btn violet" data-act="lic-open">${icon("key", 15)} 激活许可证</button>`);
     h += `<div class="banner warn mt16">${icon("info", 15)}<span>激活后才能授权终端并下发服务。支持导入 payload JSON 与 detached 签名，或直接粘贴 base64。</span></div>`;
@@ -2646,7 +2841,9 @@ function nowRow(n) {
   const p = S.play[n.node_id] || {};
   const t = p.track_id ? S.tracks.find(x => x.id === p.track_id) : null;
   const playing = !!p.playing;
-  const elapsed = t && t.rate && p.pts ? fmtDur(p.pts / t.rate * 1000) : null;
+  const rate = p.rate || (t && t.rate);
+  const elapsed = rate && p.pts ? fmtDur(p.pts / rate * 1000) : null;
+  const sub = [p.artist, p.album].filter(Boolean).join(" · ");
   return `<div class="now-row ${playing ? "playing" : ""}">
     <div class="now-ic">${icon(playing ? "speaker" : "server", 18)}</div>
     <div class="now-info">
@@ -2656,10 +2853,11 @@ function nowRow(n) {
     <div class="now-track">
       ${playing || p.connected
         ? `<div class="now-title truncate">${esc(p.title || (t && t.title) || "—")}</div>
-           <div class="now-sub">${p.connected ? badge("ZAT 已连接", "ok") : badge("未连接", "muted")}${playing ? badge("播放中", "info") : ""}${elapsed ? ` <span class="mono">${elapsed}</span>` : ""}${p.buffer_ms != null ? ` <span class="txt-faint">缓冲 ${p.buffer_ms} ms</span>` : ""}</div>`
+           <div class="now-sub">${p.connected ? badge("ZAT 已连接", "ok") : badge("未连接", "muted")}${playing ? badge("播放中", "info") : ""}${elapsed ? ` <span class="mono">${elapsed}</span>` : ""}${p.duration_ms ? ` <span class="mono txt-faint">/ ${fmtDur(p.duration_ms)}</span>` : ""}${p.buffer_ms != null ? ` <span class="txt-faint">缓冲 ${p.buffer_ms} ms</span>` : ""}</div>
+           ${sub || p.alsa_device ? `<div class="now-sub txt-faint">${esc(sub)}${sub && p.alsa_device ? " · " : ""}${p.alsa_device ? `<span class="mono">${esc(p.alsa_device)}</span>` : ""}</div>` : ""}`
         : `<div class="now-sub txt-faint">空闲 · 未推流</div>`}
     </div>
-    <div class="now-acts">${playing ? `<button class="btn xs danger" data-act="play-stop" data-id="${esc(n.node_id)}">${icon("stop", 13)} 停止</button>` : ""}</div>
+    <div class="now-acts">${p.connected ? `<button class="btn xs ghost" data-act="queue-prev" data-id="${esc(n.node_id)}" title="上一首">${icon("chevL", 13)}</button><button class="btn xs ghost" data-act="queue-next" data-id="${esc(n.node_id)}" title="下一首">${icon("chevR", 13)}</button>` : ""}${playing ? `<button class="btn xs danger" data-act="play-stop" data-id="${esc(n.node_id)}">${icon("stop", 13)} 停止</button>` : ""}</div>
   </div>`;
 }
 
@@ -2734,7 +2932,7 @@ const TP = { trackID: "", track: null, sel: "", busy: false };
 async function openTrackPlay(trackID) {
   TP.trackID = trackID; TP.track = S.tracks.find(x => x.id === trackID) || null; TP.sel = ""; TP.busy = false;
   openModal(`${icon("send", 18)} 推送播放`, `<div id="tp-body">${empty("refresh", "正在加载终端…", "", true)}</div>`,
-    `<button class="btn ghost" data-act="modal-close">取消</button><div class="spacer"></div><button class="btn primary" id="tp-go" data-act="track-play-go" disabled>${icon("play", 15)} 推送播放</button>`, { narrow: true });
+    `<button class="btn ghost" data-act="modal-close">取消</button><div class="spacer"></div><button class="btn" id="tp-enq" data-act="track-enqueue-go" disabled>${icon("plus", 15)} 加入队列</button><button class="btn primary" id="tp-go" data-act="track-play-go" disabled>${icon("play", 15)} 推送播放</button>`, { narrow: true });
   try {
     const nodes = await api("GET", "/nodes");
     S.nodes = Array.isArray(nodes) ? nodes : [];
@@ -2766,11 +2964,13 @@ function paintTrackPlay() {
         <span class="tp-nbadges">${authBadge(n)}${p.connected ? badge("ZAT 已连接", "ok") : badge("未连接", "muted")}${n.playing ? badge("播放中", "info") : ""}</span>
       </div>`;
     }).join("") + `</div>`;
+    h += `<div class="f-hint mt8">推送播放＝替换队列并立即播放；加入队列＝追加到队尾（队列为空时立即播放）。</div>`;
     if (!online.some(n => n.authorized)) h += `<div class="banner warn mt12">${icon("alert", 15)}<span>在线终端均未授权，ZAT 推流会被拒绝。请先在终端管理授权。</span></div>`;
     else if (TP.sel && !(S.nodes.find(n => n.node_id === TP.sel) || {}).authorized) h += `<div class="banner warn mt12">${icon("alert", 15)}<span>该终端未授权，无法推流。请选择已授权终端。</span></div>`;
   }
   body.innerHTML = h;
   const go = $("#tp-go"); if (go) go.disabled = !TP.sel || TP.busy;
+  const enq = $("#tp-enq"); if (enq) enq.disabled = !TP.sel || TP.busy;
 }
 async function trackPlayGo() {
   const nodeID = TP.sel; if (!nodeID || TP.busy) return;
@@ -2786,6 +2986,23 @@ async function trackPlayGo() {
   } catch (e) {
     TP.busy = false;
     if (go) { go.disabled = false; go.innerHTML = `${icon("play", 15)} 推送播放`; }
+    toast(e.message, "err");
+  }
+}
+async function trackEnqueueGo() {
+  const nodeID = TP.sel; if (!nodeID || TP.busy) return;
+  const n = S.nodes.find(x => x.node_id === nodeID);
+  if (n && !n.authorized) { toast("终端未授权，无法推流", "warn"); return; }
+  TP.busy = true;
+  const enq = $("#tp-enq"); if (enq) { enq.disabled = true; enq.innerHTML = `${icon("refresh", 15)} 加入中…`; }
+  try {
+    const r = await api("POST", `/nodes/${enc(nodeID)}/queue/enqueue`, { track_id: TP.trackID });
+    toast(`已加入 ${n ? (n.alias || shortId(nodeID)) : shortId(nodeID)} 的队列${r && r.session_id ? " · 已开始播放" : ""}`, "ok");
+    closeModal();
+    await refreshLibraryLive();
+  } catch (e) {
+    TP.busy = false;
+    if (enq) { enq.disabled = false; enq.innerHTML = `${icon("plus", 15)} 加入队列`; }
     toast(e.message, "err");
   }
 }
@@ -2881,6 +3098,7 @@ Object.assign(ACT, {
   "upd-retry": ds => updRetry(ds.id),
   "lic-open": () => openLicenseActivate(),
   "lic-submit": () => licSubmit(),
+  "lic-receipt": () => { download("/license/receipt"); toast("已开始导出激活回执", "info"); },
   "key-import": () => openKeyImport(),
   "key-import-submit": () => keyImportSubmit(),
   "key-trust": ds => keyTrust(ds.id),
@@ -2905,7 +3123,13 @@ Object.assign(ACT, {
   "tp-pick": ds => { TP.sel = ds.id; paintTrackPlay(); },
   "tp-goto-nodes": () => { closeModal(); setView("nodes"); },
   "track-play-go": () => trackPlayGo(),
-  "play-stop": ds => playStop(ds.id)
+  "play-stop": ds => playStop(ds.id),
+  "queue-prev": ds => queueMove(ds.id, "prev"),
+  "queue-next": ds => queueMove(ds.id, "next"),
+  "queue-jump": ds => queueJump(ds.id, parseInt(ds.idx, 10)),
+  "queue-remove": ds => queueRemove(ds.id, parseInt(ds.idx, 10)),
+  "queue-clear": ds => queueClear(ds.id),
+  "track-enqueue-go": () => trackEnqueueGo()
 });
 
 /* ================= CHANGE MAP ================= */
@@ -2916,6 +3140,12 @@ const CHG = {
   "os-pkg-all": el => { const pkgs = (OSC.state && OSC.state.packages) || []; pkgs.forEach(p => { if (el.checked) OSC.sel.add(p.name); else OSC.sel.delete(p.name); }); repaintOs(); },
   "cfg-bom": () => paintCfgDrift(),
   "cfg-dac": () => paintCfgDacHint(),
+  "node-device": async (el, ds) => {
+    await api("POST", `/nodes/${enc(ds.id)}/device`, { device: el.value });
+    toast("输出设备已设置（下次播放生效）", "ok");
+    try { S.nodePlay[ds.id] = await api("GET", `/nodes/${enc(ds.id)}/play`); } catch (e) { /* aux */ }
+    paintNodePlay(ds.id);
+  },
   "ver-lc": (el, ds) => verLifecycle(ds, el.value),
   "dl-bom": el => { S.jobBom = el.value; paintDlForm(); },
   "dl-node": (el, ds) => { if (el.checked) S.jobSel.add(ds.id); else S.jobSel.delete(ds.id); paintDlForm(); },

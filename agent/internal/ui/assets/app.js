@@ -2,10 +2,12 @@
 
 const $ = (id) => document.getElementById(id);
 let catalog = [];
+let services = [];
 let nodeSecret = "";
 let lastIdentity = null;
 let gateBlockMsg = "";
 let lastPlayback = null;
+let lastQueue = null;
 let npDevices = [];
 let npSeeking = false;
 let npVoluming = false;
@@ -97,6 +99,9 @@ function renderIdentity(id) {
   sy.className = "pill " + (id.system_available ? "ok" : "bad");
   $("btn-reboot").disabled = !id.allow_power;
   $("btn-shutdown").disabled = !id.allow_power;
+  $("si-ip").textContent = id.ip || "–";
+  $("si-node").textContent = id.node_id || "–";
+  $("si-node").title = id.node_id || "";
   applyGates(id);
   renderBanner();
 }
@@ -112,15 +117,13 @@ function renderMetrics(m) {
   setBar("bar-disk", m.disk_percent || 0);
   $("m-load").textContent = (m.load || []).map((x) => x.toFixed(2)).join(" ");
   $("m-uptime").textContent = fmtUptime(m.uptime_sec);
-  $("m-distro").textContent = m.distro || "";
-  $("m-kernel").textContent = m.kernel ? "内核 " + m.kernel : "";
+  $("si-distro").textContent = m.distro || "–";
+  $("si-kernel").textContent = m.kernel || "–";
 }
 
 function statusText(s) {
   if (!s.installed) return "未安装";
-  if (s.running) return "运行中";
-  if (s.enabled) return "已启用·未运行";
-  return "已停用";
+  return s.running ? "运行中" : "已停用";
 }
 
 function renderServices(list) {
@@ -131,27 +134,42 @@ function renderServices(list) {
     card.className = "card";
     const dotClass = !s.installed ? "" : s.running ? "on" : "off";
     const proto = s.protocol ? `<span class="badge">${s.protocol.toUpperCase()}</span>` : "";
+    const sysBadge = s.source === "system" ? `<span class="badge sys">系统已有</span>` : "";
     const helpers = (s.helpers || []).length ? `<span>组件 <b>${s.helpers.join(", ")}</b></span>` : "";
+    const proc = s.process
+      ? `<span>进程 <b>${s.process}${(s.pids || []).length ? " (PID " + s.pids.join(", ") + ")" : ""}</b></span>`
+      : "";
+    const unit = s.installed ? `<span>单元 <b>${s.unit || "–"}</b></span>` : "";
+    const ver = s.version ? `<span>版本 <b>${s.version}</b></span>` : "";
     let actions;
     if (!s.installed) {
       actions = `<button class="btn primary" data-act="install">安装</button>`;
     } else {
-      const toggle = s.enabled
+      // Button follows the live state: running offers 停用, stopped offers 启用.
+      const toggle = s.running
         ? `<button class="btn warn" data-act="disable">停用</button>`
-        : `<button class="btn good" data-act="enable">启用</button>`;
-      actions = `${toggle}
-        <button class="btn" data-act="config">配置</button>
-        <button class="btn danger" data-act="uninstall">卸载</button>`;
+        : `<button class="btn good" data-act="enable"${s.unit ? "" : " disabled title=\"缺少 systemd 服务单元，无法启动\""}>启用</button>`;
+      if (s.source === "system") {
+        // Pre-existing system service: only toggle it. Never overwrite its config
+        // or remove the OS package — those belong to the terminal image.
+        actions = toggle;
+      } else {
+        actions = `${toggle}
+          <button class="btn" data-act="config">配置</button>
+          <button class="btn danger" data-act="uninstall">卸载</button>`;
+      }
     }
     card.innerHTML = `
       <div class="card-top">
         <div class="card-title"><span class="dot ${dotClass}"></span><h3>${s.name}</h3></div>
-        ${proto}
+        <div class="card-badges">${proto}${sysBadge}</div>
       </div>
       <div class="card-desc">${s.description || ""}</div>
       <div class="card-meta">
         <span>状态 <b>${statusText(s)}</b></span>
-        <span>版本 <b>${s.version || "–"}</b></span>
+        ${ver}
+        ${proc}
+        ${unit}
         ${s.occupies_dac ? "<span>占用 DAC</span>" : ""}
         ${helpers}
       </div>
@@ -187,6 +205,7 @@ async function loadStatus() {
     const st = await api("local/api/status");
     renderIdentity(st.identity);
     renderMetrics(st.metrics);
+    services = st.services || [];
     renderServices(st.services);
     renderDAC(st.dac);
     renderDevices(st.devices);
@@ -201,6 +220,7 @@ function openModal(title, bodyHTML, onOk) {
   $("modal-title").textContent = title;
   $("modal-body").innerHTML = bodyHTML;
   modalOk = onOk;
+  $("modal-ok").hidden = false;
   $("modal").hidden = false;
 }
 function closeModal() { $("modal").hidden = true; modalOk = null; }
@@ -246,9 +266,42 @@ function collectConfig(svc) {
 }
 
 async function ensureCatalog() {
-  try { catalog = await api("local/api/catalog"); }
+  try { catalog = (await api("local/api/catalog")) || []; }
   catch (e) { catalog = []; }
 }
+
+// The "+" entry: pick a distributable service (catalog is already filtered to
+// this terminal's arch), then install it or reconfigure an installed one.
+async function openSvcPicker() {
+  await ensureCatalog();
+  const rows = catalog.map((c) => {
+    const svc = services.find((s) => s.app_id === c.app_id);
+    const installed = !!(svc && svc.installed);
+    const nv = (c.versions || []).length;
+    const arch = (lastIdentity && lastIdentity.arch) || "本机架构";
+    const sub = installed
+      ? `已安装 · ${svc.version || "系统自带"} · ${svc.running ? "运行中" : "已停用"} · ${nv} 个可下发版本（${arch}）`
+      : `${nv} 个可用版本（${arch}）`;
+    // System-owned services keep their OS config: never offer our template here.
+    const action = installed && svc.source === "system"
+      ? `<span class="badge sys">系统已有</span>`
+      : `<button class="btn ${installed ? "" : "primary"}" data-pick="${c.app_id}" data-mode="${installed ? "config" : "install"}">${installed ? "配置" : "安装"}</button>`;
+    return `<div class="pick-row"><div><b>${c.name}</b><div class="sub">${sub}</div></div>${action}</div>`;
+  }).join("");
+  openModal("添加 / 配置音频服务",
+    rows || `<div class="hint">服务端暂无适用于本机架构的可下发制品。</div>`, null);
+  $("modal-ok").hidden = true;
+  $("modal-body").querySelectorAll("button[data-pick]").forEach((b) => {
+    b.addEventListener("click", () => {
+      const id = b.dataset.pick;
+      const svc = services.find((s) => s.app_id === id) ||
+        { app_id: id, name: (catalog.find((c) => c.app_id === id) || {}).name || id };
+      closeModal();
+      onAction(svc, b.dataset.mode);
+    });
+  });
+}
+$("btn-add-svc").addEventListener("click", openSvcPicker);
 
 async function onAction(svc, act) {
   try {
@@ -422,7 +475,7 @@ function npStateLabel(st) {
 
 function renderPlaybackDevices(p, blocked) {
   const sel = $("np-device");
-  const cur = p.device || p.alsa_device || "default";
+  const cur = p.pref_device || p.device || p.alsa_device || "default";
   const sig = npDevices.map((d) => d.hw).join("|");
   if (sig !== npDevSig) {
     npDevSig = sig;
@@ -491,6 +544,29 @@ function renderPlayback(p) {
   $("np-stop").disabled = blocked || !p.connected || !(active || p.state === "ready");
 
   renderPlaybackDevices(p, blocked);
+  renderQueue();
+}
+
+// The playlist lives on the server; the terminal only shows position and drives
+// prev/next through it.
+function renderQueue() {
+  const q = lastQueue;
+  const len = q && q.tracks ? q.tracks.length : 0;
+  const pos = q ? q.position || 0 : 0;
+  const blocked = !!(lastIdentity && lastIdentity.allow_local === false);
+  const conn = !!(lastPlayback && lastPlayback.connected);
+  $("np-queue").textContent = len ? `第 ${pos + 1} / ${len} 首` : "";
+  const prev = $("np-prev"), next = $("np-next");
+  prev.disabled = blocked || !conn || len === 0;
+  next.disabled = blocked || !conn || len === 0 || pos >= len - 1;
+  prev.title = len && pos > 0 ? q.tracks[pos - 1].title || "" : "";
+  next.title = len && pos < len - 1 ? q.tracks[pos + 1].title || "" : "";
+}
+
+async function loadQueue() {
+  try { lastQueue = await api("local/api/playback/queue"); }
+  catch (e) { lastQueue = null; }
+  renderQueue();
 }
 
 async function loadPlayback() {
@@ -518,6 +594,8 @@ $("np-pause").addEventListener("click", async () => {
   if (r) toast(r.paused ? "已暂停" : "继续播放", "ok");
 });
 $("np-stop").addEventListener("click", () => npPost("stop", undefined, "已停止"));
+$("np-prev").addEventListener("click", async () => { await npPost("prev", undefined, "播放上一首"); loadQueue(); });
+$("np-next").addEventListener("click", async () => { await npPost("next", undefined, "播放下一首"); loadQueue(); });
 
 const npSeek = $("np-seek");
 npSeek.addEventListener("input", () => {
@@ -557,5 +635,7 @@ async function loadSecret() {
 loadSecret();
 loadStatus();
 loadPlayback();
+loadQueue();
 setInterval(loadStatus, 3000);
 setInterval(loadPlayback, 1000);
+setInterval(loadQueue, 3000);

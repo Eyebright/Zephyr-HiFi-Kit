@@ -84,6 +84,12 @@ type Volume struct {
 	Volume    int    `json:"volume"`
 }
 
+// SetDevice sets the sink's preferred ALSA output device, overriding the SETUP
+// suggestion. Like the local console's device picker it applies at next SETUP.
+type SetDevice struct {
+	Device string `json:"device"`
+}
+
 // Status is the periodic sink→source report.
 type Status struct {
 	SessionID    string `json:"session_id"`
@@ -92,6 +98,7 @@ type Status struct {
 	BufferMS     int    `json:"buffer_ms"`
 	Underruns    int    `json:"underruns"`
 	ALSADevice   string `json:"alsa_device"`
+	PrefDevice   string `json:"pref_device,omitempty"`
 	ClockPPM     int    `json:"clock_ppm"`
 	DacHolderPID int    `json:"dac_holder_pid"`
 }

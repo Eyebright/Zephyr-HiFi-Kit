@@ -35,6 +35,10 @@ type fakeBackend struct {
 	seekPTS        uint64
 	volumeSet      int
 	deviceSet      string
+	queue          serverclient.QueueState
+	queueErr       error
+	nextCalls      int
+	prevCalls      int
 }
 
 func newFake() *fakeBackend {
@@ -131,6 +135,11 @@ func (f *fakeBackend) PlaybackDevice(dev string) error {
 	f.deviceSet = dev
 	return f.playbackErr
 }
+func (f *fakeBackend) PlaybackQueue(context.Context) (serverclient.QueueState, error) {
+	return f.queue, f.queueErr
+}
+func (f *fakeBackend) PlaybackNext(context.Context) error { f.nextCalls++; return f.queueErr }
+func (f *fakeBackend) PlaybackPrev(context.Context) error { f.prevCalls++; return f.queueErr }
 
 func do(t *testing.T, h http.Handler, method, path, body string) (int, string) {
 	t.Helper()
@@ -352,6 +361,37 @@ func TestPlaybackRouteOpen(t *testing.T) {
 	f.gate.AllowLocal = false
 	if code, _ := do(t, h, "GET", "/local/api/playback", ""); code != 200 {
 		t.Fatal("playback GET must stay open when ALLOW_LOCAL=false")
+	}
+}
+
+func TestPlaybackQueueRoutes(t *testing.T) {
+	f := newFake()
+	f.queue = serverclient.QueueState{NodeID: "n-1", Position: 1,
+		Tracks: []serverclient.QueueTrack{{TrackID: "t1"}, {TrackID: "t2"}}}
+	f.gate.Playing = true
+	f.gate.PlayProtect = true
+	h := New(f).Handler()
+	if code, body := do(t, h, "GET", "/local/api/playback/queue", ""); code != 200 || !strings.Contains(body, `"position":1`) {
+		t.Fatalf("queue get: %d %s", code, body)
+	}
+	// prev/next are playback controls: allowed while play-protection blocks others.
+	if code, _ := do(t, h, "POST", "/local/api/playback/next", ""); code != 200 || f.nextCalls != 1 {
+		t.Fatalf("next during playback: %d", code)
+	}
+	if code, _ := do(t, h, "POST", "/local/api/playback/prev", ""); code != 200 || f.prevCalls != 1 {
+		t.Fatalf("prev during playback: %d", code)
+	}
+	f.gate.AllowLocal = false
+	if code, _ := do(t, h, "POST", "/local/api/playback/next", ""); code != 403 {
+		t.Fatal("next must honor ALLOW_LOCAL")
+	}
+	f.gate.AllowLocal = true
+	f.queueErr = errors.New("server offline")
+	if code, _ := do(t, h, "GET", "/local/api/playback/queue", ""); code != 502 {
+		t.Fatalf("queue read error: %d", code)
+	}
+	if code, body := do(t, h, "POST", "/local/api/playback/next", ""); code != 400 || !strings.Contains(body, "server offline") {
+		t.Fatalf("next error: %d %s", code, body)
 	}
 }
 

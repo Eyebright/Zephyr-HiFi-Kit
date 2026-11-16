@@ -91,11 +91,43 @@ audio_output {
 		Units: []string{"avahi-daemon.service"}, OccupiesDAC: false, HelperFor: "shairport-sync",
 		Description: "mDNS/DNS-SD 广播，AirPlay 与 RAAT 发现必需。",
 	},
+	"spotifyd": {
+		AppID: "spotifyd", Name: "Spotify Connect", Protocol: "spotify", Category: "renderer",
+		Units: []string{"spotifyd.service"}, OccupiesDAC: true,
+		Description: "Spotify Connect 渲染端。仅在终端本地检测到时显示。",
+	},
+	"snapclient": {
+		AppID: "snapclient", Name: "Snapcast 客户端", Protocol: "snapcast", Category: "renderer",
+		Units: []string{"snapclient.service"}, OccupiesDAC: true,
+		Description: "Snapcast 多房同步播放客户端。仅在终端本地检测到时显示。",
+	},
+	"squeezelite": {
+		AppID: "squeezelite", Name: "Squeezelite (LMS)", Protocol: "slimproto", Category: "renderer",
+		Units: []string{"squeezelite.service"}, OccupiesDAC: true,
+		Description: "Logitech Media Server / Slimproto 渲染端。仅在终端本地检测到时显示。",
+	},
+	"gmediarenderer": {
+		AppID: "gmediarenderer", Name: "UPnP/DLNA (gmrender)", Protocol: "upnp", Category: "renderer",
+		Units: []string{"gmediarenderer.service"}, OccupiesDAC: true,
+		Description: "gmrender-resurrect UPnP/DLNA 渲染端。仅在终端本地检测到时显示。",
+	},
 }
 
 // PrimaryServices returns the top-level card services in display order.
 func PrimaryServices() []ServiceDef {
 	order := []string{"roonbridge", "networkaudiod", "shairport-sync", "upmpdcli"}
+	out := make([]ServiceDef, 0, len(order))
+	for _, id := range order {
+		out = append(out, Registry[id])
+	}
+	return out
+}
+
+// AutoServices returns non-primary audio services that render as cards only
+// when detected on the terminal itself (live process or loaded systemd unit):
+// protocol renderers and playback backends the terminal image may already run.
+func AutoServices() []ServiceDef {
+	order := []string{"mpd", "gmediarenderer", "snapclient", "spotifyd", "squeezelite"}
 	out := make([]ServiceDef, 0, len(order))
 	for _, id := range order {
 		out = append(out, Registry[id])

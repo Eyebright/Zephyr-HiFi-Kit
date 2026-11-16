@@ -45,8 +45,11 @@
             <span class="np-time" id="np-dur">--:--</span>
           </div>
           <div class="np-controls">
+            <button id="np-prev" class="btn" disabled>上一首</button>
             <button id="np-pause" class="btn primary" disabled>暂停</button>
+            <button id="np-next" class="btn" disabled>下一首</button>
             <button id="np-stop" class="btn danger" disabled>停止</button>
+            <span class="np-queue" id="np-queue"></span>
             <div class="np-buffer">
               <span class="np-buffer-label">缓冲</span>
               <div class="bar np-buffer-bar"><i id="np-buffer"></i></div>
@@ -66,16 +69,40 @@
           <select id="np-device"><option value="default">默认 (default)</option></select>
         </div>
       </div>
-      <div class="hint np-hint">由服务端媒体库经 ZAT 协议推送 · 播放控制不受播放保护限制</div>
+      <div class="hint np-hint">由服务端媒体库经 ZAT 协议推送 · 播放列表保存在服务端 · 播放控制不受播放保护限制</div>
     </section>
 
-    <section class="panel perf">
+    <section class="services">
+      <div class="section-head">
+        <h2>音频服务</h2>
+        <button id="btn-add-svc" class="btn add-svc" title="添加 / 配置音频服务" aria-label="添加或配置音频服务">+</button>
+      </div>
+      <div id="cards" class="cards"></div>
+    </section>
+
+    <section class="panel dac" id="dac-panel" hidden>
+      <h2>DAC 占用</h2>
+      <div id="dac-list"></div>
+    </section>
+
+    <section class="panel devices" id="dev-panel" hidden>
+      <h2>ALSA 输出设备</h2>
+      <div id="dev-list" class="dev-list"></div>
+    </section>
+
+    <section class="panel sysinfo" id="sys-panel">
       <div class="panel-head">
-        <h2>性能</h2>
+        <h2>系统信息</h2>
         <div class="power">
           <button id="btn-reboot" class="btn warn">重启</button>
           <button id="btn-shutdown" class="btn danger">关机</button>
         </div>
+      </div>
+      <div class="sys-kv">
+        <div class="sys-k"><span>IP 地址</span><b id="si-ip" class="mono">–</b></div>
+        <div class="sys-k"><span>节点 ID</span><b id="si-node" class="mono">–</b></div>
+        <div class="sys-k"><span>操作系统</span><b id="si-distro">–</b></div>
+        <div class="sys-k"><span>内核</span><b id="si-kernel" class="mono">–</b></div>
       </div>
       <div class="gauges">
         <div class="gauge"><div class="glabel">CPU</div><div class="gval" id="m-cpu">–</div><div class="bar"><i id="bar-cpu"></i></div></div>
@@ -86,49 +113,27 @@
       <div class="perf-extra">
         <span>负载 <b id="m-load">–</b></span>
         <span>运行 <b id="m-uptime">–</b></span>
-        <span id="m-distro"></span>
-        <span id="m-kernel"></span>
       </div>
-    </section>
-
-    <section class="panel dac" id="dac-panel" hidden>
-      <h2>DAC 占用</h2>
-      <div id="dac-list"></div>
-    </section>
-
-    <section class="services">
-      <div class="section-head">
-        <h2>音频服务</h2>
-        <span class="hint">由服务端统一下发 · 点击卡片配置</span>
-      </div>
-      <div id="cards" class="cards"></div>
-    </section>
-
-    <section class="panel devices" id="dev-panel" hidden>
-      <h2>ALSA 输出设备</h2>
-      <div id="dev-list" class="dev-list"></div>
-    </section>
-
-    <section class="panel os" id="os-panel">
-      <div class="panel-head">
-        <h2>系统更新</h2>
-        <div class="os-actions">
-          <button id="btn-os-check" class="btn">检查更新</button>
-          <button id="btn-os-upgrade" class="btn primary">升级</button>
+      <div class="sys-sub">
+        <div class="panel-head sub-head">
+          <h3>系统更新</h3>
+          <div class="os-actions">
+            <button id="btn-os-check" class="btn">检查更新</button>
+            <button id="btn-os-upgrade" class="btn primary">升级</button>
+          </div>
         </div>
+        <div id="os-summary" class="hint">尚未检查。点击「检查更新」获取可升级软件包。</div>
+        <div id="os-packages" class="os-packages"></div>
+        <pre id="os-log" class="log" hidden></pre>
       </div>
-      <div id="os-summary" class="hint">尚未检查。点击「检查更新」获取可升级软件包。</div>
-      <div id="os-packages" class="os-packages"></div>
-      <pre id="os-log" class="log" hidden></pre>
-    </section>
-
-    <section class="panel netdiag" id="net-panel">
-      <div class="panel-head">
-        <h2>网络诊断</h2>
-        <button id="btn-netdiag" class="btn">开始诊断</button>
-      </div>
-      <div id="net-results" class="net-results">
-        <div class="hint">检测 DNS、TCP、mDNS、SSDP 与组播连通性。</div>
+      <div class="sys-sub">
+        <div class="panel-head sub-head">
+          <h3>网络诊断</h3>
+          <button id="btn-netdiag" class="btn">开始诊断</button>
+        </div>
+        <div id="net-results" class="net-results">
+          <div class="hint">检测 DNS、TCP、mDNS、SSDP 与组播连通性。</div>
+        </div>
       </div>
     </section>
   </main>

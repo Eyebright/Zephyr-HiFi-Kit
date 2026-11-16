@@ -34,17 +34,32 @@ import (
 // ErrNotConnected is returned when a play/stop targets an offline terminal.
 var ErrNotConnected = errors.New("终端未连接 ZAT 服务")
 
+// ErrUnknownDevice is returned when a device is not in the terminal's reported list.
+var ErrUnknownDevice = errors.New("终端未上报该 ALSA 输出设备")
+
 // PlayStatus is the live playback state of one terminal, for the console.
 type PlayStatus struct {
-	NodeID    string `json:"node_id"`
-	Connected bool   `json:"connected"`
-	SessionID string `json:"session_id"`
-	TrackID   string `json:"track_id"`
-	Title     string `json:"title"`
-	State     string `json:"state"`
-	PTS       uint64 `json:"pts"`
-	BufferMS  int    `json:"buffer_ms"`
-	Playing   bool   `json:"playing"`
+	NodeID     string `json:"node_id"`
+	Connected  bool   `json:"connected"`
+	SessionID  string `json:"session_id"`
+	TrackID    string `json:"track_id"`
+	Title      string `json:"title"`
+	Artist     string `json:"artist"`
+	Album      string `json:"album"`
+	DurationMS int    `json:"duration_ms"`
+	Codec      string `json:"codec"`
+	Rate       int    `json:"rate"`
+	Channels   int    `json:"channels"`
+	State      string `json:"state"`
+	PTS        uint64 `json:"pts"`
+	BufferMS   int    `json:"buffer_ms"`
+	Underruns  int    `json:"underruns"`
+	Playing    bool   `json:"playing"`
+	ALSADevice string `json:"alsa_device"`
+	PrefDevice string `json:"pref_device"`
+	Devices    []string `json:"devices"`
+	// ConfiguredDevice is the server-side DAC suggestion (node.dac_device).
+	ConfiguredDevice string `json:"configured_device"`
 }
 
 // Server accepts ZAT endpoint connections and drives push playback.
@@ -58,6 +73,8 @@ type Server struct {
 
 	mu    sync.Mutex
 	conns map[string]*endpoint
+
+	qmu sync.Mutex // serializes queue read-modify-write cycles
 }
 
 // New builds a ZAT server. st is used to record playback sessions.
@@ -145,6 +162,12 @@ type endpoint struct {
 	bufferMS int
 	trackID  string
 	title    string
+	meta     zat.TrackMeta
+	// caps is immutable after HELLO; the rest track the latest STATUS report.
+	caps       zat.Caps
+	alsaDevice string
+	prefDevice string
+	underruns  int
 }
 
 // playState is one active push-playback stream.
@@ -204,7 +227,7 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 		_ = tc.SetKeepAlivePeriod(30 * time.Second)
 	}
 
-	e := &endpoint{nodeID: hello.NodeID, conn: conn, srv: s, state: zat.StateAuthenticated}
+	e := &endpoint{nodeID: hello.NodeID, conn: conn, srv: s, state: zat.StateAuthenticated, caps: hello.Caps}
 	s.mu.Lock()
 	if old, ok := s.conns[hello.NodeID]; ok {
 		old.conn.Close()
@@ -286,6 +309,9 @@ func (e *endpoint) readLoop(ctx context.Context) {
 				e.mu.Lock()
 				e.pts = st.PTS
 				e.bufferMS = st.BufferMS
+				e.alsaDevice = st.ALSADevice
+				e.prefDevice = st.PrefDevice
+				e.underruns = st.Underruns
 				// Only a live session adopts the terminal's reported state;
 				// stale reports must not resurrect a finished session.
 				if e.play != nil {
@@ -334,22 +360,36 @@ func (s *Server) StartPlay(ctx context.Context, nodeID, trackID string) (string,
 		return "", err
 	}
 
-	// Cancel any prior stream on this endpoint.
+	// Cancel any prior stream on this endpoint and wait for its teardown so
+	// STOP/SETUP frames and the SETUP_ACK channel never interleave between
+	// concurrent plays (user action vs. queue auto-advance).
 	e.mu.Lock()
-	if e.play != nil {
-		e.play.cancel()
+	old := e.play
+	if old != nil {
+		old.cancel()
 	}
 	e.mu.Unlock()
+	if old != nil {
+		select {
+		case <-old.done:
+		case <-time.After(3 * time.Second):
+		}
+	}
 
 	sessionID := "zat-" + uuid.NewString()
 	playCtx, cancel := context.WithCancel(context.Background())
 	ps := &playState{ctx: playCtx, cancel: cancel, done: make(chan struct{}), sessionID: sessionID, trackID: trackID}
 	ackCh := make(chan zat.SetupAck, 1)
+	meta := zat.TrackMeta{
+		TrackID: trackID, Title: track.Title, Artist: track.Artist, Album: track.Album,
+		DurationMS: track.DurationMS, Codec: track.Codec, Rate: track.Rate, Channels: track.Channels,
+	}
 	e.mu.Lock()
 	e.play = ps
 	e.setupAck = ackCh
 	e.trackID = trackID
 	e.title = track.Title
+	e.meta = meta
 	e.state = zat.StateReady
 	e.mu.Unlock()
 
@@ -363,42 +403,35 @@ func (s *Server) StartPlay(ctx context.Context, nodeID, trackID string) (string,
 		Channels: format.Channels, PrebufferMS: 200, ALSADevice: device,
 		TotalSamples: track.TotalSamples,
 	}
-	if err := e.control(zat.TypeSetup, setup); err != nil {
+	// abort tears down a play that never reached the stream goroutine; it must
+	// close done so a concurrent StartPlay waiting on us can proceed.
+	abort := func(err error) (string, error) {
 		cancel()
 		dec.Close()
 		e.clearPlay(ps)
+		close(ps.done)
 		return "", err
+	}
+	if err := e.control(zat.TypeSetup, setup); err != nil {
+		return abort(err)
 	}
 	select {
 	case ack := <-ackCh:
 		if !ack.OK {
-			cancel()
-			dec.Close()
-			e.clearPlay(ps)
-			return "", fmt.Errorf("终端拒绝播放：%s", ack.Detail)
+			return abort(fmt.Errorf("终端拒绝播放：%s", ack.Detail))
 		}
+	case <-ps.ctx.Done():
+		return abort(errors.New("播放被新请求取代"))
 	case <-time.After(8 * time.Second):
-		cancel()
-		dec.Close()
-		e.clearPlay(ps)
-		return "", errors.New("终端 SETUP 超时")
+		return abort(errors.New("终端 SETUP 超时"))
 	case <-ctx.Done():
-		cancel()
-		dec.Close()
-		e.clearPlay(ps)
-		return "", ctx.Err()
+		return abort(ctx.Err())
 	}
 
 	if err := e.control(zat.TypePlay, zat.Play{SessionID: sessionID}); err != nil {
-		cancel()
-		dec.Close()
-		e.clearPlay(ps)
-		return "", err
+		return abort(err)
 	}
-	_ = e.control(zat.TypeTrackMeta, zat.TrackMeta{
-		TrackID: trackID, Title: track.Title, Artist: track.Artist, Album: track.Album,
-		DurationMS: track.DurationMS, Codec: track.Codec, Rate: track.Rate, Channels: track.Channels,
-	})
+	_ = e.control(zat.TypeTrackMeta, meta)
 
 	now := time.Now().Unix()
 	_, _ = s.db.Exec(`INSERT INTO sessions
@@ -454,6 +487,9 @@ func (s *Server) stream(e *endpoint, ps *playState, dec decode.Decoder, track li
 	}
 	e.mu.Unlock()
 	close(ps.done)
+	if reason == "eof" {
+		go s.autoAdvance(e.nodeID, ps.trackID)
+	}
 }
 
 // awaitPlaybackEnd blocks after the source finished sending until the terminal
@@ -489,8 +525,8 @@ func (e *endpoint) clearPlay(ps *playState) {
 	e.mu.Lock()
 	if e.play == ps {
 		e.play = nil
+		e.setupAck = nil
 	}
-	e.setupAck = nil
 	e.mu.Unlock()
 }
 
@@ -519,7 +555,10 @@ func (s *Server) Stop(nodeID string) error {
 
 // Status reports the live playback state of a terminal.
 func (s *Server) Status(nodeID string) (PlayStatus, error) {
-	st := PlayStatus{NodeID: nodeID, State: string(zat.StateIdle)}
+	st := PlayStatus{NodeID: nodeID, State: string(zat.StateIdle), Devices: []string{}}
+	if n, err := s.nodes.Get(nodeID); err == nil {
+		st.ConfiguredDevice = n.DacDevice
+	}
 	e := s.endpoint(nodeID)
 	if e == nil {
 		return st, nil
@@ -529,14 +568,55 @@ func (s *Server) Status(nodeID string) (PlayStatus, error) {
 	st.State = string(e.state)
 	st.PTS = e.pts
 	st.BufferMS = e.bufferMS
+	st.Underruns = e.underruns
 	st.TrackID = e.trackID
 	st.Title = e.title
+	st.Artist = e.meta.Artist
+	st.Album = e.meta.Album
+	st.DurationMS = e.meta.DurationMS
+	st.Codec = e.meta.Codec
+	st.Rate = e.meta.Rate
+	st.Channels = e.meta.Channels
+	st.ALSADevice = e.alsaDevice
+	st.PrefDevice = e.prefDevice
 	if e.play != nil {
 		st.SessionID = e.play.sessionID
 		st.Playing = e.state == zat.StatePlaying
 	}
 	e.mu.Unlock()
+	if len(e.caps.ALSADevices) > 0 {
+		st.Devices = e.caps.ALSADevices
+	}
 	return st, nil
+}
+
+// SetDevice selects the terminal's preferred ALSA output device. The choice is
+// persisted as the node's DAC device (the SETUP suggestion) and pushed over ZAT;
+// the terminal applies it at the next SETUP, like its local device picker.
+func (s *Server) SetDevice(nodeID, device string) error {
+	e := s.endpoint(nodeID)
+	if e == nil {
+		return ErrNotConnected
+	}
+	if device == "" {
+		return ErrUnknownDevice
+	}
+	if device != "default" {
+		known := false
+		for _, d := range e.caps.ALSADevices {
+			if d == device {
+				known = true
+				break
+			}
+		}
+		if !known {
+			return ErrUnknownDevice
+		}
+	}
+	if _, err := s.nodes.Patch(nodeID, node.Patch{DacDevice: &device}); err != nil {
+		return err
+	}
+	return e.control(zat.TypeSetDevice, zat.SetDevice{Device: device})
 }
 
 // Connected reports whether a terminal currently holds a ZAT connection.

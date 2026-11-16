@@ -154,6 +154,7 @@ func (a *API) routes() {
 
 	// License (FR-6)
 	a.route("GET /api/v1/license", a.getLicense)
+	a.route("GET /api/v1/license/receipt", a.getLicenseReceipt)
 	a.route("POST /api/v1/license/activate", a.activateLicense)
 
 	// Audit (FR-7.2)
@@ -206,6 +207,13 @@ func (a *API) routes() {
 	// with "/nodes/token/{token}" (neither is a subset of the other).
 	a.route("POST /api/v1/nodes/{id}/play", a.playTrack)
 	a.route("POST /api/v1/nodes/{id}/stop", a.stopPlay)
+	a.route("POST /api/v1/nodes/{id}/device", a.setNodeDevice)
+	// Per-node playback queue (GET goes through the {sub} wildcard).
+	a.route("PUT /api/v1/nodes/{id}/queue", a.setNodeQueue)
+	a.route("POST /api/v1/nodes/{id}/queue/enqueue", a.enqueueTrack)
+	a.route("POST /api/v1/nodes/{id}/queue/next", a.queueNext)
+	a.route("POST /api/v1/nodes/{id}/queue/prev", a.queuePrev)
+	a.route("POST /api/v1/nodes/{id}/queue/jump", a.queueJump)
 
 	// Root-level distribution downloads and self metrics.
 	a.route("GET /dl/{name}", a.downloadDist)

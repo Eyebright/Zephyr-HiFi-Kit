@@ -13,7 +13,9 @@ import (
 	"os"
 	"path/filepath"
 	"text/template"
+	"time"
 
+	"hifihub/agent/internal/audio"
 	"hifihub/agent/internal/model"
 	"hifihub/agent/internal/serverclient"
 )
@@ -114,6 +116,21 @@ func unitsFor(appID string) []string {
 	units := append([]string{}, def.Units...)
 	for _, h := range model.HelpersFor(appID) {
 		units = append(units, model.Registry[h].Units...)
+	}
+	return units
+}
+
+// lifecycleUnits is unitsFor restricted to server-managed helpers: enable/disable
+// must not stop or reconfigure a helper the terminal image owns (e.g. moode's MPD
+// behind a pre-existing upmpdcli).
+func (e *Executor) lifecycleUnits(appID string) []string {
+	def := model.Registry[appID]
+	units := append([]string{}, def.Units...)
+	apps := e.inv.Snapshot().Apps
+	for _, h := range model.HelpersFor(appID) {
+		if _, ok := apps[h]; ok {
+			units = append(units, model.Registry[h].Units...)
+		}
 	}
 	return units
 }
@@ -244,7 +261,7 @@ func (e *Executor) Enable(appID string) error {
 	if _, ok := model.Registry[appID]; !ok {
 		return fmt.Errorf("unknown app %q", appID)
 	}
-	for _, u := range unitsFor(appID) {
+	for _, u := range e.lifecycleUnits(appID) {
 		if err := e.units.Enable(u); err != nil {
 			return err
 		}
@@ -260,11 +277,34 @@ func (e *Executor) Disable(appID string) error {
 	if _, ok := model.Registry[appID]; !ok {
 		return fmt.Errorf("unknown app %q", appID)
 	}
-	for _, u := range unitsFor(appID) {
+	for _, u := range e.lifecycleUnits(appID) {
 		_ = e.units.Stop(u)
 		_ = e.units.Disable(u)
 	}
+	// Services started outside systemd (e.g. moode's own shairport-sync) survive
+	// the unit stop; terminate their live processes so disable actually releases them.
+	e.stopProcesses(appID)
 	return e.inv.SetEnabled(appID, false)
+}
+
+// stopProcesses interrupts every live process of a service, then kills any
+// survivor after a grace period: moode's shairport-sync worker ignores SIGINT.
+func (e *Executor) stopProcesses(appID string) {
+	procs := audio.ServiceProcesses(audio.RealProc{})[appID]
+	if len(procs) == 0 {
+		return
+	}
+	for _, p := range procs {
+		if proc, err := os.FindProcess(p.PID); err == nil {
+			_ = proc.Signal(os.Interrupt)
+		}
+	}
+	time.Sleep(1500 * time.Millisecond)
+	for _, p := range audio.ServiceProcesses(audio.RealProc{})[appID] {
+		if proc, err := os.FindProcess(p.PID); err == nil {
+			_ = proc.Signal(os.Kill)
+		}
+	}
 }
 
 // Configure re-renders configuration and restarts the application's units.

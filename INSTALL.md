@@ -188,27 +188,13 @@ GNUPGHOME=/var/lib/hifihub-server/gnupg gpg --verify app.deb.asc app.deb
 > 终端 Agent 下载制品后校验 **SHA256 完整性**；GPG 验签在**服务端入库**这一唯一入口强制
 > 执行（服务端是唯一下发源，FR-3）。
 
-### 4.4 离线签发许可证（授权中心）
+### 4.4 激活许可证（客户侧）
 
-许可证是**离线签发**的 JSON + detached GPG 签名，服务端只验签、不签发。未激活许可证时
-控制台可浏览，但**下发任务与终端授权被门控**。
+许可证由签发方**离线签发**后交付（JSON + detached GPG 签名，服务端只验签、不签发）。
+你收到的交付包含 `license.json` + `license.json.asc`，或等价的 `payload_b64` / `sig_b64`
+两段单行 base64。未激活许可证时控制台可浏览，但**下发任务与终端授权被门控**。
 
-在离线主机上：
-
-```sh
-cat > license.json <<'JSON'
-{"key":"ZMP-2026-XXXX-XXXX","account":"Acme HiFi","seats":10,"expires_at":1893456000}
-JSON
-
-gpg --batch --yes --armor --detach-sign --local-user <FPR> \
-    -o license.json.asc license.json
-
-# 分别取 base64（单行）
-base64 -w0 license.json      # → payload_b64
-base64 -w0 license.json.asc  # → sig_b64
-```
-
-激活（也可在控制台「密钥与授权」页粘贴两段 base64）：
+激活（也可在控制台「密钥与授权」页导入两个文件或粘贴两段 base64）：
 
 ```sh
 curl -s -X POST http://<服务端IP>:8080/api/v1/license/activate \
@@ -216,11 +202,16 @@ curl -s -X POST http://<服务端IP>:8080/api/v1/license/activate \
   -d '{"payload_b64":"<payload>","sig_b64":"<sig>"}'
 
 curl -s http://<服务端IP>:8080/api/v1/license
-# {"active":true,"key":"ZMP-…","account":"Acme HiFi","seats":10,"used":0,"expires_at":…}
+# {"status":"activated","key":"ZMP-…","account":"…","seats":10,"expires_at":…}
 ```
 
 签名必须能被信任根验证，否则返回 `license_rejected`。席位用尽后新终端授权会被拒绝
-（`seat_limit`），可注销闲置终端释放席位。
+（`seat_limit`），可注销闲置终端释放席位。续期或席位变更后你会收到新版本交付包，
+用同样方式重新激活即可覆盖旧许可证。
+
+**激活回执**：激活成功后在控制台「密钥与授权」页点击「导出激活回执」（或
+`GET /api/v1/license/receipt`），将下载的 `license-receipt.json` 发回签发方，
+用于登记激活状态与席位占用。回执不含任何密钥材料。
 
 ---
 
