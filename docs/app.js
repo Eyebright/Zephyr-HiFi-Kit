@@ -36,24 +36,31 @@
   }
 
   /* ─────────── audio ─────────── */
-  // BGM: "The Ludlows" (James Horner · Legends of the Fall), 1=D, 3/4, ♩=63.
+  // BGM: "500 Miles" (Five Hundred Miles · Hedy West, 1961), 1=G, 4/4, ♩=66.
   // Transcribed melody (top voice), encoded as [semitone-from-1, octave, beats].
   // Semitones: 1=0 2=2 3=4 4=5 5=7 6=9 7=11. Rendered as a soft music box.
-  var BGM_SPB = 60 / 63;
+  var BGM_SPB = 60 / 66;
   var BGM = [
-    /* pickup + opening yearning phrase */
-    [null,0,1],[7,0,.5],[7,1,.5],[5,1,1],
-    [4,1,1.5],[0,1,.5],[5,1,.5],[4,1,.5],
-    [2,1,2],[0,1,.5],[2,1,.5],
-    [4,1,1.5],[2,1,.5],[0,1,1],
-    /* answering phrase */
-    [5,0,2],[0,1,.5],[9,0,.5],
-    [7,0,1.5],[9,0,.5],[7,0,.5],[5,0,.5],
-    [4,0,2],[5,0,.5],[7,0,.5],
-    [9,0,3],
-    [null,0,3]
+    /* verse: "If you miss the train I'm on … a hundred miles" */
+    [0,0,.5],[2,0,.5],
+    [4,0,1.5],[4,0,.5],[2,0,.5],[0,0,.5],
+    [4,0,1],[2,0,1],[0,0,2],
+    [2,0,1.5],[4,0,.5],[2,0,.5],[0,0,.5],
+    [9,-1,1],[9,-1,.5],[0,0,.5],
+    [2,0,1.5],[4,0,.5],[2,0,.5],[0,0,.5],
+    [7,-1,1.5],[7,-1,.5],[9,-1,.5],[0,0,.5],
+    [0,0,3],[null,0,1],
+    /* chorus: "A hundred miles, a hundred miles …" */
+    [4,0,1.5],[4,0,.5],[2,0,.5],[0,0,.5],
+    [4,0,1],[2,0,1],[0,0,2],
+    [2,0,1.5],[4,0,.5],[2,0,.5],[0,0,.5],
+    [9,-1,1],[null,0,.5],[9,-1,.5],[0,0,.5],
+    [2,0,1.5],[4,0,.5],[2,0,.5],[0,0,.5],
+    [9,-1,1],[7,-1,.5],[7,-1,.5],
+    [7,-1,.5],[9,-1,.5],[0,0,.5],
+    [0,0,3],[null,0,1]
   ];
-  var BGM_BASE = 293.665; // D4 = degree 1
+  var BGM_BASE = 392.0; // G4 = degree 1
   var Audio2 = {
     ctx: null, master: null, analyser: null, data: null, on: true, started: false, nodes: [],
     musicGain: null, musicTimer: null, mIdx: 0, mNext: 0, mPlayed: 0,
@@ -63,7 +70,7 @@
       if (!AC) { this.on = false; return; }
       try { this.ctx = new AC(); } catch (e) { this.on = false; return; }
       this.master = this.ctx.createGain();
-      this.master.gain.value = this.on ? 0.12 : 0;
+      this.master.gain.value = this.on ? 0.55 : 0;
       this.analyser = this.ctx.createAnalyser();
       this.analyser.fftSize = 128;
       this.analyser.smoothingTimeConstant = 0.82;
@@ -74,9 +81,9 @@
       lp.connect(this.analyser);
       this.analyser.connect(this.master);
       this.master.connect(this.ctx.destination);
-      // D-major bed (D2 A2 D3 F#3 A3) so the ambient pad is consonant with
-      // "The Ludlows" melody (1=D).
-      var freqs = [73.42, 110, 146.83, 185, 220];
+      // G-major bed (G2 D3 G3 B3 D4) so the ambient pad is consonant with
+      // "500 Miles" melody (1=G).
+      var freqs = [98, 146.83, 196, 246.94, 293.66];
       var self = this;
       freqs.forEach(function (f, i) {
         var o = self.ctx.createOscillator();
@@ -84,11 +91,11 @@
         o.frequency.value = f;
         o.detune.value = (i - 2) * 4;
         var g = self.ctx.createGain();
-        g.gain.value = 0.10 / (i + 1);
+        g.gain.value = 0.05 / (i + 1);
         var lfo = self.ctx.createOscillator();
         lfo.frequency.value = 0.05 + i * 0.021;
         var lg = self.ctx.createGain();
-        lg.gain.value = 0.05 / (i + 1);
+        lg.gain.value = 0.03 / (i + 1);
         lfo.connect(lg); lg.connect(g.gain);
         o.connect(g); g.connect(lp);
         o.start(); lfo.start();
@@ -121,7 +128,7 @@
       var f = BGM_BASE * Math.pow(2, (n[0] + 12 * n[1]) / 12);
       var dur = n[2] * BGM_SPB;
       var decay = Math.max(0.6, dur * 1.5);
-      var v = 0.5;
+      var v = 0.6;
       var partials = [[1, 1, decay], [2, 0.32, decay * 0.6], [4, 0.10, decay * 0.3]];
       for (var i = 0; i < partials.length; i++) {
         var o = this.ctx.createOscillator(), g = this.ctx.createGain();
@@ -146,7 +153,7 @@
       if (this.master && this.ctx) {
         var t = this.ctx.currentTime;
         this.master.gain.cancelScheduledValues(t);
-        this.master.gain.setTargetAtTime(v ? 0.12 : 0, t, 0.12);
+        this.master.gain.setTargetAtTime(v ? 0.55 : 0, t, 0.12);
       }
     },
     blip: function (freq, dur, type, vol) {
@@ -182,13 +189,18 @@
     Audio2.resume();
     if (!bgmAnnounced && Audio2.on) {
       bgmAnnounced = true;
-      toast("背景音乐：《The Ludlows》", "info");
+      toast("背景音乐：《500 Miles》", "info");
     }
     document.removeEventListener("pointerdown", unlock);
     document.removeEventListener("keydown", unlock);
+    document.removeEventListener("touchstart", unlock);
   };
   document.addEventListener("pointerdown", unlock, { once: false });
   document.addEventListener("keydown", unlock, { once: false });
+  document.addEventListener("touchstart", unlock, { once: false, passive: true });
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden && Audio2.on && Audio2.started) Audio2.resume();
+  });
   window.__za = Audio2;
 
   /* ─────────── nav ─────────── */
