@@ -531,82 +531,71 @@ curl -s http://127.0.0.1:8080/api/v1/health</code></pre>
         <p class="ic-p">控制台「终端管理 → 添加终端」向导签发令牌后会给出同款命令。离线环境可直接 <code>dpkg -i</code> 包内 deb。注册成功后终端立即出现在控制台。</p>
       </div>
     </div>
-    <div class="dl-card rv">
-      <div class="dl-h">
-        <h3>安卓终端 · Zephyr Terminal APK</h3>
-        <span class="pill cyan">Android 8.0+ · arm64 / armv7</span>
-      </div>
-      <div class="dl-grid">
-        <a class="dl-item" href="https://github.com/Eyebright/zephyr-music-server/releases/download/v0.4.0/zephyr-terminal-0.4.0.apk">
-          <span class="dl-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 19h16"/></svg></span>
-          <span class="dl-txt"><b>zephyr-terminal-0.4.0.apk</b><i>安卓终端 · AAudio 比特完美 · arm64 / armv7</i></span>
-          <span class="dl-go">下载</span>
-        </a>
-        <a class="dl-item" href="https://github.com/Eyebright/zephyr-music-server/releases/tag/v0.4.0" target="_blank" rel="noopener">
-          <span class="dl-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
-          <span class="dl-txt"><b>Release 说明与校验和</b><i>CI 全绿 · SHA256SUMS 随包发布</i></span>
-          <span class="dl-go">查看</span>
-        </a>
-        <a class="dl-item" href="https://github.com/Eyebright/zephyr-music-server/blob/main/INSTALL.md" target="_blank" rel="noopener">
-          <span class="dl-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
-          <span class="dl-txt"><b>部署说明</b><i>服务端装机 · 终端入网 · 安卓安装</i></span>
-          <span class="dl-go">查看</span>
-        </a>
-      </div>
-      <div class="dl-note">安装三步：① 下载 APK，在系统设置允许「安装未知应用」后安装；② 启动「Zephyr 终端」，填入服务端地址（如 <code>http://&lt;服务端IP&gt;:8080</code>）与控制台「终端管理 → 添加终端」向导签发的一次性令牌（架构选 Android）；③ 注册成功后终端立即上线。安卓终端经自有 ZAT 协议接收音频，由 AAudio 比特完美出声，前台播放服务保活，支持暂停 / 停止 / seek / 音量。</div>
+    <div class="dl-lead rv">
+      <h3>安装包下载 · v0.4.0</h3>
+      <p>按角色只分两种：服务端与客户端。Linux 架构由安装器 / 一键入网脚本自动识别，无需手动挑包名。</p>
     </div>
-    <div class="dl-card rv">
-      <div class="dl-h">
-        <h3>v0.4.0 发布资产</h3>
-        <div class="arch-tabs" id="arch-tabs" role="tablist" aria-label="终端架构">
-          <button role="tab" aria-selected="true" data-arch="amd64" class="on">amd64</button>
-          <button role="tab" aria-selected="false" data-arch="arm64">arm64</button>
-          <button role="tab" aria-selected="false" data-arch="armhf">armhf</button>
-          <button role="tab" aria-selected="false" data-arch="android">Android</button>
+    <div class="dl-duo">
+      <div class="dl-card rv">
+        <div class="dl-h">
+          <h3>服务端 · 每台部署一份</h3>
+          <span class="pill">install.sh 一键装机</span>
         </div>
+        <div class="dl-stack">
+          <a class="dl-item" href="https://github.com/Eyebright/zephyr-music-server/releases/download/v0.4.0/zephyr-music-server-0.4.0.tar.gz">
+            <span class="dl-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 19h16"/></svg></span>
+            <span class="dl-txt"><b>zephyr-music-server-0.4.0.tar.gz</b><i>完整安装包：服务端 + 三架构终端 deb + 安装器 · 33.1 MiB</i></span>
+            <span class="dl-go">下载</span>
+          </a>
+          <div class="dl-sub">
+            <span class="dl-sub-t">真实播放选音频版（libFLAC 解码 + ALSA 出声）</span>
+            <span class="dl-chips">
+              <a href="https://github.com/Eyebright/zephyr-music-server/releases/download/v0.4.0/zephyr-music-server-0.4.0-audio-amd64.tar.gz">x86_64</a>
+              <a href="https://github.com/Eyebright/zephyr-music-server/releases/download/v0.4.0/zephyr-music-server-0.4.0-audio-arm64.tar.gz">aarch64</a>
+            </span>
+          </div>
+        </div>
+        <div class="dl-note">音频版与管理版引擎名 / 配置 / systemd 单元一致，可互相替换；音频版 bundle 的 <code>server/dist/</code> 内为音频 deb，终端经 <code>/dl/</code> 自助安装即获得播放能力。</div>
       </div>
-      <div class="dl-grid">
-        <a class="dl-item" href="https://github.com/Eyebright/zephyr-music-server/releases/download/v0.4.0/zephyr-music-server-0.4.0.tar.gz">
-          <span class="dl-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 19h16"/></svg></span>
-          <span class="dl-txt"><b>zephyr-music-server-0.4.0.tar.gz</b><i>服务端 + 三架构 deb + 安装器 · 33.1 MiB</i></span>
-          <span class="dl-go">下载</span>
-        </a>
-        <a class="dl-item" id="dl-deb" href="https://github.com/Eyebright/zephyr-music-server/releases/download/v0.4.0/hifihub-agent_0.4.0_amd64.deb">
-          <span class="dl-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 9h6v6H9z"/></svg></span>
-          <span class="dl-txt"><b id="dl-deb-name">hifihub-agent_0.4.0_amd64.deb</b><i id="dl-deb-meta">x86_64 终端 Agent · 4.0 MiB</i></span>
-          <span class="dl-go">下载</span>
-        </a>
-        <a class="dl-item" href="https://github.com/Eyebright/zephyr-music-server/releases/tag/v0.4.0" target="_blank" rel="noopener">
-          <span class="dl-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
-          <span class="dl-txt"><b>Release 说明与校验和</b><i>CI 全绿 · SHA256SUMS 随包发布</i></span>
-          <span class="dl-go">查看</span>
-        </a>
+      <div class="dl-card rv">
+        <div class="dl-h">
+          <h3>客户端 · 每台播放设备一份</h3>
+          <span class="pill cyan">Linux / Android</span>
+        </div>
+        <div class="dl-stack">
+          <div class="dl-os">
+            <span class="dl-os-t">Linux 终端 · Debian / 树莓派 OS</span>
+            <select id="dl-arch" class="dl-sel" aria-label="Linux 终端架构">
+              <option value="arm64" selected>ARM 64 位</option>
+              <option value="amd64">x86_64</option>
+              <option value="armhf">ARM 32 位</option>
+            </select>
+          </div>
+          <a class="dl-item" id="dl-deb" href="https://github.com/Eyebright/zephyr-music-server/releases/download/v0.4.0/hifihub-agent_0.4.0_arm64.deb">
+            <span class="dl-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 9h6v6H9z"/></svg></span>
+            <span class="dl-txt"><b id="dl-deb-name">hifihub-agent_0.4.0_arm64.deb</b><i id="dl-deb-meta">树莓派 3/4/5 · 64 位 · 3.6 MiB</i></span>
+            <span class="dl-go">下载</span>
+          </a>
+          <a class="dl-item" href="https://github.com/Eyebright/zephyr-music-server/releases/download/v0.4.0/zephyr-terminal-0.4.0.apk">
+            <span class="dl-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg></span>
+            <span class="dl-txt"><b>zephyr-terminal-0.4.0.apk</b><i>安卓终端 · Android 8.0+ · arm64 / armv7 · 18.8 MiB</i></span>
+            <span class="dl-go">下载</span>
+          </a>
+        </div>
+        <div class="dl-note">Linux 推荐一键入网（按架构自动选包）：<code>curl -fsSL http://&lt;服务端IP&gt;:8080/dl/agent-install.sh | sudo bash -s -- --server … --token …</code>；离线则 <code>dpkg -i</code> 上方 deb。安卓安装 APK 后填服务端地址与一次性令牌即入网。</div>
       </div>
-      <div class="dl-note" id="dl-note">离线安装：<code>sudo dpkg -i agent/hifihub-agent_0.4.0_&lt;arch&gt;.deb &amp;&amp; sudo apt-get -f install -y</code></div>
     </div>
-    <div class="dl-card rv">
-      <div class="dl-h">
-        <h3>音频版 bundle · CGO + libFLAC + ALSA</h3>
-        <span class="pill cyan">真实解码 · 比特完美出声</span>
-      </div>
-      <div class="dl-grid">
-        <a class="dl-item" href="https://github.com/Eyebright/zephyr-music-server/releases/download/v0.4.0/zephyr-music-server-0.4.0-audio-amd64.tar.gz">
-          <span class="dl-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 19h16"/></svg></span>
-          <span class="dl-txt"><b>zephyr-music-server-0.4.0-audio-amd64.tar.gz</b><i>x86_64 服务端 libFLAC + 终端 ALSA deb + 安装器</i></span>
-          <span class="dl-go">下载</span>
-        </a>
-        <a class="dl-item" href="https://github.com/Eyebright/zephyr-music-server/releases/download/v0.4.0/zephyr-music-server-0.4.0-audio-arm64.tar.gz">
-          <span class="dl-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 19h16"/></svg></span>
-          <span class="dl-txt"><b>zephyr-music-server-0.4.0-audio-arm64.tar.gz</b><i>arm64 服务端 libFLAC + 终端 ALSA deb + 安装器</i></span>
-          <span class="dl-go">下载</span>
-        </a>
-        <a class="dl-item" href="https://github.com/Eyebright/zephyr-music-server/blob/main/INSTALL.md" target="_blank" rel="noopener">
-          <span class="dl-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
-          <span class="dl-txt"><b>音频版部署说明 §10.1</b><i>CGO 构建 · ALSA null 回环 · FLAC 往返验证</i></span>
-          <span class="dl-go">查看</span>
-        </a>
-      </div>
-      <div class="dl-note">音频版与管理版引擎名 / 配置 / systemd 单元一致，可互相替换。部署真实播放请用音频版 bundle（其 <code>server/dist/</code> 内为音频 deb，终端经 <code>/dl/</code> 自助安装即获得播放能力）；armhf 音频包由 <code>build-audio-cross.sh</code> 产出。</div>
+    <div class="dl-docs">
+      <a class="dl-item rv" href="https://github.com/Eyebright/zephyr-music-server/releases/tag/v0.4.0" target="_blank" rel="noopener">
+        <span class="dl-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
+        <span class="dl-txt"><b>Release 说明与校验和</b><i>CI 全绿 · SHA256SUMS 随包发布</i></span>
+        <span class="dl-go">查看</span>
+      </a>
+      <a class="dl-item rv" href="https://github.com/Eyebright/zephyr-music-server/blob/main/INSTALL.md" target="_blank" rel="noopener">
+        <span class="dl-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
+        <span class="dl-txt"><b>部署说明 INSTALL.md</b><i>服务端装机 · 终端入网 · 安卓安装 · 自动更新</i></span>
+        <span class="dl-go">查看</span>
+      </a>
     </div>
   </div>
 </section>
