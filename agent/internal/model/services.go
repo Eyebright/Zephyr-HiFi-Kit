@@ -45,13 +45,13 @@ alsa =
 		Description: "AirPlay 2 PTP 时钟同步守护进程，AirPlay 2 必需。",
 	},
 	"upmpdcli": {
-		AppID: "upmpdcli", Name: "QPlay / DLNA", Protocol: "qplay", Category: "renderer",
+		AppID: "upmpdcli", Name: "UPnP / DLNA", Protocol: "upnp", Category: "renderer",
 		Units: []string{"upmpdcli.service"}, OccupiesDAC: true, Primary: true,
 		DepsPkgs:    []string{"mpd", "libasound2"},
 		ConfigPath:  "/etc/upmpdcli.conf",
-		Description: "UPnP/DLNA MediaRenderer，承接 QQ 音乐 QPlay 投送。后端为 MPD。",
+		Description: "UPnP/DLNA MediaRenderer（兼容 OpenHome ohMedia），播放后端为 MPD。",
 		ConfigFields: []ConfigField{
-			{Key: "room", Label: "房间名", Default: "客厅", Placeholder: "客厅", Help: "QQ 音乐投送列表里显示的名字"},
+			{Key: "room", Label: "房间名", Default: "客厅", Placeholder: "客厅", Help: "DLNA 控制点（BubbleUPnP、Kazoo 等）投送列表里显示的名字"},
 			{Key: "port", Label: "UPnP 端口", Default: "49152", Placeholder: "49152", Help: "同机多实例必须唯一"},
 			{Key: "dac_device", Label: "DAC 设备", Default: "hw:1,0", Placeholder: "hw:1,0", Help: "MPD 的 ALSA 输出设备"},
 		},
@@ -63,10 +63,10 @@ mpdport = 6600
 `,
 	},
 	"mpd": {
-		AppID: "mpd", Name: "MPD (QPlay 后端)", Category: "dependency",
+		AppID: "mpd", Name: "MPD (播放后端)", Category: "dependency",
 		Units: []string{"mpd.service"}, OccupiesDAC: true, HelperFor: "upmpdcli",
 		ConfigPath:  "/etc/mpd.conf",
-		Description: "Music Player Daemon，upmpdcli 的播放后端。",
+		Description: "Music Player Daemon，upmpdcli（UPnP/DLNA）的播放后端。",
 		ConfigFields: []ConfigField{
 			{Key: "dac_device", Label: "DAC 设备", Default: "hw:1,0", Placeholder: "hw:1,0"},
 		},

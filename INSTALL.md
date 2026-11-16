@@ -381,7 +381,7 @@ curl -s $S/nodes/<NodeID>/netdiag               # DNS/TCP/mDNS/SSDP/组播探测
 | `roonbridge` | RAAT | — | 设备/音量在 Roon Core 配置 |
 | `networkaudiod` | NAA | — | 输出由 HQPlayer 服务端指定 |
 | `shairport-sync` | AirPlay | `nqptp`, `avahi-daemon` | `airplay_name` / `dac_device` / `port` |
-| `upmpdcli` | QPlay/DLNA | `mpd` | `room` / `port` / `dac_device` |
+| `upmpdcli` | UPnP/DLNA | `mpd` | `room` / `port` / `dac_device` |
 
 ---
 

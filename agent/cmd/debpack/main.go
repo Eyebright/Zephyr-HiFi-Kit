@@ -106,7 +106,7 @@ func buildDeb(agentBin, unit, env, postinst, prerm, installSh []byte, version, a
 	depends := "systemd, apt, dpkg, alsa-utils"
 	shortDesc := "HiFiHub terminal agent and local web console"
 	longDesc := ` Local console to install, enable, disable and uninstall server-provided
- audio services (RoonBridge, NAA, AirPlay, QPlay), monitor terminal
+ audio services (RoonBridge, NAA, AirPlay, UPnP/DLNA), monitor terminal
  performance, and reboot or shutdown. Applications are distributed solely
  by the HiFiHub management server.`
 	if audio {

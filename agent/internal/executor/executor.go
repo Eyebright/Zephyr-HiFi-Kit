@@ -194,7 +194,7 @@ func (e *Executor) Install(ctx context.Context, appID, version string, vars map[
 	if err != nil {
 		return fmt.Errorf("render config %s: %w", appID, err)
 	}
-	// Render helper configs too (e.g. MPD output device for QPlay).
+	// Render helper configs too (e.g. MPD output device for UPnP/DLNA).
 	for _, h := range model.HelpersFor(appID) {
 		if _, err := e.writeConfig(model.Registry[h], vars); err != nil {
 			return fmt.Errorf("render helper config %s: %w", h, err)

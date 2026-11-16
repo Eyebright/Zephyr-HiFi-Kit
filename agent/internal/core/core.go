@@ -432,7 +432,7 @@ func (c *Core) Register(ctx context.Context) error {
 	return nil
 }
 
-func protoForProcess(name string) string {
+func (c *Core) protoForProcess(name string) string {
 	switch {
 	case strings.Contains(name, "shairport"):
 		return "airplay"
@@ -440,8 +440,15 @@ func protoForProcess(name string) string {
 		return "raat"
 	case strings.Contains(name, "networkaudiod"):
 		return "naa"
-	case strings.Contains(name, "upmpdcli"), strings.Contains(name, "mpd"):
-		return "qplay"
+	case strings.Contains(name, "upmpdcli"):
+		return "upnp"
+	case strings.Contains(name, "mpd"):
+		// MPD holds the DAC both for UPnP/DLNA casting (via upmpdcli) and for
+		// local playback; only the former is a network renderer protocol.
+		if len(audio.ServiceProcesses(audio.RealProc{})["upmpdcli"]) > 0 {
+			return "upnp"
+		}
+		return "mpd"
 	default:
 		return ""
 	}
@@ -458,7 +465,7 @@ func (c *Core) Heartbeat(ctx context.Context) error {
 	playing := len(holders) > 0
 	active, pid := "", 0
 	if playing {
-		active = protoForProcess(holders[0].Process)
+		active = c.protoForProcess(holders[0].Process)
 		pid = holders[0].PID
 	}
 	// The agent's own ZAT sink counts as playback and owns the active protocol.

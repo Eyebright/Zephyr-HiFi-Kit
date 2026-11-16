@@ -26,7 +26,7 @@ const (
 	ProtoRAAT    = "raat"
 	ProtoNAA     = "naa"
 	ProtoAirPlay = "airplay"
-	ProtoQPlay   = "qplay"
+	ProtoUPnP    = "upnp"
 )
 
 // App is a catalog entry describing a distributable application (FR-3.1).

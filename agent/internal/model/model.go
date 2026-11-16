@@ -42,7 +42,7 @@ type ConfigField struct {
 type ServiceDef struct {
 	AppID          string        `json:"app_id"`
 	Name           string        `json:"name"`
-	Protocol       string        `json:"protocol,omitempty"` // raat|naa|airplay|qplay
+	Protocol       string        `json:"protocol,omitempty"` // raat|naa|airplay|upnp|spotify|snapcast|slimproto
 	Category       string        `json:"category"`
 	Units          []string      `json:"units"`
 	OccupiesDAC    bool          `json:"occupies_dac"`

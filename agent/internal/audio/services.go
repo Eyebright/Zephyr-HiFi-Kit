@@ -14,7 +14,7 @@ type ServiceProc struct {
 // ServiceProcesses scans /proc once and maps every live audio-protocol process
 // to its service app id, so pre-existing services light up even when started
 // outside systemd. A bare MPD process maps to "mpd" (moode's main player), never
-// to upmpdcli: the QPlay renderer runs its own upmpdcli process.
+// to upmpdcli: the UPnP/DLNA renderer runs its own upmpdcli process.
 func ServiceProcesses(pr ProcReader) map[string][]ServiceProc {
 	pids, err := pr.PIDs()
 	if err != nil {

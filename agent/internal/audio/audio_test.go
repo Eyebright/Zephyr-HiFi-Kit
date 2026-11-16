@@ -103,7 +103,7 @@ func TestServiceProcesses(t *testing.T) {
 }
 
 func TestServiceProcessesMPDAlone(t *testing.T) {
-	// A pure-MPD terminal (no upmpdcli process) must not light the QPlay card.
+	// A pure-MPD terminal (no upmpdcli process) must not light the UPnP/DLNA card.
 	got := ServiceProcesses(fakeProc{pids: []int{1, 2}, comm: map[int]string{1: "mpd", 2: "systemd"}})
 	if _, ok := got["upmpdcli"]; ok {
 		t.Fatal("bare mpd must not be attributed to upmpdcli")
