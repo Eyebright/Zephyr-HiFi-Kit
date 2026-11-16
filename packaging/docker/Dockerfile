@@ -10,6 +10,7 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY go.mod go.sum ./
+COPY zat/go.mod ./zat/
 RUN go mod download
 COPY . .
 RUN CGO_ENABLED=1 GOOS=linux GOARCH=${TARGETARCH} \
