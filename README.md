@@ -20,6 +20,7 @@ CGO + libFLAC + ALSA 实现真实解码与比特完美出声（见 INSTALL.md §
 | 授权 | 离线签名许可证激活 / 席位占用 / 逐终端授权·撤销 / 下发前许可证 + 授权双门禁 |
 | 运维 | 远程 apt 检查·升级（命令通道）/ mDNS·SSDP·多播网络诊断 / 内核待重启告警 / 灰度发布（环推进） |
 | 自动更新 | 服务端发布源检测 + SHA256/GPG 校验自升级 + 原子置换重启 / 终端跟随服务端版本逐环收敛（并行·退避重试·挂起重试·播放保护）/ 控制台一键检查·升级·收敛·重试 |
+| NAS 容器 | 音频版服务端镜像（libFLAC + gnupg enforce）· GHCR 多架构 manifest + 离线 docker tar · 威联通 / 群晖 / TrueNAS / Unraid · `/data` 卷 + 宿主机 SMB bind |
 | 安全 | enforce 验签 / 离线主密钥·签名子密钥·公钥信任根分工 / 密钥导入·信任根导出 / 终端本地控制台节点密钥门禁 / 全量审计 + CSV/JSON 导出 |
 | 可观测 | 总览 KPI + 服务端消耗 / 终端资源与 DAC 占用 / 告警铃铛抽屉（确认·解决·扫描）/ 终端控制台反向代理 |
 | 终端 Agent | 注册·心跳·快照 / 任务执行（apt·dpkg·配置渲染·systemd 白名单）/ DAC 仲裁执行 / 播放保护本地门禁 / 本地控制台（服务·系统更新·网络诊断·电源·正在播放） |
@@ -80,6 +81,7 @@ internal/                api / catalog / repo / bom / node / task / store / sign
 zat/                     自有 ZAT 音频传输协议（服务端与终端共享的独立模块）
 agent/                   终端 Agent 独立模块（cmd / internal：player·zatclient / packaging / cmd/debpack）
 packaging/server/        服务端 install.sh / uninstall.sh / systemd 单元 / 配置模板
+packaging/docker/        NAS 容器镜像 Dockerfile + compose.yml（音频版服务端）
 scripts/                 build-release.sh / build-audio.sh / build-audio-cross.sh / smoke-test.sh
 prototype/               UI 可行性验证原型（纯前端 mock，非运行代码）
 ```

@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
   build:
@@ -291,3 +292,122 @@ jobs:
             "$ANDROID_HOME/platform-tools/adb" push /tmp/player.test /data/local/tmp/player.test
             "$ANDROID_HOME/platform-tools/adb" shell chmod 755 /data/local/tmp/player.test
             "$ANDROID_HOME/platform-tools/adb" shell /data/local/tmp/player.test -test.v -test.run TestAAudio
+
+  # NAS / container server image (QNAP Container Station, Synology Container
+  # Manager, TrueNAS, Unraid). Audio-capable CGO libFLAC server on debian-slim
+  # with gnupg for enforce mode; state lives in the /data volume, no systemd.
+  # Built natively per arch (no qemu CGO emulation), runtime-tested in a real
+  # container (health + /dl/ whitelist + unsigned-artifact rejection), then
+  # pushed to GHCR per-arch; nas-manifest joins them into a multi-arch index.
+  # Offline NAS hosts get docker-save tarballs as release assets instead.
+  nas-image:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch distribution set for the container test
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+            curl -fsSL -o /tmp/bundle.tar.gz \
+              "https://github.com/Eyebright/zephyr-music-server/releases/download/${GITHUB_REF_NAME}/zephyr-music-server-${VERSION}.tar.gz"
+          else
+            VERSION="0.4.0"
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Download bundle artifact (non-tag builds)
+        if: github.ref_type != 'tag'
+        uses: actions/download-artifact@v4
+        with:
+          name: zephyr-music-server-bundle
+          path: /tmp/bundle-artifact
+
+      - name: Build image
+        run: |
+          if [ "${GITHUB_REF_TYPE}" != "tag" ]; then
+            cp /tmp/bundle-artifact/zephyr-music-server-*.tar.gz /tmp/bundle.tar.gz
+          fi
+          docker build -f packaging/docker/Dockerfile -t zephyr-nas:test .
+
+      - name: Container runtime test (enforce + /dl/ whitelist + rejection)
+        run: |
+          mkdir -p /tmp/nasdata
+          tar -xzf /tmp/bundle.tar.gz -C /tmp
+          cp -r /tmp/zephyr-music-server-${VERSION}/server/dist /tmp/nasdata/dist
+          sudo chown -R 1000:1000 /tmp/nasdata
+          docker run -d --name zephyr-nas-test -p 18080:8080 -v /tmp/nasdata:/data zephyr-nas:test
+          ok=0
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:18080/api/v1/health >/tmp/health.json 2>/dev/null; then ok=1; break; fi
+            sleep 1
+          done
+          [ "$ok" = 1 ] || { docker logs zephyr-nas-test; exit 1; }
+          cat /tmp/health.json
+          grep -q '"signature_mode":"enforce"' /tmp/health.json
+          grep -q '"play_gate":true' /tmp/health.json
+          curl -fsS -o /dev/null -w 'dl-script %{http_code}\n' http://127.0.0.1:18080/dl/agent-install.sh
+          curl -fsS -o /dev/null -w 'dl-sums %{http_code}\n' http://127.0.0.1:18080/dl/SHA256SUMS
+          code=$(curl -s -L -o /tmp/trav.out -w '%{http_code}' --path-as-is 'http://127.0.0.1:18080/dl/..%2f..%2fetc%2fpasswd')
+          [ "$code" = 404 ] || { echo "!! /dl/ traversal not rejected: $code"; exit 1; }
+          grep -q 'root:' /tmp/trav.out && { echo "!! /dl/ leaked file content"; exit 1; }
+          printf 'not-a-deb' > /tmp/unsigned.deb
+          rej=$(curl -s -X POST http://127.0.0.1:18080/api/v1/apps/nas-test/versions \
+            -F 'meta={"version":"1.0","arch":"amd64","format":"deb","units":[],"occupies_dac":false,"lifecycle":"available"}' \
+            -F 'artifact=@/tmp/unsigned.deb')
+          echo "$rej" | grep -q 'artifact_rejected' || { echo "!! unsigned artifact accepted: $rej"; exit 1; }
+          curl -fsS -o /dev/null -w 'metrics %{http_code}\n' http://127.0.0.1:18080/metrics/server
+          docker rm -f zephyr-nas-test
+
+      - name: Push arch image + offline tarball (tag builds)
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          case "${{ runner.arch }}" in
+            X64) ARCH=amd64 ;;
+            ARM64) ARCH=arm64 ;;
+            *) echo "unsupported runner arch"; exit 1 ;;
+          esac
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_REPOSITORY_OWNER" --password-stdin
+          docker tag zephyr-nas:test "ghcr.io/eyebright/zephyr-music-server:${VERSION}-${ARCH}"
+          docker push "ghcr.io/eyebright/zephyr-music-server:${VERSION}-${ARCH}"
+          # GHCR packages start private; open the package so NAS hosts can pull
+          # anonymously. Idempotent across the two matrix legs.
+          curl -s -o /dev/null -w 'visibility %{http_code}\n' -X PATCH \
+            -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            https://api.github.com/user/packages/container/zephyr-music-server/visibility \
+            -d '{"visibility":"public"}'
+          mkdir -p release
+          docker tag zephyr-nas:test "zephyr-music-server:${VERSION}"
+          docker save "zephyr-music-server:${VERSION}" | gzip > "release/zephyr-music-server-${VERSION}-docker-${ARCH}.tar.gz"
+          gh release upload "$GITHUB_REF_NAME" "release/zephyr-music-server-${VERSION}-docker-${ARCH}.tar.gz" --clobber
+
+  nas-manifest:
+    needs: nas-image
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Join arch images into a multi-arch index
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_REPOSITORY_OWNER" --password-stdin
+          docker buildx imagetools create \
+            -t "ghcr.io/eyebright/zephyr-music-server:${VERSION}" \
+            -t "ghcr.io/eyebright/zephyr-music-server:latest" \
+            "ghcr.io/eyebright/zephyr-music-server:${VERSION}-amd64" \
+            "ghcr.io/eyebright/zephyr-music-server:${VERSION}-arm64"
+          # Anonymous pull proof: token without credentials, then the index.
+          T=$(curl -s 'https://ghcr.io/token?scope=repository:eyebright/zephyr-music-server:pull' | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+          curl -fsS -o /tmp/index.json -w 'anonymous index %{http_code}\n' \
+            -H "Authorization: Bearer $T" \
+            -H 'Accept: application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json' \
+            "https://ghcr.io/v2/eyebright/zephyr-music-server/manifests/${VERSION}"
+          grep -q arm64 /tmp/index.json && grep -q amd64 /tmp/index.json

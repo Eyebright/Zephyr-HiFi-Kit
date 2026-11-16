@@ -610,3 +610,55 @@ curl -s -X POST $S/update/fleet/policy -H 'Content-Type: application/json' \
 curl -s -X POST $S/update/fleet/converge # 强制立即收敛一轮（忽略退避）
 curl -s -X POST $S/update/fleet/<NodeID>/retry   # 重置挂起终端的失败计数
 ```
+
+---
+
+## 12. NAS 容器部署（威联通 / 群晖 / TrueNAS / Unraid）
+
+服务端提供**音频版容器镜像**（CGO libFLAC 解码 + gnupg enforce 验签），适用于带容器功能的
+NAS：QNAP Container Station、群晖 Container Manager、TrueNAS SCALE、Unraid 及任意 Docker
+主机。镜像不依赖 systemd / apt：进程直接运行，全部状态（数据库 / 制品 / 信任根 / dist）
+落在 `/data` 卷，以非 root 用户 `hifihub-server` 运行，内置 HEALTHCHECK。
+
+### 12.1 获取镜像
+
+```sh
+# 在线拉取（amd64 / arm64 多架构 manifest，NAS 按自身架构自动选）
+docker pull ghcr.io/eyebright/zephyr-music-server:0.4.0
+
+# 离线导入（Release 资产中的 docker save 包；Container Station / Container Manager
+# 的「导入镜像」也可直接选择该 tar.gz）
+docker load -i zephyr-music-server-0.4.0-docker-amd64.tar.gz   # 或 arm64
+# 导入后镜像名为 zephyr-music-server:0.4.0，compose 的 image 改成它即可
+```
+
+### 12.2 准备数据目录与分发集
+
+```sh
+mkdir -p data/dist media
+tar -xzf zephyr-music-server-0.4.0.tar.gz
+cp -r zephyr-music-server-0.4.0/server/dist/* data/dist/
+# 真实播放请改用音频版 bundle 的 server/dist（见 10.1）
+```
+
+信任根二选一：启动后在控制台「密钥与授权」粘贴 armored 公钥导入并设为信任根；或把
+`trust-root.asc` 放进 `data/` 后 `docker exec -it zephyr-server gpg --homedir /data/gnupg --import /data/trust-root.asc`。
+
+### 12.3 启动
+
+用 `packaging/docker/compose.yml`（`docker compose up -d`，或把内容贴进 NAS 容器 UI）：
+端口 **8080**（控制台 / REST / `/dl/`）与 **7800**（ZAT 推流，终端拨入）。
+
+SMB 媒体库：**先在 NAS 宿主机挂载共享**（QNAP HybridMount / 群晖挂载 / fstab cifs），再只读
+bind 进容器 `/mnt/zephyr`（compose 的 `./media`）。容器内直接 CIFS 挂载需 privileged，不推荐。
+
+控制台鉴权警告同 3.3：请在 NAS 反向代理（QNAP Reverse Proxy / 群晖登录门户）做 TLS 终止 +
+鉴权后再暴露 8080。
+
+### 12.4 与 systemd 版的差异
+
+- `HIFIHUB_UPDATE_SELF` / `UPDATE_AUTO` 预置 `false`：容器内无 systemd，**升级 = 拉新镜像 /
+  导入新 tar 后重建容器**；终端收敛（`UPDATE_FLEET`）照常工作，目标版本跟随镜像版本。
+  升级时同步用新 bundle 的 `server/dist` 刷新 `data/dist`。
+- enforce 验签、播放门控、许可证席位门控、审计与 systemd 版完全一致。
+- 其余环境变量（`HIFIHUB_*`）均可在 compose / NAS UI 中覆盖，语义同 3.2 与 11.3。

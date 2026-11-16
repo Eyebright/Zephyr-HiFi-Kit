@@ -1,0 +1,23 @@
+# Zephyr Music Player — NAS container deployment (QNAP Container Station,
+# Synology Container Manager, TrueNAS, Unraid, any Docker host).
+#
+#   1) mkdir -p data/dist && cp -r <bundle>/server/dist/* data/dist/
+#      (trust-root.asc import: console 密钥与授权, or docker exec gpg --import)
+#   2) docker compose up -d
+#
+# Offline / no-registry hosts: docker load -i zephyr-music-server-0.4.0-docker-<arch>.tar.gz
+# then change image: to zephyr-music-server:0.4.0
+services:
+  zephyr-server:
+    image: ghcr.io/eyebright/zephyr-music-server:0.4.0
+    container_name: zephyr-server
+    restart: unless-stopped
+    ports:
+      - "8080:8080"   # management console + REST + /dl/
+      - "7800:7800"   # ZAT audio transport (terminals dial in)
+    volumes:
+      - ./data:/data
+      # SMB media library: mount the share on the NAS host (QNAP HybridMount /
+      # Synology File Station / fstab cifs), then bind it read-only here.
+      # In-container CIFS mounts would need privileged mode — not recommended.
+      - ./media:/mnt/zephyr:ro
