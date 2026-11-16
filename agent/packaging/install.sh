@@ -100,8 +100,11 @@ fi
 
 echo "Installing hifihub-agent ${VERSION} (${ARCH}) ..."
 # dpkg may fail on missing dependencies; apt-get -f completes the install.
-dpkg -i "$PKG" || apt-get -f install -y
-if ! dpkg -s hifihub-agent >/dev/null 2>&1; then
+# --force-confold keeps the operator's agent.env: this script rewrites the
+# managed keys below, and a conffile prompt would hang a noninteractive install.
+dpkg -i --force-confold "$PKG" ||
+  apt-get -f install -y -o Dpkg::Options::="--force-confold"
+if ! dpkg -s hifihub-agent 2>/dev/null | grep -q '^Status: install ok installed'; then
   echo "hifihub-agent installation failed; see the output above." >&2
   exit 1
 fi

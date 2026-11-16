@@ -24,10 +24,23 @@ type entry struct {
 	mode int64
 }
 
-func buildTar(entries []entry) ([]byte, error) {
+// buildTar writes directory entries first: dpkg creates missing parents for
+// regular files but not for conffiles, so a conffile's directory must be shipped
+// explicitly or unpack fails with "unable to create ...dpkg-new".
+func buildTar(entries []entry, dirs ...string) ([]byte, error) {
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gz)
+	for _, d := range dirs {
+		hdr := &tar.Header{
+			Name: d, Mode: 0o755, ModTime: modTime,
+			Uid: 0, Gid: 0, Uname: "root", Gname: "root",
+			Typeflag: tar.TypeDir, Format: tar.FormatPAX,
+		}
+		if err := tw.WriteHeader(hdr); err != nil {
+			return nil, err
+		}
+	}
 	for _, e := range entries {
 		hdr := &tar.Header{
 			Name: e.name, Mode: e.mode, Size: int64(len(e.data)),
@@ -68,10 +81,11 @@ func readFile(path string) []byte {
 	return b
 }
 
-// bakeVersion substitutes the release version into install.sh's @VERSION@
-// placeholder so the downloaded script knows which .deb to fetch.
+// bakeVersion substitutes the release version into install.sh's assignment only.
+// The script's self-check compares VERSION against the literal "@VERSION@"
+// sentinel, so a global replace would make every baked script reject itself.
 func bakeVersion(script []byte, version string) []byte {
-	return bytes.ReplaceAll(script, []byte("@VERSION@"), []byte(version))
+	return bytes.Replace(script, []byte("VERSION=\"@VERSION@\""), []byte("VERSION=\""+version+"\""), 1)
 }
 
 // buildDeb assembles the full .deb ar archive from its constituent parts.
@@ -84,7 +98,7 @@ func buildDeb(agentBin, unit, env, postinst, prerm, installSh []byte, version, a
 		{"./lib/systemd/system/hifihub-agent.service", unit, 0o644},
 		{"./etc/hifihub/agent.env", env, 0o644},
 		{"./usr/share/hifihub-agent/install.sh", installSh, 0o755},
-	})
+	}, "./etc/hifihub/", "./usr/share/hifihub-agent/")
 	if err != nil {
 		return nil, fmt.Errorf("data tar: %w", err)
 	}

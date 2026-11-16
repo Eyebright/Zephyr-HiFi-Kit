@@ -76,14 +76,11 @@ func listTar(t *testing.T, gz []byte) map[string]tar.Header {
 var tarContents = map[string][]byte{}
 
 func TestBakeVersion(t *testing.T) {
-	script := []byte("VERSION=\"@VERSION@\"\nurl=\"hifihub-agent_@VERSION@_${ARCH}.deb\"\n")
+	script := []byte("VERSION=\"@VERSION@\"\nif [ \"$VERSION\" = \"@VERSION@\" ]; then exit 1; fi\nPKG=\"hifihub-agent_${VERSION}_${ARCH}.deb\"\n")
 	got := string(bakeVersion(script, "9.9.9"))
-	want := "VERSION=\"9.9.9\"\nurl=\"hifihub-agent_9.9.9_${ARCH}.deb\"\n"
+	want := "VERSION=\"9.9.9\"\nif [ \"$VERSION\" = \"@VERSION@\" ]; then exit 1; fi\nPKG=\"hifihub-agent_${VERSION}_${ARCH}.deb\"\n"
 	if got != want {
 		t.Fatalf("bakeVersion:\n got %q\nwant %q", got, want)
-	}
-	if strings.Contains(got, "@VERSION@") {
-		t.Fatal("placeholder left behind")
 	}
 }
 
@@ -134,6 +131,18 @@ func TestDebRoundTrip(t *testing.T) {
 	}
 	if data["./usr/bin/hifihub-agent"].Mode != 0o755 {
 		t.Fatalf("agent mode=%o want 755", data["./usr/bin/hifihub-agent"].Mode)
+	}
+	for _, d := range []string{"./etc/hifihub/", "./usr/share/hifihub-agent/"} {
+		hdr, ok := data[d]
+		if !ok {
+			t.Fatalf("data.tar.gz missing directory entry %s", d)
+		}
+		if hdr.Typeflag != tar.TypeDir {
+			t.Fatalf("%s typeflag=%d want TypeDir", d, hdr.Typeflag)
+		}
+		if hdr.Mode != 0o755 {
+			t.Fatalf("%s mode=%o want 755", d, hdr.Mode)
+		}
 	}
 	if data["./usr/share/hifihub-agent/install.sh"].Mode != 0o755 {
 		t.Fatalf("install.sh mode=%o want 755", data["./usr/share/hifihub-agent/install.sh"].Mode)

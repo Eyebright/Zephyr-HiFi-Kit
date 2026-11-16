@@ -55,7 +55,7 @@ if [ "${AUDIO:-0}" = "1" ]; then
   chmod +x "$OUT/server/install.sh" "$OUT/server/uninstall.sh"
   cp "$ROOT/bin/audio/hifihub-agent_${VERSION}_${NATIVE}.deb" "$OUT/agent/"
   cp "$ROOT/bin/audio/hifihub-agent_${VERSION}_${NATIVE}.deb" "$OUT/server/dist/"
-  sed "s/@VERSION@/$VERSION/g" "$ROOT/agent/packaging/install.sh" > "$OUT/server/dist/agent-install.sh"
+  sed "s/^VERSION=\"@VERSION@\"$/VERSION=\"$VERSION\"/" "$ROOT/agent/packaging/install.sh" > "$OUT/server/dist/agent-install.sh"
   chmod +x "$OUT/server/dist/agent-install.sh"
   cp "$OUT/server/dist/agent-install.sh" "$OUT/agent/agent-install.sh"
   ( cd "$OUT/server/dist" && sha256sum hifihub-agent_"$VERSION"_"$NATIVE".deb agent-install.sh > SHA256SUMS )
@@ -112,7 +112,7 @@ build_agent armhf arm 7
 echo "== assembling dist =="
 [ -f "$ROOT/agent/packaging/install.sh" ] || { echo "agent/packaging/install.sh missing" >&2; exit 1; }
 mkdir -p "$OUT/server/dist"
-sed "s/@VERSION@/$VERSION/g" "$ROOT/agent/packaging/install.sh" > "$OUT/server/dist/agent-install.sh"
+sed "s/^VERSION=\"@VERSION@\"$/VERSION=\"$VERSION\"/" "$ROOT/agent/packaging/install.sh" > "$OUT/server/dist/agent-install.sh"
 chmod +x "$OUT/server/dist/agent-install.sh"
 cp "$OUT/server/dist/agent-install.sh" "$OUT/agent/agent-install.sh"
 cp "$OUT"/agent/hifihub-agent_"$VERSION"_*.deb "$OUT/server/dist/"
