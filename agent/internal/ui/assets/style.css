@@ -4,6 +4,9 @@
   --warn: #d29922; --danger: #f85149; --radius: 12px;
 }
 * { box-sizing: border-box; }
+/* Author display rules (e.g. .modal's flex) outrank the UA [hidden] style,
+   so hidden-attribute elements must be forced back to display:none. */
+[hidden] { display: none !important; }
 body {
   margin: 0; background: var(--bg); color: var(--text);
   font: 15px/1.5 -apple-system, "Segoe UI", "Microsoft YaHei", Roboto, sans-serif;
