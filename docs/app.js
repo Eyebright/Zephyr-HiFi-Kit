@@ -36,15 +36,36 @@
   }
 
   /* ─────────── audio ─────────── */
+  // BGM: 《故乡的小路》 (陈克正 词 / 崔蕾 曲), 1=F, 7/4 (3/4+4/4), ♩=72.
+  // Transcribed melody (top voice), encoded as [semitone-from-1, octave, beats].
+  // Semitones: 1=0 2=2 3=4 4=5 #4=6 5=7 6=9 7=11. Rendered as a soft music box.
+  var BGM_SPB = 60 / 72;
+  var BGM = [
+    /* 故乡的小路，是我童年走过的路， */
+    [4,0,1.5],[4,0,.25],[4,0,.25],[4,0,.5],[2,0,.5],[0,0,3],[4,0,.5],[5,0,.5],
+    [7,0,1.5],[6,0,.5],[9,0,.5],[7,0,.25],[7,0,.25],[4,0,3],[7,-1,.5],[0,0,.5],
+    /* 路旁盛开的小花，给我欢乐和幸福， */
+    [4,0,1.5],[4,0,.25],[4,0,.25],[5,0,.5],[4,0,.5],[2,0,3],[4,0,.5],[5,0,.5],
+    [7,0,1.5],[7,0,.25],[7,0,.25],[2,0,.5],[0,0,.5],[0,0,3],[0,0,1],
+    /* 弯弯的小路，梦中我恩念的路， */
+    [9,0,1.5],[9,0,.25],[9,0,.25],[11,0,.5],[0,1,.5],[7,0,3],[9,0,.5],[7,0,.5],
+    [4,0,1.5],[7,-1,.5],[0,0,.5],[2,0,.5],[4,0,3],[0,0,1],
+    /* 路旁的小花，时刻向我倾诉。 */
+    [9,0,1.5],[9,0,.25],[9,0,.25],[11,0,.5],[0,1,.5],[7,0,3],[5,0,.5],[4,0,.5],
+    [2,0,1.5],[7,-1,.5],[2,0,.5],[0,0,.5],[0,0,3],[0,0,1],
+    [null,0,2]
+  ];
+  var BGM_BASE = 349.228; // F4 = degree 1
   var Audio2 = {
     ctx: null, master: null, analyser: null, data: null, on: true, started: false, nodes: [],
+    musicGain: null, musicTimer: null, mIdx: 0, mNext: 0, mPlayed: 0,
     init: function () {
       if (this.ctx) return;
       var AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) { this.on = false; return; }
       try { this.ctx = new AC(); } catch (e) { this.on = false; return; }
       this.master = this.ctx.createGain();
-      this.master.gain.value = this.on ? 0.05 : 0;
+      this.master.gain.value = this.on ? 0.12 : 0;
       this.analyser = this.ctx.createAnalyser();
       this.analyser.fftSize = 128;
       this.analyser.smoothingTimeConstant = 0.82;
@@ -55,7 +76,9 @@
       lp.connect(this.analyser);
       this.analyser.connect(this.master);
       this.master.connect(this.ctx.destination);
-      var freqs = [110, 164.81, 220, 277.18, 329.63];
+      // F-major bed (F2 C3 F3 A3 C4) so the ambient pad is consonant with the
+      // 《故乡的小路》 melody (1=F) instead of the previous A-major drone.
+      var freqs = [87.31, 130.81, 174.61, 220, 261.63];
       var self = this;
       freqs.forEach(function (f, i) {
         var o = self.ctx.createOscillator();
@@ -63,17 +86,57 @@
         o.frequency.value = f;
         o.detune.value = (i - 2) * 4;
         var g = self.ctx.createGain();
-        g.gain.value = 0.16 / (i + 1);
+        g.gain.value = 0.10 / (i + 1);
         var lfo = self.ctx.createOscillator();
         lfo.frequency.value = 0.05 + i * 0.021;
         var lg = self.ctx.createGain();
-        lg.gain.value = 0.07 / (i + 1);
+        lg.gain.value = 0.05 / (i + 1);
         lfo.connect(lg); lg.connect(g.gain);
         o.connect(g); g.connect(lp);
         o.start(); lfo.start();
         self.nodes.push(o, lfo);
       });
+      this.musicGain = this.ctx.createGain();
+      this.musicGain.gain.value = 1;
+      this.musicGain.connect(this.analyser);
       this.started = true;
+      this.startMusic();
+    },
+    startMusic: function () {
+      if (this.musicTimer || !this.ctx) return;
+      var self = this;
+      this.mNext = 0;
+      this.musicTimer = setInterval(function () { self.tickMusic(); }, 120);
+    },
+    tickMusic: function () {
+      if (!this.ctx || this.ctx.state !== "running") { this.mNext = 0; return; }
+      var now = this.ctx.currentTime;
+      if (!this.mNext || this.mNext < now - 0.25) this.mNext = now + 0.08;
+      while (this.mNext < now + 0.7) {
+        var n = BGM[this.mIdx];
+        if (n[0] !== null) this.noteMusic(n, this.mNext);
+        this.mNext += n[2] * BGM_SPB;
+        this.mIdx = (this.mIdx + 1) % BGM.length;
+      }
+    },
+    noteMusic: function (n, t) {
+      var f = BGM_BASE * Math.pow(2, (n[0] + 12 * n[1]) / 12);
+      var dur = n[2] * BGM_SPB;
+      var decay = Math.max(0.6, dur * 1.5);
+      var v = 0.5;
+      var partials = [[1, 1, decay], [2, 0.32, decay * 0.6], [4, 0.10, decay * 0.3]];
+      for (var i = 0; i < partials.length; i++) {
+        var o = this.ctx.createOscillator(), g = this.ctx.createGain();
+        o.type = "sine";
+        o.frequency.value = f * partials[i][0];
+        var pv = v * partials[i][1], pd = partials[i][2];
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(pv, t + 0.008);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + pd);
+        o.connect(g); g.connect(this.musicGain);
+        o.start(t); o.stop(t + pd + 0.05);
+      }
+      this.mPlayed++;
     },
     resume: function () {
       this.init();
@@ -85,7 +148,7 @@
       if (this.master && this.ctx) {
         var t = this.ctx.currentTime;
         this.master.gain.cancelScheduledValues(t);
-        this.master.gain.setTargetAtTime(v ? 0.05 : 0, t, 0.12);
+        this.master.gain.setTargetAtTime(v ? 0.12 : 0, t, 0.12);
       }
     },
     blip: function (freq, dur, type, vol) {
@@ -116,13 +179,19 @@
     toast(Audio2.on ? "声音已开启" : "全部声音已静音", Audio2.on ? "ok" : "info");
   });
   paintSnd();
+  var bgmAnnounced = false;
   var unlock = function () {
     Audio2.resume();
+    if (!bgmAnnounced && Audio2.on) {
+      bgmAnnounced = true;
+      toast("背景音乐：《故乡的小路》", "info");
+    }
     document.removeEventListener("pointerdown", unlock);
     document.removeEventListener("keydown", unlock);
   };
   document.addEventListener("pointerdown", unlock, { once: false });
   document.addEventListener("keydown", unlock, { once: false });
+  window.__za = Audio2;
 
   /* ─────────── nav ─────────── */
   var nav = $("#nav"), prog = $("#nav-prog"), burger = $("#burger"), links = $("#nav-links");
