@@ -63,7 +63,7 @@
   var BGM_BASE = 392.0; // G4 = degree 1
   var Audio2 = {
     ctx: null, master: null, analyser: null, data: null, on: true, started: false, nodes: [],
-    musicGain: null, musicTimer: null, mIdx: 0, mNext: 0, mPlayed: 0,
+    musicGain: null, musicTimer: null, mIdx: 0, mNext: 0, mPlayed: 0, blocked: false, onstate: null,
     init: function () {
       if (this.ctx) return;
       var AC = window.AudioContext || window.webkitAudioContext;
@@ -145,7 +145,15 @@
     },
     resume: function () {
       this.init();
-      if (this.ctx && this.ctx.state === "suspended") this.ctx.resume().catch(function () {});
+      if (!this.ctx) return Promise.resolve();
+      var self = this;
+      var p = this.ctx.state === "suspended" ? this.ctx.resume() : Promise.resolve();
+      return p.then(function () { self._sync(); }, function () { self._sync(); });
+    },
+    _sync: function () {
+      var running = !!this.ctx && this.ctx.state === "running";
+      this.blocked = this.on && !running;
+      if (this.onstate) this.onstate(running);
     },
     setOn: function (v) {
       this.on = v;
@@ -176,31 +184,50 @@
   var sndBtn = $("#snd"), sndTxt = $("#snd-txt");
   function paintSnd() {
     if (!sndBtn) return;
-    sndBtn.setAttribute("aria-pressed", Audio2.on ? "true" : "false");
-    if (sndTxt) sndTxt.textContent = Audio2.on ? "声音 开" : "声音 关";
+    var pending = Audio2.on && Audio2.blocked;
+    sndBtn.classList.toggle("pending", pending);
+    sndBtn.setAttribute("aria-pressed", (Audio2.on && !Audio2.blocked) ? "true" : "false");
+    if (sndTxt) sndTxt.textContent = !Audio2.on ? "声音 关" : (pending ? "点按播放" : "声音 开");
   }
+  var bgmAnnounced = false, blockHinted = false;
+  Audio2.onstate = function (running) {
+    paintSnd();
+    if (running && Audio2.on && !bgmAnnounced) {
+      bgmAnnounced = true;
+      toast("背景音乐：《500 Miles》", "info");
+    }
+    if (!running && Audio2.on && Audio2.blocked && !blockHinted) {
+      blockHinted = true;
+      toast("浏览器限制自动播放 · 点按页面任意处即可出声", "info");
+    }
+  };
   if (sndBtn) sndBtn.addEventListener("click", function () {
+    if (Audio2.on && Audio2.blocked) { Audio2.resume(); return; }
     Audio2.setOn(!Audio2.on); paintSnd();
     toast(Audio2.on ? "声音已开启" : "全部声音已静音", Audio2.on ? "ok" : "info");
   });
   paintSnd();
-  var bgmAnnounced = false;
   var unlock = function () {
-    Audio2.resume();
-    if (!bgmAnnounced && Audio2.on) {
-      bgmAnnounced = true;
-      toast("背景音乐：《500 Miles》", "info");
-    }
-    document.removeEventListener("pointerdown", unlock);
-    document.removeEventListener("keydown", unlock);
-    document.removeEventListener("touchstart", unlock);
+    Audio2.resume().then(function () {
+      if (Audio2.ctx && Audio2.ctx.state === "running") {
+        document.removeEventListener("pointerdown", unlock);
+        document.removeEventListener("keydown", unlock);
+        document.removeEventListener("touchstart", unlock);
+      }
+    });
   };
   document.addEventListener("pointerdown", unlock, { once: false });
   document.addEventListener("keydown", unlock, { once: false });
   document.addEventListener("touchstart", unlock, { once: false, passive: true });
   document.addEventListener("visibilitychange", function () {
-    if (!document.hidden && Audio2.on && Audio2.started) Audio2.resume();
+    if (!document.hidden && Audio2.on) Audio2.resume();
   });
+  // Attempt true autoplay at open; browsers that permit it (repeat visits /
+  // autoplay-allowed settings) start immediately, others fall back to unlock.
+  Audio2.resume();
+  window.addEventListener("load", function () { Audio2.resume(); });
+  setTimeout(function () { Audio2.resume(); }, 400);
+  setTimeout(function () { Audio2.resume(); }, 1200);
   window.__za = Audio2;
 
   /* ─────────── nav ─────────── */
