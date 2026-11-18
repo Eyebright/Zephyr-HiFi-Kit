@@ -16,10 +16,9 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"path"
 	"path/filepath"
-	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -39,6 +38,7 @@ const (
 
 // Mount is one registered SMB share. Password is write-only (json:"-").
 type Mount struct {
+	Kind      string `json:"kind"`
 	ID        string `json:"id"`
 	Host      string `json:"host"`
 	Share     string `json:"share"`
@@ -56,6 +56,8 @@ type Mount struct {
 
 // AddMountRequest is the client-supplied share configuration.
 type AddMountRequest struct {
+	Kind     string `json:"kind"`
+	Path     string `json:"path"`
 	Host     string `json:"host"`
 	Share    string `json:"share"`
 	Username string `json:"username"`
@@ -74,6 +76,13 @@ type Track struct {
 	Title        string `json:"title"`
 	Artist       string `json:"artist"`
 	Album        string `json:"album"`
+	Genre        string `json:"genre"`
+	AlbumArtist  string `json:"album_artist"`
+	Composer     string `json:"composer"`
+	Year         int    `json:"year"`
+	DiscNumber   int    `json:"disc_number"`
+	TrackNumber  int    `json:"track_number"`
+	AddedAt      int64  `json:"added_at"`
 	Codec        string `json:"codec"`
 	Container    string `json:"container"`
 	Rate         int    `json:"rate"`
@@ -89,6 +98,7 @@ type Track struct {
 
 // Service manages mounts and the scanned track catalog.
 type Service struct {
+	sourceMu  sync.Mutex // serialize source lifecycle changes and scans
 	db        *sql.DB
 	mounts    mount.Backend
 	mountRoot string
@@ -115,49 +125,31 @@ func (m Mount) spec() mount.Spec {
 // host. On Windows there is no kernel mount: the target is the UNC share itself,
 // read directly through the system SMB client.
 func (s *Service) AddMount(req AddMountRequest) (Mount, error) {
-	var out Mount
+	s.sourceMu.Lock()
+	defer s.sourceMu.Unlock()
 	id := "mnt-" + uuid.NewString()
-	target := path.Join(s.mountRoot, id)
-	if runtime.GOOS == "windows" {
-		target = "//" + req.Host + "/" + req.Share
-	}
-	spec := mount.Spec{
-		Host: req.Host, Share: req.Share, Target: target,
-		Username: req.Username, Password: req.Password, Domain: req.Domain,
-		Version: req.Version, Writable: req.Writable,
-	}
-	if err := spec.Validate(); err != nil {
-		return out, err
-	}
-	if runtime.GOOS == "windows" {
-		var n int
-		if err := s.db.QueryRow(`SELECT COUNT(*) FROM mounts WHERE host=? AND share=?`, req.Host, req.Share).Scan(&n); err == nil && n > 0 {
-			return out, fmt.Errorf("共享 %s/%s 已添加", req.Host, req.Share)
-		}
-	}
-	ver := req.Version
-	if ver == "" {
-		ver = mount.DefaultVersion
-	}
-	now := time.Now().Unix()
-	_, err := s.db.Exec(`INSERT INTO mounts
-		(id,host,share,target,username,password,domain,version,writable,status,detail,created_at,mounted_at)
-		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		id, req.Host, req.Share, target, req.Username, req.Password, req.Domain, ver,
-		boolInt(req.Writable), StatusUnmounted, "", now, 0)
+	m, err := s.configuredMount(id, req)
 	if err != nil {
-		return out, err
+		return Mount{}, err
+	}
+	_, err = s.db.Exec(`INSERT INTO mounts
+		(id,host,share,target,username,password,domain,version,writable,status,detail,created_at,mounted_at,kind)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		id, m.Host, m.Share, m.Target, m.Username, m.Password, m.Domain, m.Version,
+		boolInt(m.Writable), StatusUnmounted, "", time.Now().Unix(), 0, m.Kind)
+	if err != nil {
+		return Mount{}, err
 	}
 	return s.GetMount(id)
 }
 
-const mountCols = `id,host,share,target,username,password,domain,version,writable,status,detail,created_at,mounted_at`
+const mountCols = `id,host,share,target,username,password,domain,version,writable,status,detail,created_at,mounted_at,kind`
 
 func scanMount(row interface{ Scan(...any) error }) (Mount, error) {
 	var m Mount
 	var writable int
 	err := row.Scan(&m.ID, &m.Host, &m.Share, &m.Target, &m.Username, &m.Password, &m.Domain,
-		&m.Version, &writable, &m.Status, &m.Detail, &m.CreatedAt, &m.MountedAt)
+		&m.Version, &writable, &m.Status, &m.Detail, &m.CreatedAt, &m.MountedAt, &m.Kind)
 	m.Writable = writable == 1
 	return m, err
 }
@@ -193,11 +185,13 @@ func (s *Service) ListMounts() ([]Mount, error) {
 
 // DeleteMount unmounts (best effort) and removes the share and its tracks.
 func (s *Service) DeleteMount(ctx context.Context, id string) error {
+	s.sourceMu.Lock()
+	defer s.sourceMu.Unlock()
 	m, err := s.GetMount(id)
 	if err != nil {
 		return err
 	}
-	if m.Status == StatusMounted {
+	if m.Kind != "local" && m.Status == StatusMounted {
 		_ = s.mounts.Unmount(ctx, m.Target)
 	}
 	if _, err := s.db.Exec(`DELETE FROM tracks WHERE mount_id=?`, id); err != nil {
@@ -210,9 +204,22 @@ func (s *Service) DeleteMount(ctx context.Context, id string) error {
 
 // Mount performs the kernel CIFS mount and records the outcome.
 func (s *Service) Mount(ctx context.Context, id string) (Mount, error) {
+	s.sourceMu.Lock()
+	defer s.sourceMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return Mount{}, err
+	}
 	m, err := s.GetMount(id)
 	if err != nil {
 		return m, err
+	}
+	if m.Kind == "local" {
+		if _, err := localDirectory(m.Target); err != nil {
+			s.setStatus(id, StatusError, err.Error(), 0)
+		} else {
+			s.setStatus(id, StatusMounted, "", time.Now().Unix())
+		}
+		return s.GetMount(id)
 	}
 	// Best-effort: mount.cifs needs this dir and surfaces the real error if absent.
 	// UNC targets are remote shares; creating them locally would be wrong.
@@ -230,9 +237,18 @@ func (s *Service) Mount(ctx context.Context, id string) (Mount, error) {
 
 // Unmount releases the share and records the outcome.
 func (s *Service) Unmount(ctx context.Context, id string) (Mount, error) {
+	s.sourceMu.Lock()
+	defer s.sourceMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return Mount{}, err
+	}
 	m, err := s.GetMount(id)
 	if err != nil {
 		return m, err
+	}
+	if m.Kind == "local" {
+		s.setStatus(id, StatusUnmounted, "", 0)
+		return s.GetMount(id)
 	}
 	if err := s.mounts.Unmount(ctx, m.Target); err != nil {
 		s.setStatus(id, StatusError, err.Error(), 0)
@@ -255,28 +271,57 @@ var audioExts = map[string]bool{
 	".dff": true, ".aiff": true, ".aif": true, ".wma": true, ".alac": true,
 }
 
-// Scan walks the mounted share, identifies every audio file and replaces the
-// track catalog for that mount. It returns the number of tracks catalogued.
-// Folder convention (Roon-like): Artist/Album/Track — artist is the grandparent
-// directory, album the parent, title the filename without extension.
+// Scan preserves identity and first-added time by relative path across rescans.
 func (s *Service) Scan(ctx context.Context, id string) (int, error) {
+	s.sourceMu.Lock()
+	defer s.sourceMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
 	m, err := s.GetMount(id)
+	if err != nil {
+		return 0, err
+	}
+	if m.Status != StatusMounted {
+		return 0, ErrNotMounted
+	}
+	// Resolve the root once; never follow symlinks/junctions below it.
+	root, err := localDirectory(m.Target)
+	if err != nil {
+		return 0, err
+	}
+	// Merge live rows with identities retained for missing/cleaned tracks.
+	// Release rows before cover writes on the store's single connection.
+	byPath, err := s.scanIdentities(ctx, id)
 	if err != nil {
 		return 0, err
 	}
 	now := time.Now().Unix()
 	tracks := []Track{}
-	err = filepath.WalkDir(m.Target, func(p string, d fs.DirEntry, walkErr error) error {
+	err = filepath.WalkDir(root, func(p string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
-			if d != nil && d.IsDir() {
-				return fs.SkipDir
+			return walkErr
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if d.Type()&os.ModeSymlink != 0 {
+			return nil
+		}
+		real, err := filepath.EvalSymlinks(p)
+		if err != nil {
+			return err
+		}
+		if !withinRoot(root, real) {
+			if d.IsDir() {
+				return filepath.SkipDir
 			}
 			return nil
 		}
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
 		if d.IsDir() {
+			return nil
+		}
+		if !d.Type().IsRegular() {
 			return nil
 		}
 		if !audioExts[strings.ToLower(filepath.Ext(d.Name()))] {
@@ -284,20 +329,39 @@ func (s *Service) Scan(ctx context.Context, id string) (int, error) {
 		}
 		info, err := d.Info()
 		if err != nil {
-			return nil
+			return err
 		}
-		pr, perr := media.ProbeFile(p)
-		if perr != nil {
-			pr = media.ProbeResult{Codec: "unknown"}
-		}
-		rel, err := filepath.Rel(m.Target, p)
+		pr, err := media.ProbeFile(p)
 		if err != nil {
-			rel = d.Name()
+			return fmt.Errorf("probe %s: %w", p, err)
 		}
-		title, artist, album := deriveMeta(m.Target, p)
+		rel, err := filepath.Rel(root, p)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		old, exists := byPath[rel]
+		trackID, addedAt := old.ID, old.AddedAt
+		if !exists {
+			trackID, addedAt = "trk-"+uuid.NewString(), now
+		}
+		title := strings.TrimSuffix(d.Name(), filepath.Ext(d.Name()))
+		artist, album := "", ""
+		tags, _ := media.ReadTags(p)
+		if tags.Title != "" {
+			title = tags.Title
+		}
+		if tags.Artist != "" {
+			artist = tags.Artist
+		}
+		if tags.Album != "" {
+			album = tags.Album
+		}
 		tracks = append(tracks, Track{
-			ID: "trk-" + uuid.NewString(), MountID: id, Path: p, RelPath: filepath.ToSlash(rel),
-			Title: title, Artist: artist, Album: album,
+			ID: trackID, MountID: id, Path: p, RelPath: rel, AddedAt: addedAt,
+			Title: title, Artist: artist, Album: album, Genre: tags.Genre,
+			AlbumArtist: tags.AlbumArtist, Composer: tags.Composer, Year: tags.Year,
+			DiscNumber: tags.DiscNumber, TrackNumber: tags.TrackNumber,
 			Codec: pr.Codec, Container: pr.Container, Rate: pr.Rate, Channels: pr.Channels,
 			Bits: pr.Bits, TotalSamples: pr.TotalSamples, DurationMS: pr.DurationMS,
 			Decodable: pr.Decodable, Size: info.Size(), ScannedAt: now,
@@ -308,21 +372,74 @@ func (s *Service) Scan(ctx context.Context, id string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	if _, err := s.db.Exec(`DELETE FROM tracks WHERE mount_id=?`, id); err != nil {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	if err := rememberTrackIdentities(ctx, tx, id); err != nil {
+		return 0, err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM tracks WHERE mount_id=?`, id); err != nil {
 		return 0, err
 	}
 	for _, t := range tracks {
-		if _, err := s.db.Exec(`INSERT INTO tracks
+		if _, err := tx.ExecContext(ctx, `INSERT INTO tracks
 			(id,mount_id,path,rel_path,title,artist,album,codec,container,rate,channels,bits,
-			 total_samples,duration_ms,decodable,size,scanned_at,cover_hash)
-			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			 total_samples,duration_ms,decodable,size,scanned_at,cover_hash,added_at,genre,
+			 album_artist,composer,year,disc_number,track_number)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			t.ID, t.MountID, t.Path, t.RelPath, t.Title, t.Artist, t.Album, t.Codec, t.Container,
-			t.Rate, t.Channels, t.Bits, t.TotalSamples, t.DurationMS, boolInt(t.Decodable), t.Size, t.ScannedAt, t.CoverHash); err != nil {
+			t.Rate, t.Channels, t.Bits, t.TotalSamples, t.DurationMS, boolInt(t.Decodable), t.Size,
+			t.ScannedAt, t.CoverHash, t.AddedAt, t.Genre, t.AlbumArtist, t.Composer,
+			t.Year, t.DiscNumber, t.TrackNumber); err != nil {
 			return 0, err
 		}
 	}
+	if err := rememberTrackIdentities(ctx, tx, id); err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
 	s.pruneCovers()
 	return len(tracks), nil
+}
+
+// Live catalog rows take precedence (including legacy added_at=0). Missing rows
+// remain in track_identities until their source is explicitly deleted.
+const allTrackIdentities = `SELECT id,mount_id,rel_path,added_at FROM tracks
+	UNION ALL SELECT id,mount_id,rel_path,added_at FROM track_identities i
+	WHERE NOT EXISTS(SELECT 1 FROM tracks t WHERE t.mount_id=i.mount_id AND t.rel_path=i.rel_path)`
+
+func (s *Service) scanIdentities(ctx context.Context, mountID string) (map[string]backupTrackIdentity, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id,mount_id,rel_path,added_at FROM (`+allTrackIdentities+`) WHERE mount_id=?`, mountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]backupTrackIdentity{}
+	for rows.Next() {
+		var v backupTrackIdentity
+		if err := rows.Scan(&v.ID, &v.MountID, &v.RelPath, &v.AddedAt); err != nil {
+			return nil, err
+		}
+		out[v.RelPath] = v
+	}
+	return out, rows.Err()
+}
+
+func rememberTrackIdentities(ctx context.Context, tx *sql.Tx, mountID string) error {
+	where := "1=1" // disambiguate SQLite's INSERT SELECT ... ON CONFLICT syntax
+	args := []any{}
+	if mountID != "" {
+		where = "mount_id=?"
+		args = append(args, mountID)
+	}
+	_, err := tx.ExecContext(ctx, `INSERT INTO track_identities(id,mount_id,rel_path,added_at)
+		SELECT id,mount_id,rel_path,added_at FROM tracks WHERE `+where+`
+		ON CONFLICT(mount_id,rel_path) DO UPDATE SET id=excluded.id,added_at=excluded.added_at`, args...)
+	return err
 }
 
 // storeCover extracts embedded FLAC art and caches it content-addressed. Cover
@@ -344,9 +461,12 @@ func (s *Service) storeCover(p string, pr media.ProbeResult, now int64) string {
 	return hash
 }
 
-// pruneCovers drops cached art no track references any more (rescan, delete).
+// pruneCovers drops cached art only when neither tracks nor history reference it.
 func (s *Service) pruneCovers() {
-	_, _ = s.db.Exec(`DELETE FROM covers WHERE hash NOT IN (SELECT cover_hash FROM tracks WHERE cover_hash <> '')`)
+	_, _ = s.db.Exec(`DELETE FROM covers WHERE hash NOT IN (
+		SELECT cover_hash FROM tracks WHERE cover_hash <> ''
+		UNION SELECT cover_hash FROM play_history WHERE cover_hash <> ''
+		UNION SELECT cover_hash FROM favorites WHERE cover_hash <> '')`)
 }
 
 // GetCover returns cached album art by content hash.
@@ -360,35 +480,17 @@ func (s *Service) GetCover(hash string) (string, []byte, error) {
 	return mime, data, err
 }
 
-// deriveMeta extracts title/artist/album from the path relative to the share root.
-func deriveMeta(root, p string) (title, artist, album string) {
-	base := filepath.Base(p)
-	title = strings.TrimSuffix(base, filepath.Ext(base))
-	rel, err := filepath.Rel(root, p)
-	if err != nil {
-		return title, "", ""
-	}
-	parts := strings.Split(filepath.ToSlash(rel), "/")
-	// parts[len-1] is the filename; the two directories above it are album/artist.
-	switch {
-	case len(parts) >= 3:
-		album = parts[len(parts)-2]
-		artist = parts[len(parts)-3]
-	case len(parts) == 2:
-		album = parts[0]
-	}
-	return title, artist, album
-}
-
 const trackCols = `id,mount_id,path,rel_path,title,artist,album,codec,container,rate,channels,bits,
-	total_samples,duration_ms,decodable,size,scanned_at,cover_hash`
+	total_samples,duration_ms,decodable,size,scanned_at,cover_hash,added_at,genre,
+	album_artist,composer,year,disc_number,track_number`
 
 func scanTrack(row interface{ Scan(...any) error }) (Track, error) {
 	var t Track
 	var decodable int
 	err := row.Scan(&t.ID, &t.MountID, &t.Path, &t.RelPath, &t.Title, &t.Artist, &t.Album,
 		&t.Codec, &t.Container, &t.Rate, &t.Channels, &t.Bits, &t.TotalSamples, &t.DurationMS,
-		&decodable, &t.Size, &t.ScannedAt, &t.CoverHash)
+		&decodable, &t.Size, &t.ScannedAt, &t.CoverHash, &t.AddedAt, &t.Genre,
+		&t.AlbumArtist, &t.Composer, &t.Year, &t.DiscNumber, &t.TrackNumber)
 	t.Decodable = decodable == 1
 	return t, err
 }
@@ -427,6 +529,48 @@ func (s *Service) GetTrack(id string) (Track, error) {
 		return t, catalog.ErrNotFound
 	}
 	return t, err
+}
+
+// PlaybackPath derives the path from the current source and relative identity,
+// then rechecks filesystem containment. Call immediately before every decoder
+// open/reopen; cached Track.Path is not a playback authorization. This guards
+// changed symlinks, not concurrent filesystem replacement after this check.
+func (s *Service) PlaybackPath(trackID string) (string, error) {
+	s.sourceMu.Lock()
+	defer s.sourceMu.Unlock()
+	t, err := s.GetTrack(trackID)
+	if err != nil {
+		return "", err
+	}
+	m, err := s.GetMount(t.MountID)
+	if err != nil {
+		return "", err
+	}
+	if m.Status != StatusMounted {
+		return "", ErrNotMounted
+	}
+	if !backupRelPath(t.RelPath) {
+		return "", fmt.Errorf("invalid track relative path")
+	}
+	root, err := localDirectory(m.Target)
+	if err != nil {
+		return "", err
+	}
+	real, err := filepath.EvalSymlinks(filepath.Join(root, filepath.FromSlash(t.RelPath)))
+	if err != nil {
+		return "", err
+	}
+	if !withinRoot(root, real) {
+		return "", fmt.Errorf("track escapes source directory")
+	}
+	info, err := os.Stat(real)
+	if err != nil {
+		return "", err
+	}
+	if !info.Mode().IsRegular() {
+		return "", fmt.Errorf("track is not a regular file")
+	}
+	return real, nil
 }
 
 func boolInt(b bool) int {

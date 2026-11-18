@@ -21,7 +21,7 @@ set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$ROOT"
 
-VERSION="${VERSION:-0.4.0}"
+VERSION="${VERSION:-0.4.3}"
 TARGETS="${TARGETS:-arm64 armhf}"
 
 # --- toolchain: prefer the bundled SDK, else fall back to PATH ---

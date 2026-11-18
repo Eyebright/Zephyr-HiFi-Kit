@@ -163,6 +163,56 @@ func (s *Server) Enqueue(ctx context.Context, nodeID, trackID string) (QueueStat
 	return q, sessionID, nil
 }
 
+func (s *Server) EnqueueMany(ctx context.Context, nodeID string, trackIDs []string, next bool) (QueueState, string, error) {
+	if len(trackIDs) == 0 || len(trackIDs) > 10000 {
+		return QueueState{}, "", fmt.Errorf("批量曲目数量需在 1..10000")
+	}
+	for _, id := range trackIDs {
+		t, err := s.lib.GetTrack(id)
+		if err != nil || !t.Decodable {
+			return QueueState{}, "", fmt.Errorf("曲目不存在或无法解码：%s", id)
+		}
+	}
+	s.qmu.Lock()
+	ids, pos, _, err := s.loadQueue(nodeID)
+	if err != nil {
+		s.qmu.Unlock()
+		return QueueState{}, "", err
+	}
+	if len(ids)+len(trackIDs) > 10000 {
+		s.qmu.Unlock()
+		return QueueState{}, "", fmt.Errorf("队列最多容纳 10000 首曲目")
+	}
+	startNow := len(ids) == 0
+	at := len(ids)
+	if next && !startNow {
+		at = min(max(pos+1, 0), len(ids))
+	}
+	merged := make([]string, 0, len(ids)+len(trackIDs))
+	merged = append(merged, ids[:at]...)
+	merged = append(merged, trackIDs...)
+	merged = append(merged, ids[at:]...)
+	if startNow {
+		pos = 0
+	}
+	if err = s.saveQueue(nodeID, merged, pos); err != nil {
+		s.qmu.Unlock()
+		return QueueState{}, "", err
+	}
+	q, err := s.queueLocked(nodeID)
+	s.qmu.Unlock()
+	if err != nil {
+		return QueueState{}, "", err
+	}
+	sessionID := ""
+	if startNow && s.Connected(nodeID) {
+		if st, statusErr := s.Status(nodeID); statusErr == nil && !st.Playing && st.State != "paused" {
+			sessionID, err = s.StartPlay(ctx, nodeID, trackIDs[0])
+		}
+	}
+	return q, sessionID, err
+}
+
 // QueueJump plays the entry at index and persists the new position.
 func (s *Server) QueueJump(ctx context.Context, nodeID string, index int) (string, error) {
 	s.qmu.Lock()

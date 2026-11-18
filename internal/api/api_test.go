@@ -10,9 +10,12 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -86,6 +89,7 @@ func setupFull(t *testing.T, sigMode string) (base, root, dir string) {
 	})
 	srv := httptest.NewServer(a.Handler())
 	t.Cleanup(srv.Close)
+	setupTestAdmin(t, srv.URL)
 	return srv.URL + "/api/v1", srv.URL, dir
 }
 
@@ -131,6 +135,27 @@ func registerNode(t *testing.T, base, alias string) string {
 	return mustJSON(t, b)["node_id"].(string)
 }
 
+var apiTestClients sync.Map
+
+func testClient(target string) *http.Client {
+	u, _ := url.Parse(target)
+	if c, ok := apiTestClients.Load(u.Scheme + "://" + u.Host); ok {
+		return c.(*http.Client)
+	}
+	return http.DefaultClient
+}
+
+func setupTestAdmin(t *testing.T, root string) {
+	t.Helper()
+	jar, _ := cookiejar.New(nil)
+	apiTestClients.Store(root, &http.Client{Jar: jar})
+	t.Cleanup(func() { apiTestClients.Delete(root) })
+	status, _ := doJSON(t, "POST", root+"/api/v1/settings/setup", map[string]string{"password": "local-test-admin-only", "display_name": "测试管理员"})
+	if status != http.StatusCreated && status != http.StatusOK {
+		t.Fatalf("setup test admin: %d", status)
+	}
+}
+
 func doJSON(t *testing.T, method, url string, body any) (int, []byte) {
 	t.Helper()
 	var rdr io.Reader
@@ -142,10 +167,11 @@ func doJSON(t *testing.T, method, url string, body any) (int, []byte) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if body != nil {
+	if method != "GET" && method != "HEAD" {
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Origin", req.URL.Scheme+"://"+req.URL.Host)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := testClient(url).Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +193,13 @@ func upload(t *testing.T, base, app string, meta map[string]any, artifact, sig [
 		sw.Write(sig)
 	}
 	w.Close()
-	resp, err := http.Post(base+"/apps/"+app+"/versions", w.FormDataContentType(), &buf)
+	req, err := http.NewRequest("POST", base+"/apps/"+app+"/versions", &buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", w.FormDataContentType())
+	req.Header.Set("Origin", req.URL.Scheme+"://"+req.URL.Host)
+	resp, err := testClient(base).Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}

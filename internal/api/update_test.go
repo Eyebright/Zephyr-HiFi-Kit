@@ -49,9 +49,10 @@ func setupUpdate(t *testing.T, feed update.Feed, opt update.Options) (string, *s
 		opt.DistDir = filepath.Join(dir, "dist")
 	}
 	upd := update.New(st, nodes, cmds, tasks, lic, ver, feed, opt)
-	a := New(config.Config{}, Deps{Nodes: nodes, Commands: cmds, Tasks: tasks, License: lic, Audit: audit.New(st), Update: upd})
+	a := New(config.Config{DataDir: dir}, Deps{Nodes: nodes, Commands: cmds, Tasks: tasks, License: lic, Audit: audit.New(st), Update: upd})
 	srv := httptest.NewServer(a.Handler())
 	t.Cleanup(srv.Close)
+	setupTestAdmin(t, srv.URL)
 	return srv.URL + "/api/v1", st
 }
 

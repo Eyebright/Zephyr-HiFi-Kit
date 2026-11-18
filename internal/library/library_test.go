@@ -4,12 +4,16 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
+	"hifihub/server/internal/catalog"
 	"hifihub/server/internal/mount"
 	"hifihub/server/internal/store"
 )
@@ -222,7 +226,7 @@ func TestScanCataloguesAudio(t *testing.T) {
 	if wav.Codec != "pcm_s16le" || wav.Rate != 44100 || wav.Channels != 2 || wav.Bits != 16 || !wav.Decodable {
 		t.Fatalf("wav probe wrong: %+v", wav)
 	}
-	if wav.Artist != "Artist" || wav.Album != "Album" {
+	if wav.Artist != "" || wav.Album != "" {
 		t.Fatalf("metadata wrong: %+v", wav)
 	}
 	if wav.RelPath != "Artist/Album/01 Track.wav" {
@@ -235,7 +239,7 @@ func TestScanCataloguesAudio(t *testing.T) {
 	if flac.Codec != "flac" || !flac.Decodable {
 		t.Fatalf("flac probe wrong: %+v", flac)
 	}
-	// GetTrack round-trips and rescan replaces (idempotent count).
+	// GetTrack round-trips and rescan refreshes (idempotent count).
 	if _, err := s.GetTrack(wav.ID); err != nil {
 		t.Fatalf("GetTrack: %v", err)
 	}
@@ -265,7 +269,7 @@ func TestScanFlatAndTwoLevelMeta(t *testing.T) {
 				t.Fatalf("flat meta wrong: %+v", tr)
 			}
 		case "song":
-			if tr.Album != "AlbumOnly" || tr.Artist != "" {
+			if tr.Album != "" || tr.Artist != "" {
 				t.Fatalf("two-level meta wrong: %+v", tr)
 			}
 		}
@@ -308,7 +312,7 @@ func TestScanExtractsAndPrunesCovers(t *testing.T) {
 	if err := os.MkdirAll(album, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	art := []byte{0x89, 'P', 'N', 'G', 13, 10, 26, 10}
+	art := maintenancePNG(t, 75)
 	buildFLACCover(t, filepath.Join(album, "song.flac"), art)
 	buildWAV(t, filepath.Join(album, "plain.wav"))
 
@@ -331,7 +335,7 @@ func TestScanExtractsAndPrunesCovers(t *testing.T) {
 	if err != nil || mime != "image/png" || string(data) != string(art) {
 		t.Fatalf("GetCover: %q %v %v", mime, data, err)
 	}
-	// Rescan replaces tracks but the content-addressed cover stays single.
+	// Rescan refreshes tracks but the content-addressed cover stays single.
 	if _, err := s.Scan(context.Background(), m.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -387,5 +391,402 @@ func TestDeleteMountedUnmounts(t *testing.T) {
 	}
 	if len(run.calls) != 1 || run.calls[0] != "umount /mnt/zephyr/mnt-x" {
 		t.Fatalf("expected umount on delete: %v", run.calls)
+	}
+}
+
+func addWAVTags(t *testing.T, path string, fields ...[2]string) {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info := []byte("INFO")
+	for _, field := range fields {
+		info = append(info, field[0]...)
+		info = binary.LittleEndian.AppendUint32(info, uint32(len(field[1])))
+		info = append(info, field[1]...)
+		if len(field[1])%2 != 0 {
+			info = append(info, 0)
+		}
+	}
+	b = append(b, "LIST"...)
+	b = binary.LittleEndian.AppendUint32(b, uint32(len(info)))
+	b = append(b, info...)
+	binary.LittleEndian.PutUint32(b[4:8], uint32(len(b)-8))
+	if err := os.WriteFile(path, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestScanPreservesIdentityAndFirstAddedTime(t *testing.T) {
+	s, st := newService(t, &fakeRunner{}, "/mnt/zephyr")
+	target := t.TempDir()
+	m := insertMounted(t, s, target)
+	for _, name := range []string{"known.wav", "legacy.wav", "removed.wav"} {
+		p := filepath.Join(target, name)
+		buildWAV(t, p)
+		if err := os.Chtimes(p, time.Unix(1, 0), time.Unix(1, 0)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	start := time.Now().Unix()
+	if _, err := s.Scan(context.Background(), m.ID); err != nil {
+		t.Fatal(err)
+	}
+	end := time.Now().Unix()
+	tracks, err := s.ListTracks(m.ID)
+	if err != nil || len(tracks) != 3 {
+		t.Fatalf("initial tracks: %+v, %v", tracks, err)
+	}
+	before := map[string]Track{}
+	for _, tr := range tracks {
+		if tr.AddedAt < start || tr.AddedAt > end {
+			t.Fatalf("first added time must be discovery time, not file mtime: %+v", tr)
+		}
+		before[tr.RelPath] = tr
+	}
+	knownAt := start - 86400
+	if _, err := st.DB.Exec(`UPDATE tracks SET added_at=?,scanned_at=1 WHERE id=?`, knownAt, before["known.wav"].ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.DB.Exec(`UPDATE tracks SET added_at=0,scanned_at=1 WHERE id=?`, before["legacy.wav"].ID); err != nil {
+		t.Fatal(err)
+	}
+	p, err := s.CreatePlaylist("rescan references")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := []string{before["known.wav"].ID, before["legacy.wav"].ID, before["removed.wav"].ID}
+	if _, err := s.AddPlaylistItems(p.ID, ids); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(target, "removed.wav")); err != nil {
+		t.Fatal(err)
+	}
+	buildWAV(t, filepath.Join(target, "new.wav"))
+	addWAVTags(t, filepath.Join(target, "known.wav"), [2]string{"INAM", "Tagged title"}, [2]string{"IGNR", "Jazz"})
+	start = time.Now().Unix()
+	if n, err := s.Scan(context.Background(), m.ID); err != nil || n != 3 {
+		t.Fatalf("rescan: %d, %v", n, err)
+	}
+	end = time.Now().Unix()
+	after, err := s.ListTracks(m.ID)
+	if err != nil || len(after) != 3 {
+		t.Fatalf("rescanned tracks: %+v, %v", after, err)
+	}
+	var newTrack Track
+	for _, tr := range after {
+		switch tr.RelPath {
+		case "known.wav":
+			if tr.ID != before[tr.RelPath].ID || tr.AddedAt != knownAt || tr.Title != "Tagged title" || tr.Genre != "Jazz" {
+				t.Fatalf("existing identity/time or refreshed metadata: %+v", tr)
+			}
+		case "legacy.wav":
+			if tr.ID != before[tr.RelPath].ID || tr.AddedAt != 0 {
+				t.Fatalf("legacy unknown time must remain zero: %+v", tr)
+			}
+		case "new.wav":
+			newTrack = tr
+			if tr.ID == "" || tr.AddedAt < start || tr.AddedAt > end {
+				t.Fatalf("new file first added time: %+v", tr)
+			}
+		default:
+			t.Fatalf("unexpected path: %+v", tr)
+		}
+		if tr.ScannedAt < start || tr.ScannedAt > end {
+			t.Fatalf("scan time must refresh independently: %+v", tr)
+		}
+	}
+	if newTrack.ID == "" {
+		t.Fatal("new track absent")
+	}
+	if _, err := s.GetTrack(before["removed.wav"].ID); !errors.Is(err, catalog.ErrNotFound) {
+		t.Fatalf("removed file still resolves: %v", err)
+	}
+	d, err := s.GetPlaylist(p.ID)
+	if err != nil || len(d.Items) != 3 {
+		t.Fatalf("playlist after rescan: %+v, %v", d, err)
+	}
+	for i, item := range d.Items {
+		if item.TrackID != ids[i] || item.Missing != (i == 2) {
+			t.Fatalf("playlist identity/resolution changed: %+v", d.Items)
+		}
+	}
+	if d.Items[0].Title != "Tagged title" {
+		t.Fatalf("playlist metadata not refreshed: %+v", d.Items)
+	}
+	if _, err := s.Scan(context.Background(), m.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetTrack(newTrack.ID)
+	if err != nil || got.AddedAt != newTrack.AddedAt {
+		t.Fatalf("new file identity/time lost on next scan: %+v, %v", got, err)
+	}
+	b, err := json.Marshal(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(b, &fields); err != nil || fields["added_at"] == nil || fields["genre"] == nil {
+		t.Fatalf("new fields missing from JSON: %s, %v", b, err)
+	}
+	// A file absent for multiple scans still recovers its playlist reference.
+	buildWAV(t, filepath.Join(target, "removed.wav"))
+	if _, err := s.Scan(context.Background(), m.ID); err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := s.GetTrack(before["removed.wav"].ID)
+	if err != nil || recovered.AddedAt != before["removed.wav"].AddedAt {
+		t.Fatalf("missing-file identity/time lost: %+v %v", recovered, err)
+	}
+	d, err = s.GetPlaylist(p.ID)
+	if err != nil || d.Items[2].Missing || d.Items[2].TrackID != ids[2] {
+		t.Fatalf("returned file did not recover playlist: %+v %v", d, err)
+	}
+}
+
+func TestScanFailurePreservesCatalog(t *testing.T) {
+	for _, mode := range []string{"missing root", "canceled", "insert failure"} {
+		t.Run(mode, func(t *testing.T) {
+			s, st := newService(t, &fakeRunner{}, "/mnt/zephyr")
+			target := t.TempDir()
+			m := insertMounted(t, s, target)
+			buildWAV(t, filepath.Join(target, "a.wav"))
+			buildWAV(t, filepath.Join(target, "b.wav"))
+			if _, err := s.Scan(context.Background(), m.ID); err != nil {
+				t.Fatal(err)
+			}
+			before, err := s.ListTracks(m.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx := context.Background()
+			switch mode {
+			case "missing root":
+				if _, err := st.DB.Exec(`UPDATE mounts SET target=? WHERE id=?`, filepath.Join(target, "missing"), m.ID); err != nil {
+					t.Fatal(err)
+				}
+			case "canceled":
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithCancel(ctx)
+				cancel()
+			case "insert failure":
+				if _, err := st.DB.Exec(`CREATE TRIGGER fail_rescan BEFORE INSERT ON tracks
+					WHEN NEW.rel_path='b.wav' BEGIN SELECT RAISE(ABORT, 'test insertion failure'); END`); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if n, err := s.Scan(ctx, m.ID); err == nil || n != 0 {
+				t.Fatalf("expected failed scan: %d, %v", n, err)
+			}
+			after, err := s.ListTracks(m.ID)
+			if err != nil || !reflect.DeepEqual(before, after) {
+				t.Fatalf("failed scan changed catalog:\nbefore=%+v\nafter=%+v\nerr=%v", before, after, err)
+			}
+		})
+	}
+}
+
+func TestScanMetadataAndMalformedTagFallback(t *testing.T) {
+	s, _ := newService(t, &fakeRunner{}, "/mnt/zephyr")
+	target := t.TempDir()
+	m := insertMounted(t, s, target)
+	album := filepath.Join(target, "Folder Artist", "Folder Album")
+	if err := os.MkdirAll(album, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	wav := filepath.Join(album, "tagged.wav")
+	buildWAV(t, wav)
+	addWAVTags(t, wav, [2]string{"INAM", "Tagged WAV\x00"}, [2]string{"IART", "WAV Artist"},
+		[2]string{"IPRD", "WAV Album"}, [2]string{"IGNR", " "}, [2]string{"IGNR", "Jazz"}, [2]string{"IGNR", "Rock"})
+	partial := filepath.Join(album, "partial.wav")
+	buildWAV(t, partial)
+	addWAVTags(t, partial, [2]string{"IART", "\x00 "}, [2]string{"IPRD", "Tagged Album"})
+	bad := filepath.Join(album, "broken.wav")
+	buildWAV(t, bad)
+	b, err := os.ReadFile(bad)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b = append(b, "LIST\x0c\x00\x00\x00INFOIGNR\xff\xff\xff\xff"...)
+	binary.LittleEndian.PutUint32(b[4:8], uint32(len(b)-8))
+	if err := os.WriteFile(bad, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	flac := filepath.Join(album, "tagged.flac")
+	buildFLACCover(t, flac, make([]byte, 128*1024))
+	b, err = os.ReadFile(flac)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b[26] &^= 0x80 // the picture is followed by a Vorbis comment block
+	comment := binary.LittleEndian.AppendUint32(nil, 0)
+	entries := []string{"TITLE=Tagged FLAC", "ARTIST=FLAC Artist", "ALBUM=FLAC Album", "GENRE=", "GENRE=Classical", "GENRE=Rock",
+		"ALBUMARTIST=Album Artist", "COMPOSER=Bach, Johann Sebastian", "COMPOSER=Mozart", "DATE=1999-02-03", "DISCNUMBER=2/4", "TRACKNUMBER=7/12"}
+	comment = binary.LittleEndian.AppendUint32(comment, uint32(len(entries)))
+	for _, entry := range entries {
+		comment = binary.LittleEndian.AppendUint32(comment, uint32(len(entry)))
+		comment = append(comment, entry...)
+	}
+	b = append(b, 0x84, byte(len(comment)>>16), byte(len(comment)>>8), byte(len(comment)))
+	b = append(b, comment...)
+	if err := os.WriteFile(flac, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	badFLAC := filepath.Join(album, "broken.flac")
+	buildFLAC(t, badFLAC)
+	f, err := os.OpenFile(badFLAC, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, writeErr := f.Write([]byte{0x84, 0xff, 0xff, 0xff})
+	closeErr := f.Close()
+	if writeErr != nil || closeErr != nil {
+		t.Fatalf("write malformed FLAC: %v, %v", writeErr, closeErr)
+	}
+	if n, err := s.Scan(context.Background(), m.ID); err != nil || n != 5 {
+		t.Fatalf("scan with tags: %d, %v", n, err)
+	}
+	tracks, err := s.ListTracks(m.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tr := range tracks {
+		wantTitle, wantArtist, wantAlbum, wantGenre := "broken", "", "", ""
+		switch filepath.Base(tr.Path) {
+		case "tagged.wav":
+			wantTitle, wantArtist, wantAlbum, wantGenre = "Tagged WAV", "WAV Artist", "WAV Album", "Jazz; Rock"
+		case "tagged.flac":
+			wantTitle, wantArtist, wantAlbum, wantGenre = "Tagged FLAC", "FLAC Artist", "FLAC Album", "Classical; Rock"
+			if tr.AlbumArtist != "Album Artist" || tr.Composer != "Bach, Johann Sebastian; Mozart" || tr.Year != 1999 || tr.DiscNumber != 2 || tr.TrackNumber != 7 {
+				t.Fatalf("extended FLAC scan fields: %+v", tr)
+			}
+		case "partial.wav":
+			wantTitle, wantAlbum = "partial", "Tagged Album"
+		}
+		if tr.Title != wantTitle || tr.Artist != wantArtist || tr.Album != wantAlbum || tr.Genre != wantGenre || !tr.Decodable {
+			t.Fatalf("metadata/fallback or identification wrong: %+v", tr)
+		}
+	}
+}
+
+func TestPlaybackPathDerivesCurrentPathAndRequiresMountedSource(t *testing.T) {
+	s, _ := maintenanceTestService(t)
+	root := t.TempDir()
+	buildWAV(t, filepath.Join(root, "song.wav"))
+	m := insertMounted(t, s, root)
+	if _, err := s.Scan(t.Context(), m.ID); err != nil {
+		t.Fatal(err)
+	}
+	tracks, err := s.ListTracks(m.ID)
+	if err != nil || len(tracks) != 1 {
+		t.Fatalf("tracks: %+v %v", tracks, err)
+	}
+	tr := tracks[0]
+	maintenanceExec(t, s.db, `UPDATE tracks SET path='/attacker/private.wav' WHERE id=?`, tr.ID)
+	p, err := s.PlaybackPath(tr.ID)
+	want, resolveErr := filepath.EvalSymlinks(filepath.Join(root, "song.wav"))
+	if err != nil || resolveErr != nil || p != want {
+		t.Fatalf("playback path: %q %v", p, err)
+	}
+	for _, rel := range []string{"../escape.wav", "/escape.wav", "C:escape.wav", `\\host\share\escape.wav`, "."} {
+		maintenanceExec(t, s.db, `UPDATE tracks SET rel_path=? WHERE id=?`, rel, tr.ID)
+		if _, err := s.PlaybackPath(tr.ID); err == nil {
+			t.Fatalf("accepted playback relative path %q", rel)
+		}
+	}
+	maintenanceExec(t, s.db, `UPDATE tracks SET rel_path='song.wav' WHERE id=?`, tr.ID)
+	maintenanceExec(t, s.db, `UPDATE mounts SET status='unmounted' WHERE id=?`, m.ID)
+	if _, err := s.PlaybackPath(tr.ID); !errors.Is(err, ErrNotMounted) {
+		t.Fatalf("unmounted playback: %v", err)
+	}
+}
+
+func TestPlaybackPathRejectsChangedSymlinks(t *testing.T) {
+	for _, directory := range []bool{false, true} {
+		t.Run(map[bool]string{false: "file", true: "directory"}[directory], func(t *testing.T) {
+			s, _ := maintenanceTestService(t)
+			root, outside := t.TempDir(), t.TempDir()
+			inside := filepath.Join(root, "album")
+			if err := os.Mkdir(inside, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			p := filepath.Join(inside, "song.wav")
+			buildWAV(t, p)
+			buildWAV(t, filepath.Join(outside, "song.wav"))
+			m := insertMounted(t, s, root)
+			if _, err := s.Scan(t.Context(), m.ID); err != nil {
+				t.Fatal(err)
+			}
+			tracks, err := s.ListTracks(m.ID)
+			if err != nil || len(tracks) != 1 {
+				t.Fatalf("tracks: %+v %v", tracks, err)
+			}
+			if err := os.Remove(p); err != nil {
+				t.Fatal(err)
+			}
+			link, target := p, filepath.Join(outside, "song.wav")
+			if directory {
+				if err := os.Remove(inside); err != nil {
+					t.Fatal(err)
+				}
+				link, target = inside, outside
+			}
+			if err := os.Symlink(target, link); err != nil {
+				t.Skipf("symlink creation unavailable: %v", err)
+			}
+			if _, err := s.PlaybackPath(tracks[0].ID); err == nil {
+				t.Fatal("changed symlink escaped source at playback")
+			}
+		})
+	}
+}
+
+func TestPruneCoversPreservesHistoryReferences(t *testing.T) {
+	for _, action := range []string{"rescan", "delete mount"} {
+		t.Run(action, func(t *testing.T) {
+			s, st := newService(t, &fakeRunner{}, "/mnt/zephyr")
+			target := t.TempDir()
+			m := insertMounted(t, s, target)
+			p := filepath.Join(target, "history.flac")
+			buildFLACCover(t, p, maintenancePNG(t, 125))
+			if _, err := s.Scan(context.Background(), m.ID); err != nil {
+				t.Fatal(err)
+			}
+			tracks, err := s.ListTracks(m.ID)
+			if err != nil || len(tracks) != 1 || tracks[0].CoverHash == "" {
+				t.Fatalf("cover track: %+v, %v", tracks, err)
+			}
+			tr := tracks[0]
+			if _, err := st.DB.Exec(`INSERT INTO play_history(id,node_id,track_id,started_at,cover_hash) VALUES('history','node',?,1,?)`, tr.ID, tr.CoverHash); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := st.DB.Exec(`INSERT INTO covers(hash,mime,data,created_at) VALUES('orphan','image/png',?,1)`, []byte("orphan")); err != nil {
+				t.Fatal(err)
+			}
+			if action == "rescan" {
+				if err := os.Remove(p); err != nil {
+					t.Fatal(err)
+				}
+				if n, err := s.Scan(context.Background(), m.ID); err != nil || n != 0 {
+					t.Fatalf("rescan after removal: %d, %v", n, err)
+				}
+			} else if err := s.DeleteMount(context.Background(), m.ID); err != nil {
+				t.Fatal(err)
+			}
+			if _, _, err := s.GetCover(tr.CoverHash); err != nil {
+				t.Fatalf("history cover pruned: %v", err)
+			}
+			if _, _, err := s.GetCover("orphan"); !errors.Is(err, catalog.ErrNotFound) {
+				t.Fatalf("orphan not pruned: %v", err)
+			}
+			if _, err := st.DB.Exec(`DELETE FROM play_history`); err != nil {
+				t.Fatal(err)
+			}
+			s.pruneCovers()
+			if _, _, err := s.GetCover(tr.CoverHash); !errors.Is(err, catalog.ErrNotFound) {
+				t.Fatalf("unreferenced history cover not pruned: %v", err)
+			}
+		})
 	}
 }

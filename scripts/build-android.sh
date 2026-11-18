@@ -17,11 +17,11 @@ set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$ROOT"
 
-VERSION="${VERSION:-0.4.0}"
+VERSION="${VERSION:-0.4.3}"
 ABIS="${ABIS:-arm64-v8a armeabi-v7a}"
 
 if [ -x "$HOME/sdk/go/bin/go" ]; then
-  export GOROOT="$HOME/sdk"
+  export GOROOT="$HOME/sdk/go"
   export PATH="$GOROOT/bin:$PATH"
 fi
 command -v go >/dev/null 2>&1 || { echo "go toolchain not found" >&2; exit 1; }
@@ -48,7 +48,7 @@ build_abi() {
   mkdir -p "$out"
   ( cd "$ROOT/agent" && CGO_ENABLED=1 GOOS=android GOARCH="$goarch" CC="$LLVM/$cc" \
       go build -buildmode=c-shared -trimpath \
-      -ldflags "-s -w -extldflags=-Wl,-soname,libzatagent.so" \
+      -ldflags "-s -w -X hifihub/agent/internal/androidcore.Version=$VERSION -extldflags=-Wl,-soname,libzatagent.so" \
       -o "$out/libzatagent.so" ./cmd/hifihub-agent-android )
   # The generated header is not needed by the JNI shim (it declares the exports).
   rm -f "$out/libzatagent.h"
@@ -75,7 +75,7 @@ fi
 
 echo "== assembling APK (Gradle) =="
 command -v gradle >/dev/null 2>&1 || { echo "gradle not found on PATH" >&2; exit 1; }
-( cd "$ROOT/android" && gradle --no-daemon assembleRelease )
+( cd "$ROOT/android" && gradle --no-daemon "-PzephyrVersion=$VERSION" assembleRelease )
 
 APK="$ROOT/android/app/build/outputs/apk/release/app-release.apk"
 [ -f "$APK" ] || { echo "!! APK not produced at $APK" >&2; exit 1; }

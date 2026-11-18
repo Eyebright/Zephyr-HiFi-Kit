@@ -5,6 +5,7 @@
 # syntax=docker/dockerfile:1
 FROM golang:1.27-bookworm AS build
 ARG TARGETARCH
+ARG VERSION=0.4.3
 RUN apt-get update \
  && apt-get install -y --no-install-recommends pkg-config libflac-dev \
  && rm -rf /var/lib/apt/lists/*
@@ -14,7 +15,7 @@ COPY zat/go.mod ./zat/
 RUN go mod download
 COPY . .
 RUN CGO_ENABLED=1 GOOS=linux GOARCH=${TARGETARCH} \
-    go build -trimpath -o /out/hifihub-server ./cmd/hifihub-server
+    go build -trimpath -ldflags "-X hifihub/server/internal/metrics.Version=${VERSION}" -o /out/hifihub-server ./cmd/hifihub-server
 
 FROM debian:bookworm-slim
 RUN apt-get update \

@@ -14,7 +14,7 @@ set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$ROOT"
 
-VERSION="${VERSION:-0.4.0}"
+VERSION="${VERSION:-0.4.3}"
 
 # --- toolchain: prefer the bundled SDK, else fall back to PATH ---
 if [ -x "$HOME/sdk/go/bin/go" ]; then

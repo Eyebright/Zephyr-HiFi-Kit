@@ -359,6 +359,23 @@ func TestMetricsAndProxyGuard(t *testing.T) {
 	}
 }
 
+func TestNodeRestoreRespectsSeatLimit(t *testing.T) {
+	base := setup(t, "dev")
+	for i := 0; i < 3; i++ {
+		id := registerNode(t, base, fmt.Sprintf("seat-%d", i))
+		if s, b := doJSON(t, "POST", base+"/nodes/"+id+"/authorize", nil); s != 200 {
+			t.Fatalf("authorize: %d %s", s, b)
+		}
+	}
+	body := map[string]any{"node": map[string]any{"node_id": "restored-over-limit", "authorized": true}}
+	if s, b := doJSON(t, "POST", base+"/nodes/restore", body); s != 409 {
+		t.Fatalf("restore over seat limit: %d %s", s, b)
+	}
+	if s, _ := doJSON(t, "GET", base+"/nodes/restored-over-limit", nil); s != 404 {
+		t.Fatalf("rejected restore created node: %d", s)
+	}
+}
+
 func TestNodeDeleteRestore(t *testing.T) {
 	base := setup(t, "dev")
 	nid := registerNode(t, base, "del-node")

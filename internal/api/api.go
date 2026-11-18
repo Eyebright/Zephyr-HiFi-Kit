@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"runtime"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -55,6 +56,7 @@ type Deps struct {
 
 // API aggregates the services and the router.
 type API struct {
+	seatMu sync.Mutex
 	cfg    config.Config
 	cat    *catalog.Service
 	repo   *repo.Service
@@ -72,6 +74,7 @@ type API struct {
 	lib    *library.Service
 	zat    *zatserver.Server
 	upd    *update.Service
+	admin  *settingsAdmin
 	mux    *http.ServeMux
 }
 
@@ -82,6 +85,10 @@ func New(cfg config.Config, d Deps) *API {
 		lic: d.License, keys: d.Keys, aud: d.Audit, alerts: d.Alerts, cmds: d.Commands, apt: d.AptSrc,
 		rolls: d.Rollouts, met: d.Metrics, lib: d.Library, zat: d.ZAT, upd: d.Update, mux: http.NewServeMux(),
 	}
+	a.admin = newSettingsAdmin(cfg)
+	if err := a.initializeSettingsProfile(); err != nil {
+		slog.Error("settings profile initialization failed", "err", err)
+	}
 	a.routes()
 	return a
 }
@@ -91,11 +98,40 @@ func (a *API) Handler() http.Handler { return a.mux }
 
 // route registers a handler; every mutation is wrapped with the audit log.
 func (a *API) route(pattern string, h http.HandlerFunc) {
+	switch pattern {
+	case "POST /api/v1/mounts", "PATCH /api/v1/mounts/{id}", "DELETE /api/v1/mounts/{id}",
+		"POST /api/v1/mounts/{id}/mount", "POST /api/v1/mounts/{id}/unmount", "POST /api/v1/mounts/{id}/scan", "POST /api/v1/mounts/{id}/test",
+		"POST /api/v1/license/activate", "POST /api/v1/keys/import", "POST /api/v1/keys/{id}/trust-root",
+		"POST /api/v1/apps", "POST /api/v1/apps/{id}/versions", "POST /api/v1/apps/{id}/versions/import-local",
+		"POST /api/v1/apps/{id}/versions/{ver}/{arch}/ban", "POST /api/v1/apps/{id}/versions/{ver}/{arch}/lifecycle",
+		"POST /api/v1/apt-sources", "DELETE /api/v1/apt-sources/{id}",
+		"POST /api/v1/nodes/token", "POST /api/v1/nodes/restore", "PATCH /api/v1/nodes/{id}", "DELETE /api/v1/nodes/{id}",
+		"POST /api/v1/nodes/{id}/authorize", "POST /api/v1/nodes/{id}/revoke",
+		"POST /api/v1/nodes/{id}/commands", "POST /api/v1/nodes/{id}/apt-sources/apply",
+		"/api/v1/nodes/{id}/console/{rest...}", "/api/v1/nodes/{id}/local/api/{rest...}",
+		"POST /api/v1/boms", "POST /api/v1/boms/import", "POST /api/v1/boms/{id}/versions/{ver}/publish", "POST /api/v1/boms/{id}/rollback",
+		"POST /api/v1/jobs", "POST /api/v1/jobs/{id}/advance",
+		"POST /api/v1/rollouts", "POST /api/v1/rollouts/{id}/advance", "DELETE /api/v1/rollouts/{id}",
+		"POST /api/v1/update/check", "POST /api/v1/update/apply", "POST /api/v1/update/auto",
+		"POST /api/v1/update/fleet/policy", "POST /api/v1/update/fleet/converge", "POST /api/v1/update/fleet/{id}/retry":
+		h = a.requireSettingsAdmin(h)
+	}
 	a.mux.HandleFunc(pattern, a.withAudit(h))
 }
 
 func (a *API) routes() {
 	a.route("GET /api/v1/health", a.health)
+	a.route("GET /api/v1/settings/session", a.settingsSession)
+	a.route("POST /api/v1/settings/setup", a.setupSettingsAdmin)
+	a.route("POST /api/v1/settings/login", a.loginSettingsAdmin)
+	a.route("POST /api/v1/settings/logout", a.logoutSettingsAdmin)
+	a.route("GET /api/v1/settings/profile", a.getSettingsProfile)
+	a.route("PATCH /api/v1/settings/profile", a.updateSettingsProfile)
+	a.route("PATCH /api/v1/settings/onboarding", a.updateSettingsOnboarding)
+	a.route("GET /api/v1/settings/maintenance", a.settingsMaintenance)
+	a.route("POST /api/v1/settings/backup", a.exportSettingsBackup)
+	a.route("POST /api/v1/settings/restore", a.withLibraryMaintenance(a.restoreSettingsBackup))
+	a.route("POST /api/v1/settings/cleanup", a.withLibraryMaintenance(a.cleanupSettingsLibrary))
 
 	// Catalog (FR-3.1)
 	a.route("GET /api/v1/apps", a.listApps)
@@ -207,10 +243,14 @@ func (a *API) routes() {
 	a.route("GET /api/v1/mounts", a.listMounts)
 	a.route("POST /api/v1/mounts", a.addMount)
 	a.route("GET /api/v1/mounts/{id}", a.getMount)
+	a.route("PATCH /api/v1/mounts/{id}", a.patchMount)
+	a.route("POST /api/v1/mounts/{id}/test", a.testMount)
 	a.route("DELETE /api/v1/mounts/{id}", a.deleteMount)
 	a.route("POST /api/v1/mounts/{id}/mount", a.mountShare)
 	a.route("POST /api/v1/mounts/{id}/unmount", a.unmountShare)
 	a.route("POST /api/v1/mounts/{id}/scan", a.scanMount)
+	a.route("GET /api/v1/library/browse", a.browseLibrary)
+	a.route("GET /api/v1/library/select", a.selectLibraryTracks)
 	a.route("GET /api/v1/tracks", a.listTracks)
 	a.route("GET /api/v1/tracks/{id}", a.getTrack)
 	a.route("GET /api/v1/covers/{hash}", a.getCover)
@@ -228,12 +268,18 @@ func (a *API) routes() {
 	// Per-node playback queue (GET goes through the {sub} wildcard).
 	a.route("PUT /api/v1/nodes/{id}/queue", a.setNodeQueue)
 	a.route("POST /api/v1/nodes/{id}/queue/enqueue", a.enqueueTrack)
+	a.route("POST /api/v1/nodes/{id}/queue/batch", a.enqueueTracks)
 	a.route("POST /api/v1/nodes/{id}/queue/next", a.queueNext)
 	a.route("POST /api/v1/nodes/{id}/queue/prev", a.queuePrev)
 	a.route("POST /api/v1/nodes/{id}/queue/jump", a.queueJump)
 
 	// Playlists + play history (music-centric console).
 	a.route("GET /api/v1/history", a.listHistory)
+	a.route("GET /api/v1/listening", a.listListening)
+	a.route("GET /api/v1/favorites", a.listFavorites)
+	a.route("GET /api/v1/favorites/state", a.favoriteState)
+	a.route("PUT /api/v1/favorites", a.saveFavorite)
+	a.route("DELETE /api/v1/favorites", a.deleteFavorite)
 	a.route("GET /api/v1/playlists", a.listPlaylists)
 	a.route("POST /api/v1/playlists", a.createPlaylist)
 	a.route("GET /api/v1/playlists/{id}", a.getPlaylist)

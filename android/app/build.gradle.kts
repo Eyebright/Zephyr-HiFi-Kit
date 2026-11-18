@@ -14,6 +14,11 @@ val keystoreProps = Properties().apply {
     if (hasKeystore) load(FileInputStream(keystorePropsFile))
 }
 
+val releaseVersion = providers.gradleProperty("zephyrVersion").orElse("0.4.3").get()
+val versionParts = releaseVersion.split('.').map { it.toInt() }
+require(versionParts.size == 3 && versionParts.all { it in 0..99 })
+val releaseVersionCode = versionParts[0] * 10000 + versionParts[1] * 100 + versionParts[2]
+
 android {
     namespace = "hk.zephyr.terminal"
     compileSdk = 34
@@ -23,8 +28,8 @@ android {
         applicationId = "hk.zephyr.terminal"
         minSdk = 26
         targetSdk = 34
-        versionCode = 3
-        versionName = "0.4.0"
+        versionCode = releaseVersionCode
+        versionName = releaseVersion
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
 

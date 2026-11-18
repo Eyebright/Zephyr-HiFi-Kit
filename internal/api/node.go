@@ -198,6 +198,24 @@ func (a *API) restoreNode(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "node_id 不能为空")
 		return
 	}
+	a.seatMu.Lock()
+	defer a.seatMu.Unlock()
+	if body.Node.Authorized {
+		seats, _, err := a.lic.SeatLimit()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		used, err := a.nodes.AuthorizedCount()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if used >= seats {
+			writeError(w, http.StatusConflict, "授权席位已满，无法恢复已授权终端")
+			return
+		}
+	}
 	n, err := a.nodes.Restore(body.Node)
 	if err != nil {
 		writeError(w, http.StatusConflict, err.Error())
@@ -207,6 +225,8 @@ func (a *API) restoreNode(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) authorizeNode(w http.ResponseWriter, r *http.Request) {
+	a.seatMu.Lock()
+	defer a.seatMu.Unlock()
 	seats, licensed, err := a.lic.SeatLimit()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())

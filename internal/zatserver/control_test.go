@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -257,6 +258,9 @@ func TestSeekBothDirections(t *testing.T) {
 	h := setup(t)
 	nodeID, secret := h.register(t, "ep-seek", true)
 	trackID, _ := h.addWAVTrack(t, 200000)
+	if _, err := h.st.DB.Exec(`UPDATE tracks SET path=? WHERE id=?`, filepath.Join(t.TempDir(), "untrusted.wav"), trackID); err != nil {
+		t.Fatal(err)
+	}
 
 	ready := make(chan struct{}, 1)
 	events := make(chan ctrlEvent, 512)
@@ -357,6 +361,9 @@ func TestSeekDuringDrain(t *testing.T) {
 	h := setup(t)
 	nodeID, secret := h.register(t, "ep-drain", true)
 	trackID, _ := h.addWAVTrack(t, 40000) // 3 chunks: source EOFs quickly
+	if _, err := h.st.DB.Exec(`UPDATE tracks SET path=? WHERE id=?`, filepath.Join(t.TempDir(), "untrusted.wav"), trackID); err != nil {
+		t.Fatal(err)
+	}
 
 	ready := make(chan struct{}, 1)
 	events := make(chan ctrlEvent, 512)

@@ -35,7 +35,7 @@ type Config struct {
 
 // BuildVersion is injected by release builds (-ldflags -X ...config.BuildVersion=x.y.z);
 // a stale value makes fleet upgrades reinstall the same deb on every restart.
-var BuildVersion = "0.4.1"
+var BuildVersion = "0.4.3"
 
 // Default returns the built-in defaults.
 func Default() Config {

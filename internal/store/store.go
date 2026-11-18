@@ -84,6 +84,20 @@ func (s *Store) additiveMigrate() error {
 		{"audit", "duration_ms", "INTEGER NOT NULL DEFAULT 0"},
 		// tracks: embedded album art reference (covers table, sha256-keyed).
 		{"tracks", "cover_hash", "TEXT NOT NULL DEFAULT ''"},
+		{"tracks", "genre", "TEXT NOT NULL DEFAULT ''"},
+		{"tracks", "added_at", "INTEGER NOT NULL DEFAULT 0"},
+		{"tracks", "album_artist", "TEXT NOT NULL DEFAULT ''"},
+		{"tracks", "composer", "TEXT NOT NULL DEFAULT ''"},
+		{"tracks", "year", "INTEGER NOT NULL DEFAULT 0"},
+		{"tracks", "disc_number", "INTEGER NOT NULL DEFAULT 0"},
+		{"tracks", "track_number", "INTEGER NOT NULL DEFAULT 0"},
+		{"mounts", "kind", "TEXT NOT NULL DEFAULT 'smb'"},
+		{"play_history", "title", "TEXT NOT NULL DEFAULT ''"},
+		{"play_history", "artist", "TEXT NOT NULL DEFAULT ''"},
+		{"play_history", "album", "TEXT NOT NULL DEFAULT ''"},
+		{"play_history", "genre", "TEXT NOT NULL DEFAULT ''"},
+		{"play_history", "cover_hash", "TEXT NOT NULL DEFAULT ''"},
+		{"play_history", "measured", "INTEGER NOT NULL DEFAULT 0"},
 		// app_versions: distro package name for format=apt entries.
 		{"app_versions", "apt_package", "TEXT NOT NULL DEFAULT ''"},
 	}
@@ -91,6 +105,40 @@ func (s *Store) additiveMigrate() error {
 		if err := s.addColumnIfMissing(c.table, c.name, c.decl); err != nil {
 			return fmt.Errorf("add column %s.%s: %w", c.table, c.name, err)
 		}
+	}
+	return s.backfillListeningSnapshots()
+}
+
+// Freeze legacy metadata once, so future catalog changes cannot rewrite history.
+func (s *Store) backfillListeningSnapshots() error {
+	tx, err := s.DB.Begin()
+	if err != nil {
+		return fmt.Errorf("begin listening snapshot backfill: %w", err)
+	}
+	defer tx.Rollback()
+	const marker = "listening_history_snapshot_v1"
+	var done bool
+	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM server_state WHERE key=?)`, marker).Scan(&done); err != nil {
+		return fmt.Errorf("check listening snapshot backfill: %w", err)
+	}
+	if done {
+		return nil
+	}
+	if _, err := tx.Exec(`UPDATE play_history AS h SET
+		title=COALESCE(NULLIF(h.title,''),(SELECT t.title FROM tracks t WHERE t.id=h.track_id),''),
+		artist=COALESCE(NULLIF(h.artist,''),(SELECT t.artist FROM tracks t WHERE t.id=h.track_id),''),
+		album=COALESCE(NULLIF(h.album,''),(SELECT t.album FROM tracks t WHERE t.id=h.track_id),''),
+		genre=COALESCE(NULLIF(h.genre,''),(SELECT t.genre FROM tracks t WHERE t.id=h.track_id),''),
+		cover_hash=COALESCE(NULLIF(h.cover_hash,''),(SELECT t.cover_hash FROM tracks t WHERE t.id=h.track_id),'')
+		WHERE h.measured=0 AND EXISTS(SELECT 1 FROM tracks t WHERE t.id=h.track_id)
+		AND (h.title='' OR h.artist='' OR h.album='' OR h.genre='' OR h.cover_hash='')`); err != nil {
+		return fmt.Errorf("backfill listening snapshots: %w", err)
+	}
+	if _, err := tx.Exec(`INSERT INTO server_state(key,value) VALUES(?, '1')`, marker); err != nil {
+		return fmt.Errorf("mark listening snapshot backfill: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit listening snapshot backfill: %w", err)
 	}
 	return nil
 }
@@ -411,6 +459,15 @@ CREATE TABLE IF NOT EXISTS tracks (
 );
 CREATE INDEX IF NOT EXISTS idx_tracks_mount ON tracks(mount_id);
 
+-- Identity survives catalog cleanup and temporarily missing files, but not source deletion.
+CREATE TABLE IF NOT EXISTS track_identities (
+  id       TEXT PRIMARY KEY,
+  mount_id TEXT NOT NULL REFERENCES mounts(id) ON DELETE CASCADE,
+  rel_path TEXT NOT NULL,
+  added_at INTEGER NOT NULL CHECK (added_at >= 0),
+  UNIQUE(mount_id, rel_path)
+);
+
 CREATE TABLE IF NOT EXISTS covers (
   hash       TEXT PRIMARY KEY,
   mime       TEXT NOT NULL,
@@ -433,6 +490,15 @@ CREATE TABLE IF NOT EXISTS play_history (
 );
 CREATE INDEX IF NOT EXISTS idx_history_at ON play_history(started_at);
 
+CREATE TABLE IF NOT EXISTS listen_daily (
+  history_id     TEXT NOT NULL REFERENCES play_history(id) ON DELETE CASCADE,
+  day            INTEGER NOT NULL,
+  listen_ms      INTEGER NOT NULL DEFAULT 0,
+  last_played_at INTEGER NOT NULL,
+  PRIMARY KEY (history_id, day)
+);
+CREATE INDEX IF NOT EXISTS idx_listen_day ON listen_daily(day);
+
 CREATE TABLE IF NOT EXISTS playlists (
   id         TEXT PRIMARY KEY,
   name       TEXT NOT NULL,
@@ -446,6 +512,25 @@ CREATE TABLE IF NOT EXISTS playlist_items (
   track_id    TEXT NOT NULL,
   PRIMARY KEY (playlist_id, position)
 );
+
+-- Favorites retain metadata when catalog rows disappear; deliberately no tracks FK.
+CREATE TABLE IF NOT EXISTS favorites (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind        TEXT NOT NULL CHECK (kind IN ('track','album')),
+  track_id    TEXT NOT NULL DEFAULT '',
+  title       TEXT NOT NULL DEFAULT '',
+  artist      TEXT NOT NULL DEFAULT '',
+  album       TEXT NOT NULL DEFAULT '',
+  cover_hash  TEXT NOT NULL DEFAULT '',
+  duration_ms INTEGER NOT NULL DEFAULT 0,
+  codec       TEXT NOT NULL DEFAULT '',
+  decodable   INTEGER NOT NULL DEFAULT 0,
+  added_at    INTEGER NOT NULL,
+  CHECK ((kind='track' AND track_id<>'') OR (kind='album' AND track_id=''))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_favorites_track ON favorites(track_id) WHERE kind='track';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_favorites_album ON favorites(artist,album) WHERE kind='album';
+CREATE INDEX IF NOT EXISTS idx_favorites_added ON favorites(kind,added_at DESC,id DESC);
 
 CREATE TABLE IF NOT EXISTS apt_sources (
   id         TEXT PRIMARY KEY,

@@ -42,7 +42,7 @@ jsonstr(){ printf '%s' "$1" | grep -o "\"$2\":\"[^\"]*\"" | head -1 | cut -d'"' 
 jsonint(){ printf '%s' "$1" | grep -o "\"$2\":[0-9][0-9]*" | head -1 | cut -d: -f2; }
 jsonbool(){ printf '%s' "$1" | grep -oE "\"$2\":(true|false)" | head -1 | cut -d: -f2; }
 # req <method> <path> <data> -> sets CODE and BODY
-req(){ CODE=$(curl -s -o "$TMP/resp" -w '%{http_code}' -X "$1" "$BASE$2" ${3:+-H 'Content-Type: application/json' -d "$3"}); BODY=$(cat "$TMP/resp"); }
+req(){ CODE=$(curl -s -o "$TMP/resp" -w '%{http_code}' -b "$TMP/cookies" -c "$TMP/cookies" -H "Origin: http://127.0.0.1:$PORT" -H 'Content-Type: application/json' -X "$1" "$BASE$2" ${3:+-d "$3"}); BODY=$(cat "$TMP/resp"); }
 
 echo "== build host server =="
 go build -o "$TMP/hifihub-server$EXE" ./cmd/hifihub-server
@@ -53,6 +53,11 @@ gpg --batch --pinentry-mode loopback --passphrase '' \
     --quick-generate-key "Zephyr Smoke <smoke@zephyr.hk>" ed25519 sign never >/dev/null 2>&1
 FPR=$(gpg --list-keys --with-colons | sed -n 's/^fpr:::::::::\([^:]*\):.*/\1/p' | head -1)
 [ -n "$FPR" ] || { echo "key generation failed" >&2; exit 1; }
+
+if curl -s --connect-timeout 1 --max-time 2 "http://127.0.0.1:$PORT/" >/dev/null 2>&1; then
+  echo "port $PORT is already in use; refusing to test an existing server" >&2
+  exit 1
+fi
 
 echo "== start server (enforce) on :$PORT =="
 mkdir -p "$TMP/data" "$TMP/dist"
@@ -66,7 +71,11 @@ HIFIHUB_GPG_HOME="$TMP/gnupg" HIFIHUB_DIST_DIR="$TW/dist" HIFIHUB_SIGNATURE_MODE
 SRV=$!
 
 # wait for health
-i=0; until curl -s "$BASE/health" >/dev/null 2>&1; do i=$((i+1)); [ "$i" -gt 50 ] && { echo "server did not start"; cat "$TMP/server.log"; exit 1; }; sleep 0.2; done
+i=0; until curl -s "$BASE/health" >/dev/null 2>&1; do
+  kill -0 "$SRV" 2>/dev/null || { cat "$TMP/server.log"; exit 1; }
+  i=$((i+1)); [ "$i" -gt 50 ] && { echo "server did not start"; cat "$TMP/server.log"; exit 1; }; sleep 0.2
+done
+kill -0 "$SRV" 2>/dev/null || { cat "$TMP/server.log"; exit 1; }
 
 echo "== assertions =="
 req GET /health ""; check "health 200" "$CODE" "200"
@@ -76,6 +85,11 @@ check "signature_mode=enforce" "$(jsonstr "$BODY" signature_mode)" "enforce"
 CCODE=$(curl -s -o "$TMP/idx" -w '%{http_code}' "http://127.0.0.1:$PORT/")
 check "console 200" "$CCODE" "200"
 grep -q "Zephyr Music Player" "$TMP/idx" && ok "console branded Zephyr" || bad "console branding" "missing"
+
+CODE=$(curl -s -o "$TMP/resp" -w '%{http_code}' -X POST "$BASE/apps" -H "Origin: http://127.0.0.1:$PORT" -H 'Content-Type: application/json' -d '{"app_id":"anonymous","name":"Anonymous"}')
+check "anonymous mutation rejected 401" "$CODE" "401"
+req POST /settings/setup '{"password":"smoke-test-admin-only","display_name":"Smoke Admin"}'
+check "initialize administrator 201" "$CODE" "201"
 
 # catalog
 req POST /apps '{"app_id":"testapp","name":"Test App","category":"renderer"}'
@@ -89,6 +103,7 @@ ORIG_SHA=$(sha256sum "$TMP/testapp_1.0.0_amd64.deb" | awk '{print $1}')
 
 # signed upload -> accepted
 CODE=$(curl -s -o "$TMP/resp" -w '%{http_code}' -X POST "$BASE/apps/testapp/versions" \
+  -b "$TMP/cookies" -H "Origin: http://127.0.0.1:$PORT" \
   -F 'meta={"version":"1.0.0","arch":"amd64","format":"deb","units":["testapp.service"],"lifecycle":"available"}' \
   -F "artifact=@$TMP/testapp_1.0.0_amd64.deb" -F "signature=@$TMP/testapp_1.0.0_amd64.deb.asc")
 BODY=$(cat "$TMP/resp"); check "signed upload 201" "$CODE" "201"
@@ -97,6 +112,7 @@ check "server sha256 matches" "$(jsonstr "$BODY" sha256)" "$ORIG_SHA"
 
 # unsigned upload -> rejected (enforce gate, NFR-S2)
 CODE=$(curl -s -o "$TMP/resp" -w '%{http_code}' -X POST "$BASE/apps/testapp/versions" \
+  -b "$TMP/cookies" -H "Origin: http://127.0.0.1:$PORT" \
   -F 'meta={"version":"2.0.0","arch":"amd64","format":"deb"}' \
   -F "artifact=@$TMP/testapp_1.0.0_amd64.deb")
 BODY=$(cat "$TMP/resp"); check "unsigned upload rejected 400" "$CODE" "400"

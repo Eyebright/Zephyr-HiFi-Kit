@@ -240,6 +240,9 @@ func TestPushPlaybackRoundTrip(t *testing.T) {
 	h := setup(t)
 	nodeID, secret := h.register(t, "ep1", true)
 	trackID, pcm := h.addWAVTrack(t, 40000) // >64KiB => multi-chunk
+	if _, err := h.st.DB.Exec(`UPDATE tracks SET path=? WHERE id=?`, filepath.Join(t.TempDir(), "untrusted.wav"), trackID); err != nil {
+		t.Fatal(err)
+	}
 
 	ready := make(chan struct{}, 1)
 	done := make(chan epResult, 1)
@@ -283,7 +286,7 @@ func TestPushPlaybackRoundTrip(t *testing.T) {
 	if res.setup.ALSADevice != "default" {
 		t.Fatalf("alsa device wrong: %q", res.setup.ALSADevice)
 	}
-	if res.meta.Title != "song" || res.meta.Artist != "Artist" || res.meta.Album != "Album" {
+	if res.meta.Title != "song" || res.meta.Artist != "" || res.meta.Album != "" {
 		t.Fatalf("track meta wrong: %+v", res.meta)
 	}
 	if string(res.pcm) != string(pcm) {

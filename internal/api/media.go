@@ -137,6 +137,9 @@ func (a *API) getTrack(w http.ResponseWriter, r *http.Request) {
 // getCover serves content-addressed album art; hashes are immutable so clients
 // may cache forever.
 func (a *API) getCover(w http.ResponseWriter, r *http.Request) {
+	// Also protect legacy cached contents that predate raster validation.
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
 	if a.lib == nil {
 		writeError(w, http.StatusServiceUnavailable, "媒体库未启用")
 		return
@@ -395,6 +398,27 @@ func (a *API) enqueueTrack(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusConflict, err.Error())
 			return
 		}
+		fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"queue": q, "session_id": sessionID})
+}
+
+func (a *API) enqueueTracks(w http.ResponseWriter, r *http.Request) {
+	if a.zat == nil {
+		writeError(w, http.StatusServiceUnavailable, "ZAT 服务未启用")
+		return
+	}
+	var body struct {
+		TrackIDs []string `json:"track_ids"`
+		Next     bool     `json:"next"`
+	}
+	if err := decode(r, &body); err != nil {
+		fail(w, err)
+		return
+	}
+	q, sessionID, err := a.zat.EnqueueMany(r.Context(), r.PathValue("id"), body.TrackIDs, body.Next)
+	if err != nil {
 		fail(w, err)
 		return
 	}

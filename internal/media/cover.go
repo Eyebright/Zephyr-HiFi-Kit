@@ -1,9 +1,15 @@
 package media
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
+	"image"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 	"io"
+	"net/http"
 	"os"
 )
 
@@ -21,6 +27,35 @@ const maxCoverBytes = 8 << 20
 
 var coverMIMEs = map[string]bool{
 	"image/jpeg": true, "image/png": true, "image/gif": true, "image/webp": true,
+}
+
+// ValidCoverData accepts only the passive raster formats used for album art.
+// DecodeConfig verifies the format without allocating a full decoded image.
+func ValidCoverData(mime string, data []byte) bool {
+	if !coverMIMEs[mime] || len(data) == 0 || len(data) > maxCoverBytes {
+		return false
+	}
+	if mime == "image/webp" {
+		// WebP has no standard-library decoder. Sniff its RIFF/WEBP/VP8
+		// signature and require a complete, bounded RIFF container.
+		if len(data) < 25 || http.DetectContentType(data) != mime || uint64(binary.LittleEndian.Uint32(data[4:8]))+8 != uint64(len(data)) {
+			return false
+		}
+		chunkSize := uint64(binary.LittleEndian.Uint32(data[16:20]))
+		if chunkSize+20 > uint64(len(data)) {
+			return false
+		}
+		switch string(data[12:16]) {
+		case "VP8 ", "VP8X":
+			return chunkSize >= 10
+		case "VP8L":
+			return chunkSize >= 5 && data[20] == 0x2f
+		default:
+			return false
+		}
+	}
+	config, format, err := image.DecodeConfig(bytes.NewReader(data))
+	return err == nil && config.Width > 0 && config.Height > 0 && "image/"+format == mime
 }
 
 // ReadFLACCover walks the FLAC metadata blocks and returns the front cover

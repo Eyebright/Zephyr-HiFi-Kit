@@ -27,6 +27,13 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Frontend regression tests
+        run: node --test internal/web/*.test.cjs
+
       - name: Server unit tests
         run: go test ./...
 
@@ -42,19 +49,17 @@ jobs:
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             VERSION="${GITHUB_REF_NAME#v}"
           else
-            VERSION="0.4.0"
+            VERSION="0.4.3"
           fi
           VERSION="$VERSION" sh scripts/build-release.sh
 
-      - name: Publish GitHub Release
+      - name: Prepare draft GitHub Release
         if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Idempotent: re-pointing an existing tag refreshes its assets in place
-          # instead of failing on "release already exists" (which would also block
-          # the audio job that needs this one).
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            [ "$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)" = true ] || { echo "Refusing to overwrite a published release"; exit 1; }
             gh release upload "$GITHUB_REF_NAME" \
               release/zephyr-music-server-*.tar.gz \
               release/zephyr-music-server-*/agent/*.deb \
@@ -63,12 +68,12 @@ jobs:
             gh release create "$GITHUB_REF_NAME" \
               release/zephyr-music-server-*.tar.gz \
               release/zephyr-music-server-*/agent/*.deb \
+              --draft --verify-tag \
               --title "Zephyr Music Player $GITHUB_REF_NAME" \
               --generate-notes
           fi
 
-      - name: Upload bundle artifact (non-tag builds)
-        if: github.ref_type != 'tag'
+      - name: Upload bundle artifact
         uses: actions/upload-artifact@v4
         with:
           name: zephyr-music-server-bundle
@@ -106,7 +111,7 @@ jobs:
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             VERSION="${GITHUB_REF_NAME#v}"
           else
-            VERSION="0.4.0"
+            VERSION="0.4.3"
           fi
           TEST=1 AUDIO=1 VERSION="$VERSION" sh scripts/build-release.sh
 
@@ -192,7 +197,7 @@ jobs:
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             VERSION="${GITHUB_REF_NAME#v}"
           else
-            VERSION="0.4.0"
+            VERSION="0.4.3"
           fi
           VERSION="$VERSION" sh scripts/build-android.sh
 
@@ -231,7 +236,7 @@ jobs:
             gh release upload "$GITHUB_REF_NAME" release/zephyr-terminal-*.apk --clobber
           else
             gh release create "$GITHUB_REF_NAME" release/zephyr-terminal-*.apk \
-              --title "Zephyr Music Player $GITHUB_REF_NAME" --generate-notes
+              --draft --verify-tag --title "Zephyr Music Player $GITHUB_REF_NAME" --generate-notes
           fi
 
   # AAudio runtime verification on an Android emulator. The c-shared build above
@@ -310,19 +315,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Fetch distribution set for the container test
+      - name: Set container version
         run: |
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             VERSION="${GITHUB_REF_NAME#v}"
-            curl -fsSL -o /tmp/bundle.tar.gz \
-              "https://github.com/Eyebright/zephyr-music-server/releases/download/${GITHUB_REF_NAME}/zephyr-music-server-${VERSION}.tar.gz"
           else
-            VERSION="0.4.0"
+            VERSION="0.4.3"
           fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
-      - name: Download bundle artifact (non-tag builds)
-        if: github.ref_type != 'tag'
+      - name: Download bundle artifact
         uses: actions/download-artifact@v4
         with:
           name: zephyr-music-server-bundle
@@ -330,10 +332,8 @@ jobs:
 
       - name: Build image
         run: |
-          if [ "${GITHUB_REF_TYPE}" != "tag" ]; then
-            cp /tmp/bundle-artifact/zephyr-music-server-*.tar.gz /tmp/bundle.tar.gz
-          fi
-          docker build -f packaging/docker/Dockerfile -t zephyr-nas:test .
+          cp /tmp/bundle-artifact/zephyr-music-server-*.tar.gz /tmp/bundle.tar.gz
+          docker build --build-arg VERSION="$VERSION" -f packaging/docker/Dockerfile -t zephyr-nas:test .
 
       - name: Container runtime test (enforce + /dl/ whitelist + rejection)
         run: |
@@ -356,12 +356,19 @@ jobs:
           code=$(curl -s -L -o /tmp/trav.out -w '%{http_code}' --path-as-is 'http://127.0.0.1:18080/dl/..%2f..%2fetc%2fpasswd')
           [ "$code" = 404 ] || { echo "!! /dl/ traversal not rejected: $code"; exit 1; }
           grep -q 'root:' /tmp/trav.out && { echo "!! /dl/ leaked file content"; exit 1; }
-          printf 'not-a-deb' > /tmp/unsigned.deb
-          rej=$(curl -s -X POST http://127.0.0.1:18080/api/v1/apps/nas-test/versions \
-            -F 'meta={"version":"1.0","arch":"amd64","format":"deb","units":[],"occupies_dac":false,"lifecycle":"available"}' \
-            -F 'artifact=@/tmp/unsigned.deb')
-          echo "$rej" | grep -q 'artifact_rejected' || { echo "!! unsigned artifact accepted: $rej"; exit 1; }
-          curl -fsS -o /dev/null -w 'metrics %{http_code}\n' http://127.0.0.1:18080/metrics/server
+          docker exec zephyr-nas-test sh -eu -c '
+            base=http://127.0.0.1:8080/api/v1
+            origin=http://127.0.0.1:8080
+            anonymous=$(curl -s -o /tmp/anonymous.json -w "%{http_code}" -X POST "$base/apps" -H "Origin: $origin" -H "Content-Type: application/json" -d "{}")
+            [ "$anonymous" = 401 ]
+            curl -fsS -c /tmp/admin.cookies -H "Origin: $origin" -H "Content-Type: application/json" -d "{\"password\":\"container-smoke-admin-only\",\"display_name\":\"Container Smoke\"}" "$base/settings/setup" >/dev/null
+            printf "not-a-deb" > /tmp/unsigned.deb
+            code=$(curl -s -o /tmp/rejected.json -w "%{http_code}" -b /tmp/admin.cookies -H "Origin: $origin" -X POST "$base/apps/nas-test/versions" -F "meta={\"version\":\"1.0\",\"arch\":\"amd64\",\"format\":\"deb\"}" -F "artifact=@/tmp/unsigned.deb")
+            [ "$code" = 400 ]
+            grep -q artifact_rejected /tmp/rejected.json
+          '
+          curl -fsS http://127.0.0.1:18080/metrics/server > /tmp/metrics.json
+          jq -e --arg version "$VERSION" '.version == $version' /tmp/metrics.json
           docker rm -f zephyr-nas-test
 
       - name: Push arch image + offline tarball (tag builds)
@@ -411,3 +418,14 @@ jobs:
             -H 'Accept: application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json' \
             "https://ghcr.io/v2/eyebright/zephyr-music-server/manifests/${VERSION}"
           grep -q arm64 /tmp/index.json && grep -q amd64 /tmp/index.json
+
+  publish-release:
+    needs: [build, audio, android, android-aaudio, nas-manifest]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish verified release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false

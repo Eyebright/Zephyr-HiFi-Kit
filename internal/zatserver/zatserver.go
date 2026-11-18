@@ -75,12 +75,19 @@ type Server struct {
 	mu    sync.Mutex
 	conns map[string]*endpoint
 
-	qmu sync.Mutex // serializes queue read-modify-write cycles
+	libraryGate sync.RWMutex
+	qmu         sync.Mutex // serializes queue read-modify-write cycles
 }
 
 // New builds a ZAT server. st is used to record playback sessions.
 func New(addr string, nodes *node.Service, lib *library.Service, st *store.Store) *Server {
 	return &Server{addr: addr, nodes: nodes, lib: lib, db: st.DB, conns: map[string]*endpoint{}}
+}
+
+func (s *Server) WithLibraryMaintenance(fn func()) {
+	s.libraryGate.Lock()
+	defer s.libraryGate.Unlock()
+	fn()
 }
 
 // Addr returns the bound listen address (valid after Listen).
@@ -184,6 +191,7 @@ type playState struct {
 	done      chan struct{}
 	sessionID string
 	trackID   string
+	listening listeningClock
 
 	format       zat.Format
 	device       string
@@ -427,20 +435,7 @@ func (e *endpoint) readLoop(ctx context.Context) {
 		case zat.TypeStatus:
 			var st zat.Status
 			if json.Unmarshal(f.Payload, &st) == nil {
-				e.mu.Lock()
-				e.pts = st.PTS
-				e.bufferMS = st.BufferMS
-				e.lastStatus = time.Now()
-				e.sentSince = 0
-				e.alsaDevice = st.ALSADevice
-				e.prefDevice = st.PrefDevice
-				e.underruns = st.Underruns
-				// Only a live session adopts the terminal's reported state;
-				// stale reports must not resurrect a finished session.
-				if e.play != nil {
-					e.state = zat.State(st.State)
-				}
-				e.mu.Unlock()
+				e.acceptStatus(st, time.Now())
 			}
 		case zat.TypePing:
 			var p zat.Ping
@@ -462,6 +457,8 @@ func (e *endpoint) readLoop(ctx context.Context) {
 // StartPlay pushes a library track to a connected terminal. It returns the
 // session id. The stream runs in the background until Stop or EOF.
 func (s *Server) StartPlay(ctx context.Context, nodeID, trackID string) (string, error) {
+	s.libraryGate.RLock()
+	defer s.libraryGate.RUnlock()
 	e := s.endpoint(nodeID)
 	if e == nil {
 		return "", ErrNotConnected
@@ -473,7 +470,11 @@ func (s *Server) StartPlay(ctx context.Context, nodeID, trackID string) (string,
 	if !track.Decodable {
 		return "", fmt.Errorf("该格式暂不支持解码播放：%s", track.Codec)
 	}
-	dec, err := decode.Open(track.Path)
+	playbackPath, err := s.lib.PlaybackPath(track.ID)
+	if err != nil {
+		return "", err
+	}
+	dec, err := decode.Open(playbackPath)
 	if err != nil {
 		return "", err
 	}
@@ -508,6 +509,12 @@ func (s *Server) StartPlay(ctx context.Context, nodeID, trackID string) (string,
 		TrackID: trackID, Title: track.Title, Artist: track.Artist, Album: track.Album,
 		DurationMS: track.DurationMS, Codec: track.Codec, Rate: track.Rate, Channels: track.Channels,
 	}
+	format := dec.Format()
+	device := n.DacDevice
+	if device == "" {
+		device = "default"
+	}
+	ps.format, ps.device, ps.totalSamples, ps.rate = format.Format, device, track.TotalSamples, format.Rate
 	e.mu.Lock()
 	e.play = ps
 	e.setupAck = ackCh
@@ -517,12 +524,6 @@ func (s *Server) StartPlay(ctx context.Context, nodeID, trackID string) (string,
 	e.state = zat.StateReady
 	e.mu.Unlock()
 
-	format := dec.Format()
-	device := n.DacDevice
-	if device == "" {
-		device = "default"
-	}
-	ps.format, ps.device, ps.totalSamples, ps.rate = format.Format, device, track.TotalSamples, format.Rate
 	e.resetPacing(format.Rate * format.Channels * format.Format.BytesPerSample() / 1000)
 	setup := zat.Setup{
 		SessionID: sessionID, TrackID: trackID, Format: format.Format, Rate: format.Rate,
@@ -564,10 +565,15 @@ func (s *Server) StartPlay(ctx context.Context, nodeID, trackID string) (string,
 		(id,node_id,proto,source_client,state,format,volume,dac_device,started_at,ended_at)
 		VALUES(?,?,?,?,?,?,?,?,?,0)`,
 		sessionID, nodeID, "zat", "library", string(zat.StatePlaying), string(format.Format), 100, device, now)
-	_, _ = s.db.Exec(`INSERT INTO play_history(id,node_id,track_id,started_at) VALUES(?,?,?,?)`,
-		"h-"+uuid.NewString(), nodeID, trackID, now)
-	_, _ = s.db.Exec(`DELETE FROM play_history WHERE id NOT IN
-		(SELECT id FROM play_history ORDER BY started_at DESC LIMIT 1000)`)
+	historyID := "h-" + uuid.NewString()
+	_, historyErr := s.db.Exec(`INSERT INTO play_history
+		(id,node_id,track_id,started_at,title,artist,album,genre,cover_hash,measured) VALUES(?,?,?,?,?,?,?,?,?,1)`,
+		historyID, nodeID, trackID, now, track.Title, track.Artist, track.Album, track.Genre, track.CoverHash)
+	if historyErr != nil {
+		slog.Warn("zat record history", "node", nodeID, "err", historyErr)
+	} else {
+		ps.listening.start(historyID, format.Rate, time.Now())
+	}
 	if err := s.nodes.SetPlaying(nodeID, true, "zat", 0); err != nil {
 		slog.Warn("zat set playing", "node", nodeID, "err", err)
 	}
@@ -624,7 +630,13 @@ func (s *Server) stream(e *endpoint, ps *playState, dec decode.Decoder, track li
 			break
 		}
 		if target, ok := ps.takeSeek(); ok {
-			nd, oerr := decode.Open(track.Path)
+			playbackPath, pathErr := s.lib.PlaybackPath(track.ID)
+			if pathErr != nil {
+				reason = "error"
+				slog.Warn("zat seek path", "node", e.nodeID, "err", pathErr)
+				break
+			}
+			nd, oerr := decode.Open(playbackPath)
 			if oerr != nil {
 				reason = "error"
 				slog.Warn("zat seek reopen", "node", e.nodeID, "err", oerr)
@@ -650,7 +662,13 @@ func (s *Server) stream(e *endpoint, ps *playState, dec decode.Decoder, track li
 		ar := s.awaitPlaybackEnd(e, ps, track)
 		if ar == "seek" {
 			target, _ := ps.takeSeek()
-			nd, oerr := decode.Open(track.Path)
+			playbackPath, pathErr := s.lib.PlaybackPath(track.ID)
+			if pathErr != nil {
+				reason = "error"
+				slog.Warn("zat seek path", "node", e.nodeID, "err", pathErr)
+				break
+			}
+			nd, oerr := decode.Open(playbackPath)
 			if oerr != nil {
 				reason = "error"
 				slog.Warn("zat seek reopen", "node", e.nodeID, "err", oerr)
@@ -668,6 +686,7 @@ func (s *Server) stream(e *endpoint, ps *playState, dec decode.Decoder, track li
 		reason = ar
 		break
 	}
+	ps.listening.gate(false)
 	slog.Info("zat stream ended", "node", e.nodeID, "reason", reason)
 	_ = e.control(zat.TypeStop, zat.Stop{SessionID: ps.sessionID})
 	_ = s.nodes.SetPlaying(e.nodeID, false, "zat", 0)
@@ -723,6 +742,7 @@ func (s *Server) reSetup(e *endpoint, ps *playState, track library.Track, target
 		}
 		state = zat.StatePaused
 	}
+	ps.listening.gate(state == zat.StatePlaying)
 	e.mu.Lock()
 	e.pts = target
 	e.state = state
@@ -849,6 +869,7 @@ func (s *Server) Pause(nodeID string) error {
 	ps.paused = true
 	ps.resumeCh = make(chan struct{})
 	ps.mu.Unlock()
+	ps.listening.gate(false)
 	if err := e.control(zat.TypePause, zat.Pause{SessionID: ps.sessionID}); err != nil {
 		return err
 	}
@@ -860,6 +881,8 @@ func (s *Server) Pause(nodeID string) error {
 
 // Resume releases the pause gate and continues streaming from the held position.
 func (s *Server) Resume(nodeID string) error {
+	s.libraryGate.RLock()
+	defer s.libraryGate.RUnlock()
 	e, ps, err := s.activePlay(nodeID)
 	if err != nil {
 		return err
@@ -881,6 +904,7 @@ func (s *Server) Resume(nodeID string) error {
 		close(ps.resumeCh)
 	}
 	ps.mu.Unlock()
+	ps.listening.gate(true)
 	e.mu.Lock()
 	e.state = zat.StatePlaying
 	e.mu.Unlock()
@@ -898,6 +922,7 @@ func (s *Server) Seek(nodeID string, samples uint64) error {
 	if ps.totalSamples > 0 && samples > ps.totalSamples {
 		samples = ps.totalSamples
 	}
+	ps.listening.gate(false)
 	ps.requestSeek(samples)
 	return e.control(zat.TypeSeek, zat.Seek{SessionID: ps.sessionID, PTS: samples})
 }

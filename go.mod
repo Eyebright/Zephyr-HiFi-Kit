@@ -4,6 +4,7 @@ go 1.27.4
 
 require (
 	github.com/google/uuid v1.6.0
+	github.com/mozillazg/go-pinyin v0.20.0
 	hifihub/zat v0.0.0
 	modernc.org/sqlite v1.62.0
 )

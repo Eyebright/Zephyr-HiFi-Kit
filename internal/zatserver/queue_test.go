@@ -143,6 +143,39 @@ func nextResult(t *testing.T, results <-chan epResult) epResult {
 	}
 }
 
+func TestEnqueueManyOrderAndAtomicValidation(t *testing.T) {
+	h := setup(t)
+	nodeID, _ := h.register(t, "batch", true)
+	a, b, _, _ := h.addTwoTracks(t)
+	ctx := context.Background()
+	if err := h.srv.SetQueue(nodeID, []string{a, b}, 0); err != nil {
+		t.Fatal(err)
+	}
+	q, _, err := h.srv.EnqueueMany(ctx, nodeID, []string{b, a}, true)
+	if err != nil || len(q.Tracks) != 4 || q.Position != 0 {
+		t.Fatalf("insert next: %+v %v", q, err)
+	}
+	for i, id := range []string{a, b, a, b} {
+		if q.Tracks[i].TrackID != id {
+			t.Fatalf("wrong order at %d", i)
+		}
+	}
+	if _, _, err := h.srv.EnqueueMany(ctx, nodeID, []string{a, "missing"}, false); err == nil {
+		t.Fatal("invalid batch accepted")
+	}
+	q, err = h.srv.Queue(nodeID)
+	if err != nil || len(q.Tracks) != 4 {
+		t.Fatalf("invalid batch changed queue: %+v %v", q, err)
+	}
+	q, _, err = h.srv.EnqueueMany(ctx, nodeID, []string{a, b}, false)
+	if err != nil || len(q.Tracks) != 6 || q.Tracks[4].TrackID != a || q.Tracks[5].TrackID != b {
+		t.Fatalf("append: %+v %v", q, err)
+	}
+	if _, _, err := h.srv.EnqueueMany(ctx, nodeID, nil, false); err == nil {
+		t.Fatal("empty batch accepted")
+	}
+}
+
 func TestQueueLifecycleAndAutoAdvance(t *testing.T) {
 	h := setup(t)
 	nodeID, secret := h.register(t, "ep-q", true)
