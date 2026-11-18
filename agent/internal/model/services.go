@@ -7,7 +7,24 @@ var Registry = map[string]ServiceDef{
 	"roonbridge": {
 		AppID: "roonbridge", Name: "RoonBridge", Protocol: "raat", Category: "renderer",
 		Units: []string{"roonbridge.service"}, OccupiesDAC: true, Primary: true,
+		DepsPkgs:    []string{"libasound2"},
 		Description: "Roon RAAT 终端代理（位完美播放）。设备与音量在 Roon Core 中配置。",
+		UnitTemplate: `[Unit]
+Description=Roon Bridge (RAAT endpoint)
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart={{.InstallDir}}/Bridge/RoonBridge
+WorkingDirectory={{.InstallDir}}/Bridge
+Restart=on-failure
+RestartSec=3
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+`,
 	},
 	"networkaudiod": {
 		AppID: "networkaudiod", Name: "HQPlayer NAA", Protocol: "naa", Category: "renderer",

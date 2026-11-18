@@ -33,6 +33,10 @@ type Config struct {
 	AgentVersion string
 }
 
+// BuildVersion is injected by release builds (-ldflags -X ...config.BuildVersion=x.y.z);
+// a stale value makes fleet upgrades reinstall the same deb on every restart.
+var BuildVersion = "0.4.1"
+
 // Default returns the built-in defaults.
 func Default() Config {
 	return Config{
@@ -45,7 +49,7 @@ func Default() Config {
 		CommandPoll:  10 * time.Second,
 		AllowPower:   true,
 		AllowLocal:   true,
-		AgentVersion: "0.4.0",
+		AgentVersion: BuildVersion,
 	}
 }
 

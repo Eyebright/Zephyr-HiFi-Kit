@@ -39,24 +39,25 @@ var ErrUnknownDevice = errors.New("终端未上报该 ALSA 输出设备")
 
 // PlayStatus is the live playback state of one terminal, for the console.
 type PlayStatus struct {
-	NodeID     string `json:"node_id"`
-	Connected  bool   `json:"connected"`
-	SessionID  string `json:"session_id"`
-	TrackID    string `json:"track_id"`
-	Title      string `json:"title"`
-	Artist     string `json:"artist"`
-	Album      string `json:"album"`
-	DurationMS int    `json:"duration_ms"`
-	Codec      string `json:"codec"`
-	Rate       int    `json:"rate"`
-	Channels   int    `json:"channels"`
-	State      string `json:"state"`
-	PTS        uint64 `json:"pts"`
-	BufferMS   int    `json:"buffer_ms"`
-	Underruns  int    `json:"underruns"`
-	Playing    bool   `json:"playing"`
-	ALSADevice string `json:"alsa_device"`
-	PrefDevice string `json:"pref_device"`
+	NodeID     string   `json:"node_id"`
+	Connected  bool     `json:"connected"`
+	SessionID  string   `json:"session_id"`
+	TrackID    string   `json:"track_id"`
+	Title      string   `json:"title"`
+	Artist     string   `json:"artist"`
+	Album      string   `json:"album"`
+	DurationMS int      `json:"duration_ms"`
+	Codec      string   `json:"codec"`
+	Rate       int      `json:"rate"`
+	Channels   int      `json:"channels"`
+	State      string   `json:"state"`
+	PTS        uint64   `json:"pts"`
+	BufferMS   int      `json:"buffer_ms"`
+	Underruns  int      `json:"underruns"`
+	Playing    bool     `json:"playing"`
+	Volume     int      `json:"volume"`
+	ALSADevice string   `json:"alsa_device"`
+	PrefDevice string   `json:"pref_device"`
 	Devices    []string `json:"devices"`
 	// ConfiguredDevice is the server-side DAC suggestion (node.dac_device).
 	ConfiguredDevice string `json:"configured_device"`
@@ -160,14 +161,20 @@ type endpoint struct {
 	state    zat.State
 	pts      uint64
 	bufferMS int
-	trackID  string
-	title    string
-	meta     zat.TrackMeta
+	// Pacing state: keeps in-flight audio near paceMaxMS so control frames
+	// (PAUSE/SEEK/STOP) never queue behind seconds of buffered PCM.
+	bytesPerMS int
+	lastStatus time.Time
+	sentSince  int64
+	trackID    string
+	title      string
+	meta       zat.TrackMeta
 	// caps is immutable after HELLO; the rest track the latest STATUS report.
 	caps       zat.Caps
 	alsaDevice string
 	prefDevice string
 	underruns  int
+	volume     int // last server-set soft volume; STATUS does not carry it
 }
 
 // playState is one active push-playback stream.
@@ -177,7 +184,121 @@ type playState struct {
 	done      chan struct{}
 	sessionID string
 	trackID   string
+
+	format       zat.Format
+	device       string
+	totalSamples uint64
+	rate         int
+
+	mu         sync.Mutex
+	paused     bool
+	resumeCh   chan struct{} // closed on resume; replaced on each pause
+	seeking    bool
+	seekTo     uint64
+	seekWake   chan struct{} // closed on seek; wakes awaitPlaybackEnd
+	pumpCancel context.CancelFunc
 }
+
+func (ps *playState) setPump(cancel context.CancelFunc) {
+	ps.mu.Lock()
+	ps.pumpCancel = cancel
+	ps.mu.Unlock()
+}
+
+// waitWhilePaused gates the PCM pump while paused. The terminal discards audio
+// sent during pause, so the server must stop sending too or resume loses data.
+func (ps *playState) waitWhilePaused(ctx context.Context) error {
+	ps.mu.Lock()
+	for ps.paused {
+		ch := ps.resumeCh
+		ps.mu.Unlock()
+		select {
+		case <-ch:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		ps.mu.Lock()
+	}
+	ps.mu.Unlock()
+	return nil
+}
+
+func (ps *playState) isPaused() bool {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	return ps.paused
+}
+
+// requestSeek records a seek target and interrupts the current pump (or the
+// end-of-stream drain wait). The stream loop restarts decoding from the target.
+func (ps *playState) requestSeek(target uint64) {
+	ps.mu.Lock()
+	ps.seeking = true
+	ps.seekTo = target
+	close(ps.seekWake)
+	ps.seekWake = make(chan struct{})
+	cancel := ps.pumpCancel
+	ps.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
+func (ps *playState) takeSeek() (uint64, bool) {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	if !ps.seeking {
+		return 0, false
+	}
+	ps.seeking = false
+	return ps.seekTo, true
+}
+
+func (ps *playState) seekPending() bool {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	return ps.seeking
+}
+
+// paceMaxMS caps the estimated terminal-side audio buffer. The terminal reads
+// frames sequentially and blocks when its PCM queue is full, so a deep buffer
+// delays PAUSE/SEEK by seconds; a shallow one keeps controls responsive while
+// tolerating LAN jitter.
+const paceMaxMS = 600
+
+func (e *endpoint) resetPacing(bytesPerMS int) {
+	e.mu.Lock()
+	e.bytesPerMS = bytesPerMS
+	e.bufferMS = 0
+	e.sentSince = 0
+	e.lastStatus = time.Now()
+	e.mu.Unlock()
+}
+
+// bufferedEstimateMS estimates terminal-side buffered audio: the last reported
+// queue plus what was sent since, minus what the sample clock consumed meanwhile.
+func (e *endpoint) bufferedEstimateMS() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.bytesPerMS <= 0 {
+		return 0
+	}
+	est := int64(e.bufferMS) + e.sentSince/int64(e.bytesPerMS) - time.Since(e.lastStatus).Milliseconds()
+	if est < 0 {
+		est = 0
+	}
+	return int(est)
+}
+
+func (e *endpoint) noteAudioSent(n int) {
+	e.mu.Lock()
+	e.sentSince += int64(n)
+	e.mu.Unlock()
+}
+
+// errSeekInterrupt unwinds the pump when a seek lands mid-stream (including
+// during a reSetup wait, when the previous pump cancel is already spent).
+var errSeekInterrupt = errors.New("seek interrupt")
 
 func (e *endpoint) writeFrame(f zat.Frame) error {
 	e.wmu.Lock()
@@ -227,7 +348,7 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 		_ = tc.SetKeepAlivePeriod(30 * time.Second)
 	}
 
-	e := &endpoint{nodeID: hello.NodeID, conn: conn, srv: s, state: zat.StateAuthenticated, caps: hello.Caps}
+	e := &endpoint{nodeID: hello.NodeID, conn: conn, srv: s, state: zat.StateAuthenticated, caps: hello.Caps, volume: 100}
 	s.mu.Lock()
 	if old, ok := s.conns[hello.NodeID]; ok {
 		old.conn.Close()
@@ -309,6 +430,8 @@ func (e *endpoint) readLoop(ctx context.Context) {
 				e.mu.Lock()
 				e.pts = st.PTS
 				e.bufferMS = st.BufferMS
+				e.lastStatus = time.Now()
+				e.sentSince = 0
 				e.alsaDevice = st.ALSADevice
 				e.prefDevice = st.PrefDevice
 				e.underruns = st.Underruns
@@ -378,7 +501,8 @@ func (s *Server) StartPlay(ctx context.Context, nodeID, trackID string) (string,
 
 	sessionID := "zat-" + uuid.NewString()
 	playCtx, cancel := context.WithCancel(context.Background())
-	ps := &playState{ctx: playCtx, cancel: cancel, done: make(chan struct{}), sessionID: sessionID, trackID: trackID}
+	ps := &playState{ctx: playCtx, cancel: cancel, done: make(chan struct{}), sessionID: sessionID, trackID: trackID,
+		resumeCh: make(chan struct{}), seekWake: make(chan struct{})}
 	ackCh := make(chan zat.SetupAck, 1)
 	meta := zat.TrackMeta{
 		TrackID: trackID, Title: track.Title, Artist: track.Artist, Album: track.Album,
@@ -398,6 +522,8 @@ func (s *Server) StartPlay(ctx context.Context, nodeID, trackID string) (string,
 	if device == "" {
 		device = "default"
 	}
+	ps.format, ps.device, ps.totalSamples, ps.rate = format.Format, device, track.TotalSamples, format.Rate
+	e.resetPacing(format.Rate * format.Channels * format.Format.BytesPerSample() / 1000)
 	setup := zat.Setup{
 		SessionID: sessionID, TrackID: trackID, Format: format.Format, Rate: format.Rate,
 		Channels: format.Channels, PrebufferMS: 200, ALSADevice: device,
@@ -438,6 +564,10 @@ func (s *Server) StartPlay(ctx context.Context, nodeID, trackID string) (string,
 		(id,node_id,proto,source_client,state,format,volume,dac_device,started_at,ended_at)
 		VALUES(?,?,?,?,?,?,?,?,?,0)`,
 		sessionID, nodeID, "zat", "library", string(zat.StatePlaying), string(format.Format), 100, device, now)
+	_, _ = s.db.Exec(`INSERT INTO play_history(id,node_id,track_id,started_at) VALUES(?,?,?,?)`,
+		"h-"+uuid.NewString(), nodeID, trackID, now)
+	_, _ = s.db.Exec(`DELETE FROM play_history WHERE id NOT IN
+		(SELECT id FROM play_history ORDER BY started_at DESC LIMIT 1000)`)
 	if err := s.nodes.SetPlaying(nodeID, true, "zat", 0); err != nil {
 		slog.Warn("zat set playing", "node", nodeID, "err", err)
 	}
@@ -452,28 +582,91 @@ func (s *Server) StartPlay(ctx context.Context, nodeID, trackID string) (string,
 
 // stream pumps PCM to the endpoint until EOF, error or cancellation, then tears
 // down the session. It owns the STOP frame and the playing=false transition.
+// Pause gates the pump; a seek cancels the pump and restarts decoding from the
+// target sample with a fresh SETUP, without touching history or auto-advance.
 func (s *Server) stream(e *endpoint, ps *playState, dec decode.Decoder, track library.Track) {
-	defer dec.Close()
-	sink := func(f zat.Frame) error {
-		if ps.ctx.Err() != nil {
-			return ps.ctx.Err()
-		}
-		return e.writeFrame(f)
-	}
-	_, err := decode.StreamFrames(sink, dec, track.ID, 0)
+	startSample := uint64(0)
 	reason := "eof"
-	if ps.ctx.Err() != nil {
-		reason = "stopped"
-	} else if err != nil {
-		reason = "error"
-		slog.Warn("zat stream", "node", e.nodeID, "err", err)
-	}
-	// Sending all PCM is not the end of playback: the terminal still drains
-	// its buffer at the ALSA clock. Keep the session live until the terminal
-	// reports completion so the console reflects real playback, not the
-	// instant the bytes were written.
-	if reason == "eof" {
-		reason = s.awaitPlaybackEnd(e, ps, track)
+	for {
+		pumpCtx, pumpCancel := context.WithCancel(ps.ctx)
+		ps.setPump(pumpCancel)
+		sink := func(f zat.Frame) error {
+			for {
+				if err := ps.waitWhilePaused(pumpCtx); err != nil {
+					return err
+				}
+				if pumpCtx.Err() != nil {
+					return pumpCtx.Err()
+				}
+				if ps.seekPending() {
+					return errSeekInterrupt
+				}
+				if e.bufferedEstimateMS() <= paceMaxMS {
+					break
+				}
+				select {
+				case <-pumpCtx.Done():
+					return pumpCtx.Err()
+				case <-time.After(40 * time.Millisecond):
+				}
+			}
+			if err := e.writeFrame(f); err != nil {
+				return err
+			}
+			e.noteAudioSent(len(f.Payload))
+			return nil
+		}
+		_, err := decode.StreamFramesFrom(sink, dec, track.ID, 0, startSample)
+		pumpCancel()
+		dec.Close()
+		if ps.ctx.Err() != nil {
+			reason = "stopped"
+			break
+		}
+		if target, ok := ps.takeSeek(); ok {
+			nd, oerr := decode.Open(track.Path)
+			if oerr != nil {
+				reason = "error"
+				slog.Warn("zat seek reopen", "node", e.nodeID, "err", oerr)
+				break
+			}
+			dec = nd
+			startSample = target
+			if serr := s.reSetup(e, ps, track, target); serr != nil {
+				reason = "error"
+				slog.Warn("zat seek setup", "node", e.nodeID, "err", serr)
+				break
+			}
+			continue
+		}
+		if err != nil {
+			reason = "error"
+			slog.Warn("zat stream", "node", e.nodeID, "err", err)
+			break
+		}
+		// Sending all PCM is not the end of playback: the terminal still drains
+		// its buffer at the ALSA clock. Keep the session live until the terminal
+		// reports completion, a seek restarts it, or the user stops.
+		ar := s.awaitPlaybackEnd(e, ps, track)
+		if ar == "seek" {
+			target, _ := ps.takeSeek()
+			nd, oerr := decode.Open(track.Path)
+			if oerr != nil {
+				reason = "error"
+				slog.Warn("zat seek reopen", "node", e.nodeID, "err", oerr)
+				break
+			}
+			dec = nd
+			startSample = target
+			if serr := s.reSetup(e, ps, track, target); serr != nil {
+				reason = "error"
+				slog.Warn("zat seek setup", "node", e.nodeID, "err", serr)
+				break
+			}
+			continue
+		}
+		reason = ar
+		break
 	}
 	slog.Info("zat stream ended", "node", e.nodeID, "reason", reason)
 	_ = e.control(zat.TypeStop, zat.Stop{SessionID: ps.sessionID})
@@ -492,22 +685,91 @@ func (s *Server) stream(e *endpoint, ps *playState, dec decode.Decoder, track li
 	}
 }
 
+// reSetup rebuilds the terminal's render session at a seek target: a fresh
+// SETUP drops stale buffered PCM, then PLAY with StartPTS skips any decoder
+// lead-in. The session id and history are unchanged.
+func (s *Server) reSetup(e *endpoint, ps *playState, track library.Track, target uint64) error {
+	ackCh := make(chan zat.SetupAck, 1)
+	e.mu.Lock()
+	e.setupAck = ackCh
+	e.mu.Unlock()
+	// The terminal drops its old queue on re-SETUP; restart the pacing window.
+	e.resetPacing(ps.rate * track.Channels * ps.format.BytesPerSample() / 1000)
+	setup := zat.Setup{
+		SessionID: ps.sessionID, TrackID: track.ID, Format: ps.format, Rate: ps.rate,
+		Channels: track.Channels, PrebufferMS: 200, ALSADevice: ps.device,
+		TotalSamples: track.TotalSamples,
+	}
+	if err := e.control(zat.TypeSetup, setup); err != nil {
+		return err
+	}
+	select {
+	case ack := <-ackCh:
+		if !ack.OK {
+			return fmt.Errorf("终端拒绝播放：%s", ack.Detail)
+		}
+	case <-ps.ctx.Done():
+		return ps.ctx.Err()
+	case <-time.After(8 * time.Second):
+		return errors.New("终端 SETUP 超时")
+	}
+	if err := e.control(zat.TypePlay, zat.Play{SessionID: ps.sessionID, StartPTS: target}); err != nil {
+		return err
+	}
+	state := zat.StatePlaying
+	if ps.isPaused() {
+		if err := e.control(zat.TypePause, zat.Pause{SessionID: ps.sessionID}); err != nil {
+			return err
+		}
+		state = zat.StatePaused
+	}
+	e.mu.Lock()
+	e.pts = target
+	e.state = state
+	e.mu.Unlock()
+	return nil
+}
+
 // awaitPlaybackEnd blocks after the source finished sending until the terminal
 // finishes playing (STATUS PTS reaches total_samples or it leaves the playing
-// state), the user stops, or a grace deadline passes. It returns the teardown
-// reason.
+// state), a seek restarts the stream, the user stops, or a grace deadline
+// passes. It returns the teardown reason ("eof", "stopped" or "seek").
 func (s *Server) awaitPlaybackEnd(e *endpoint, ps *playState, track library.Track) string {
-	deadline := time.Now().Add(time.Duration(track.DurationMS)*time.Millisecond + 5*time.Second)
 	tick := time.NewTicker(100 * time.Millisecond)
 	defer tick.Stop()
+	var deadline time.Time
+	lastPTS := ^uint64(0)
 	for {
+		e.mu.Lock()
+		pts, state := e.pts, e.state
+		e.mu.Unlock()
+		// Extend the grace deadline only while the terminal clock advances, so a
+		// seek back near the start gets full remaining time but a stalled
+		// terminal still times out.
+		if pts != lastPTS {
+			lastPTS = pts
+			remaining := time.Duration(track.DurationMS) * time.Millisecond
+			if track.TotalSamples > 0 && ps.rate > 0 && pts < track.TotalSamples {
+				remaining = time.Duration((track.TotalSamples-pts)*1000/uint64(ps.rate)) * time.Millisecond
+			}
+			deadline = time.Now().Add(remaining + 5*time.Second)
+		}
+		ps.mu.Lock()
+		wake := ps.seekWake
+		seeking := ps.seeking
+		ps.mu.Unlock()
+		// A seek that landed before this capture closed the previous wake
+		// channel; catching it here avoids missing it when the tick wins the
+		// select race against the close.
+		if seeking {
+			return "seek"
+		}
 		select {
 		case <-ps.ctx.Done():
 			return "stopped"
+		case <-wake:
+			return "seek"
 		case <-tick.C:
-			e.mu.Lock()
-			pts, state := e.pts, e.state
-			e.mu.Unlock()
 			if state == zat.StateStopped || state == zat.StateIdle {
 				return "eof"
 			}
@@ -553,9 +815,119 @@ func (s *Server) Stop(nodeID string) error {
 	return nil
 }
 
+// ErrNoSession is returned when a transport control targets a terminal with no
+// active push-playback session.
+var ErrNoSession = errors.New("当前没有正在播放的会话")
+
+// activePlay returns the endpoint and its live play state, or an error.
+func (s *Server) activePlay(nodeID string) (*endpoint, *playState, error) {
+	e := s.endpoint(nodeID)
+	if e == nil {
+		return nil, nil, ErrNotConnected
+	}
+	e.mu.Lock()
+	ps := e.play
+	e.mu.Unlock()
+	if ps == nil {
+		return nil, nil, ErrNoSession
+	}
+	return e, ps, nil
+}
+
+// Pause holds playback: the terminal keeps its ALSA handle but discards incoming
+// PCM, so the server gates its pump too. Idempotent.
+func (s *Server) Pause(nodeID string) error {
+	e, ps, err := s.activePlay(nodeID)
+	if err != nil {
+		return err
+	}
+	ps.mu.Lock()
+	if ps.paused {
+		ps.mu.Unlock()
+		return nil
+	}
+	ps.paused = true
+	ps.resumeCh = make(chan struct{})
+	ps.mu.Unlock()
+	if err := e.control(zat.TypePause, zat.Pause{SessionID: ps.sessionID}); err != nil {
+		return err
+	}
+	e.mu.Lock()
+	e.state = zat.StatePaused
+	e.mu.Unlock()
+	return nil
+}
+
+// Resume releases the pause gate and continues streaming from the held position.
+func (s *Server) Resume(nodeID string) error {
+	e, ps, err := s.activePlay(nodeID)
+	if err != nil {
+		return err
+	}
+	ps.mu.Lock()
+	if !ps.paused {
+		ps.mu.Unlock()
+		return nil
+	}
+	ps.mu.Unlock()
+	// PLAY must reach the terminal before the pump is released: audio that
+	// overtakes it is discarded while the terminal still considers itself paused.
+	if err := e.control(zat.TypePlay, zat.Play{SessionID: ps.sessionID}); err != nil {
+		return err
+	}
+	ps.mu.Lock()
+	if ps.paused {
+		ps.paused = false
+		close(ps.resumeCh)
+	}
+	ps.mu.Unlock()
+	e.mu.Lock()
+	e.state = zat.StatePlaying
+	e.mu.Unlock()
+	return nil
+}
+
+// Seek jumps to an absolute sample position (forward or backward). The pump
+// restarts decoding from the target with a fresh SETUP so stale terminal
+// buffers are dropped; history and auto-advance are unaffected.
+func (s *Server) Seek(nodeID string, samples uint64) error {
+	e, ps, err := s.activePlay(nodeID)
+	if err != nil {
+		return err
+	}
+	if ps.totalSamples > 0 && samples > ps.totalSamples {
+		samples = ps.totalSamples
+	}
+	ps.requestSeek(samples)
+	return e.control(zat.TypeSeek, zat.Seek{SessionID: ps.sessionID, PTS: samples})
+}
+
+// SetVolume sets the terminal's soft volume (0..100). Works with or without an
+// active session; the value is tracked server-side for the console.
+func (s *Server) SetVolume(nodeID string, volume int) error {
+	e := s.endpoint(nodeID)
+	if e == nil {
+		return ErrNotConnected
+	}
+	if volume < 0 {
+		volume = 0
+	}
+	if volume > 100 {
+		volume = 100
+	}
+	sid := ""
+	e.mu.Lock()
+	if e.play != nil {
+		sid = e.play.sessionID
+	}
+	e.volume = volume
+	e.mu.Unlock()
+	return e.control(zat.TypeVolume, zat.Volume{SessionID: sid, Volume: volume})
+}
+
 // Status reports the live playback state of a terminal.
 func (s *Server) Status(nodeID string) (PlayStatus, error) {
-	st := PlayStatus{NodeID: nodeID, State: string(zat.StateIdle), Devices: []string{}}
+	st := PlayStatus{NodeID: nodeID, State: string(zat.StateIdle), Devices: []string{}, Volume: 100}
 	if n, err := s.nodes.Get(nodeID); err == nil {
 		st.ConfiguredDevice = n.DacDevice
 	}
@@ -579,6 +951,7 @@ func (s *Server) Status(nodeID string) (PlayStatus, error) {
 	st.Channels = e.meta.Channels
 	st.ALSADevice = e.alsaDevice
 	st.PrefDevice = e.prefDevice
+	st.Volume = e.volume
 	if e.play != nil {
 		st.SessionID = e.play.sessionID
 		st.Playing = e.state == zat.StatePlaying

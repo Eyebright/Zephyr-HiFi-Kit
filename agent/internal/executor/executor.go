@@ -5,13 +5,18 @@
 package executor
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/bzip2"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
+	"path"
 	"path/filepath"
+	"strings"
 	"text/template"
 	"time"
 
@@ -33,11 +38,13 @@ type Units interface {
 	Stop(unit string) error
 	Enable(unit string) error
 	Disable(unit string) error
+	DaemonReload() error
 }
 
 // Packages installs/removes OS packages (implemented via dpkg/apt).
 type Packages interface {
 	Install(ctx context.Context, debPath string, deps []string) error
+	InstallDeps(ctx context.Context, deps []string) error
 	Remove(ctx context.Context, pkg string) error
 }
 
@@ -58,6 +65,7 @@ type Executor struct {
 	arch       string
 	dataDir    string
 	configRoot string // prefix for config paths ("" on a real terminal)
+	optRoot    string // prefix for /opt tarball installs ("" on a real terminal)
 }
 
 // New builds an Executor.
@@ -67,6 +75,16 @@ func New(src Source, units Units, pkg Packages, inv Inventory, arch, dataDir str
 
 // SetConfigRoot prefixes config file paths (used by tests to redirect /etc).
 func (e *Executor) SetConfigRoot(root string) { e.configRoot = root }
+
+// SetOptRoot prefixes /opt tarball install paths (used by tests).
+func (e *Executor) SetOptRoot(root string) { e.optRoot = root }
+
+func (e *Executor) optDir() string {
+	if e.optRoot != "" {
+		return e.optRoot
+	}
+	return "/opt"
+}
 
 // RenderConfig merges default field values with overrides and renders the
 // app's built-in configuration template.
@@ -176,8 +194,12 @@ func (e *Executor) Install(ctx context.Context, appID, version string, vars map[
 		return fmt.Errorf("resolve %s: %w", appID, err)
 	}
 
+	suffix := "deb"
+	if av.Format == "tar.bz2" {
+		suffix = "tar.bz2"
+	}
 	dest := filepath.Join(e.dataDir, "artifacts", appID, av.Version, av.Arch,
-		fmt.Sprintf("%s_%s_%s.deb", appID, av.Version, av.Arch))
+		fmt.Sprintf("%s_%s_%s.%s", appID, av.Version, av.Arch, suffix))
 	sum, err := e.src.Download(ctx, appID, av.Version, av.Arch, dest)
 	if err != nil {
 		return fmt.Errorf("download %s: %w", appID, err)
@@ -186,7 +208,11 @@ func (e *Executor) Install(ctx context.Context, appID, version string, vars map[
 		return fmt.Errorf("integrity check failed for %s %s: got %s want %s", appID, av.Version, sum, av.SHA256)
 	}
 
-	if err := e.pkg.Install(ctx, dest, depsFor(appID, av)); err != nil {
+	if av.Format == "tar.bz2" {
+		if err := e.installTarball(ctx, def, dest, depsFor(appID, av)); err != nil {
+			return fmt.Errorf("install %s: %w", appID, err)
+		}
+	} else if err := e.pkg.Install(ctx, dest, depsFor(appID, av)); err != nil {
 		return fmt.Errorf("install %s: %w", appID, err)
 	}
 
@@ -240,6 +266,104 @@ func mergeVars(def model.ServiceDef, vars map[string]string) map[string]string {
 	return merged
 }
 
+// installTarball extracts a vendor tar.bz2 (Roon Bridge) under /opt/<appID>,
+// installs OS dependencies and writes the systemd units the archive lacks.
+func (e *Executor) installTarball(ctx context.Context, def model.ServiceDef, archive string, deps []string) error {
+	if len(deps) > 0 {
+		if err := e.pkg.InstallDeps(ctx, deps); err != nil {
+			return err
+		}
+	}
+	installDir := filepath.Join(e.optDir(), def.AppID)
+	if err := os.MkdirAll(installDir, 0o755); err != nil {
+		return err
+	}
+	if err := extractTarBz2(archive, installDir); err != nil {
+		return fmt.Errorf("extract %s: %w", filepath.Base(archive), err)
+	}
+	if def.UnitTemplate == "" {
+		return nil
+	}
+	tmpl, err := template.New(def.AppID + "-unit").Parse(def.UnitTemplate)
+	if err != nil {
+		return err
+	}
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, map[string]string{"InstallDir": installDir}); err != nil {
+		return err
+	}
+	for _, u := range def.Units {
+		path := filepath.Join(e.configRoot, "etc", "systemd", "system", u)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
+			return err
+		}
+	}
+	return e.units.DaemonReload()
+}
+
+// extractTarBz2 unpacks a bzip2 tar archive into dir, stripping the single
+// top-level directory. Only dirs and regular files are accepted; links and
+// escaping paths are rejected so a vendor archive cannot write outside dir.
+func extractTarBz2(archive, dir string) error {
+	f, err := os.Open(archive)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	zr := bzip2.NewReader(f)
+	return extractTarStream(tar.NewReader(zr), dir)
+}
+
+func extractTarStream(tr *tar.Reader, dir string) error {
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		parts := strings.Split(filepath.ToSlash(hdr.Name), "/")
+		if len(parts) < 2 || parts[0] == "" {
+			continue // top-level dir entry itself
+		}
+		rel := path.Join(parts[1:]...)
+		if rel == "." {
+			continue
+		}
+		if rel == ".." || strings.HasPrefix(rel, "../") || path.IsAbs(rel) {
+			return fmt.Errorf("unsafe archive path %q", hdr.Name)
+		}
+		target := filepath.Join(dir, filepath.FromSlash(rel))
+		switch hdr.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(target, 0o755); err != nil {
+				return err
+			}
+		case tar.TypeReg:
+			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+				return err
+			}
+			out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, os.FileMode(hdr.Mode)&0o777)
+			if err != nil {
+				return err
+			}
+			if _, err := io.Copy(out, tr); err != nil {
+				out.Close()
+				return err
+			}
+			if err := out.Close(); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("unsupported archive entry type %d for %q", hdr.Typeflag, hdr.Name)
+		}
+	}
+}
+
 // Uninstall stops, disables and removes an application.
 func (e *Executor) Uninstall(ctx context.Context, appID string) error {
 	def, ok := model.Registry[appID]
@@ -249,6 +373,16 @@ func (e *Executor) Uninstall(ctx context.Context, appID string) error {
 	for _, u := range def.Units {
 		_ = e.units.Stop(u)
 		_ = e.units.Disable(u)
+	}
+	if def.UnitTemplate != "" {
+		for _, u := range def.Units {
+			_ = os.Remove(filepath.Join(e.configRoot, "etc", "systemd", "system", u))
+		}
+		_ = e.units.DaemonReload()
+		if err := os.RemoveAll(filepath.Join(e.optDir(), appID)); err != nil {
+			return fmt.Errorf("remove %s: %w", appID, err)
+		}
+		return e.inv.RemoveApp(appID)
 	}
 	if err := e.pkg.Remove(ctx, appID); err != nil {
 		return fmt.Errorf("remove %s: %w", appID, err)

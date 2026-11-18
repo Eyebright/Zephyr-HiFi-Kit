@@ -14,13 +14,12 @@ import (
 	"hifihub/server/internal/bom"
 	"hifihub/server/internal/catalog"
 	"hifihub/server/internal/domain"
-	"hifihub/server/internal/license"
 	"hifihub/server/internal/node"
 	"hifihub/server/internal/store"
 )
 
-// ErrNodeUnauthorized rejects jobs against nodes without a license seat.
-var ErrNodeUnauthorized = errors.New("终端未授权：请先在许可证席位内授权该终端")
+// ErrNodeUnauthorized rejects jobs against nodes without an authorized seat.
+var ErrNodeUnauthorized = errors.New("终端未授权：请先在控制台授权该终端")
 
 // Service orchestrates jobs.
 type Service struct {
@@ -28,14 +27,13 @@ type Service struct {
 	nodes       *node.Service
 	boms        *bom.Service
 	cat         *catalog.Service
-	lic         *license.Service
 	playGate    bool
 	idleTimeout time.Duration
 }
 
 // New creates a task service.
-func New(s *store.Store, n *node.Service, b *bom.Service, c *catalog.Service, lic *license.Service, playGate bool, idleTimeout time.Duration) *Service {
-	return &Service{db: s.DB, nodes: n, boms: b, cat: c, lic: lic, playGate: playGate, idleTimeout: idleTimeout}
+func New(s *store.Store, n *node.Service, b *bom.Service, c *catalog.Service, playGate bool, idleTimeout time.Duration) *Service {
+	return &Service{db: s.DB, nodes: n, boms: b, cat: c, playGate: playGate, idleTimeout: idleTimeout}
 }
 
 // executablePhases are the ordered steps agent and server drive (doc 7.2).
@@ -51,13 +49,8 @@ func (s *Service) CreateJob(nodeID, bomID string, bomVersion int, kind string) (
 	if err != nil {
 		return j, fmt.Errorf("node: %w", err)
 	}
-	// License gate: an activated license and an authorized node (holding a
-	// seat) are mandatory before any job can be queued.
-	if s.lic != nil {
-		if _, err := s.lic.RequireActive(); err != nil {
-			return j, err
-		}
-	}
+	// Seat gate: the node must hold an authorized seat (built-in grant or
+	// licensed) before any job can be queued.
 	if !n.Authorized {
 		return j, ErrNodeUnauthorized
 	}
@@ -248,7 +241,7 @@ func (s *Service) resolveDeps(j *domain.Job) ([]string, error) {
 	}
 	set := map[string]bool{}
 	for _, ba := range b.Apps {
-		v, err := s.cat.GetVersion(ba.AppID, ba.Version, n.Arch)
+		v, err := s.cat.ResolveVersion(ba.AppID, ba.Version, n.Arch)
 		if err != nil {
 			return nil, fmt.Errorf("resolve %s: %w", ba.AppID, err)
 		}

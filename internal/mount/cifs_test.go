@@ -60,6 +60,28 @@ func TestSpecValidateRejects(t *testing.T) {
 	}
 }
 
+func TestValidateTargetForms(t *testing.T) {
+	ok := []string{"/mnt/zephyr/x", "C:/mnt/x", `C:\mnt\x`, "//nas/music", `\\nas\music`}
+	for _, target := range ok {
+		s := validSpec()
+		s.Target = target
+		if err := s.Validate(); err != nil {
+			t.Fatalf("target %q rejected: %v", target, err)
+		}
+	}
+	bad := []string{"mnt/x", "C:mnt/x", "", "/mnt/x\ny", `\\nas\music` + "\x00"}
+	for _, target := range bad {
+		s := validSpec()
+		s.Target = target
+		if err := s.Validate(); err == nil {
+			t.Fatalf("target %q accepted", target)
+		}
+	}
+	if !IsUNC("//nas/music") || !IsUNC(`\\nas\music`) || IsUNC("/mnt/x") || IsUNC("C:/x") {
+		t.Fatal("IsUNC misclassified")
+	}
+}
+
 func TestUNC(t *testing.T) {
 	if got := validSpec().UNC(); got != "//nas.local/music" {
 		t.Fatalf("unc = %q", got)

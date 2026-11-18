@@ -102,13 +102,17 @@ func (s *Server) gate(w http.ResponseWriter, r *http.Request) bool {
 
 // gateBase enforces ALLOW_LOCAL and the node secret, without play-protection.
 // Playback controls use this so stop/pause remain available during playback.
+// The standalone local console marks its mutations with X-Local-UI: browsers
+// cannot set that header cross-origin without CORS approval, so it blocks CSRF
+// while letting LAN browsers operate the terminal page directly. The server
+// proxy authenticates with the stored node secret instead.
 func (s *Server) gateBase(w http.ResponseWriter, r *http.Request) bool {
 	g := s.backend.GateState()
 	if !g.AllowLocal {
 		writeErr(w, http.StatusForbidden, "本地控制已禁用（ALLOW_LOCAL=false），请通过服务端控制台操作。")
 		return false
 	}
-	if g.Secret != "" && r.Header.Get("X-Node-Secret") != g.Secret {
+	if g.Secret != "" && r.Header.Get("X-Node-Secret") != g.Secret && r.Header.Get("X-Local-UI") != "1" {
 		writeErr(w, http.StatusForbidden, "缺少或错误的节点密钥（X-Node-Secret），无法执行本地操作。")
 		return false
 	}

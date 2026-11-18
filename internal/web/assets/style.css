@@ -555,6 +555,105 @@ select.inp option { background: var(--card); color: var(--text); }
 .q-sub { font-size: 11px; }
 .q-acts { flex: none; display: flex; gap: 4px; }
 
+.mb8 { margin-bottom: 8px; }
+
+/* Album wall (overview & library) */
+.album-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.album-grid.sm { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; }
+.album-card {
+  border: 1px solid var(--soft); border-radius: var(--r-md); background: var(--surface);
+  padding: 10px; cursor: pointer; transition: border-color .15s, transform .15s;
+}
+.album-card:hover { border-color: rgba(246,168,33,.5); transform: translateY(-2px); }
+.al-cover {
+  position: relative; aspect-ratio: 1; border-radius: var(--r-sm); margin-bottom: 8px;
+  display: flex; align-items: center; justify-content: center; color: var(--violet);
+  background: linear-gradient(135deg, rgba(155,140,255,.16), rgba(52,211,235,.10) 60%, rgba(246,168,33,.12));
+  border: 1px solid var(--soft);
+}
+.album-grid.sm .al-cover { margin-bottom: 6px; }
+.al-cnt {
+  position: absolute; right: 6px; bottom: 6px; font-size: 10px; color: var(--muted);
+  background: rgba(8,10,14,.72); border-radius: 6px; padding: 1px 6px;
+}
+.al-name { font-size: 13px; font-weight: 600; }
+.album-grid.sm .al-name { font-size: 12px; }
+.al-artist { font-size: 11px; color: var(--muted); }
+.al-meta { font-size: 11px; color: var(--faint); margin-top: 2px; }
+
+/* Compact system status strip (overview bottom) */
+.sys-strip { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; }
+.sys-item { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.sys-item .ic { color: var(--faint); }
+.sys-item b { color: var(--text); font-weight: 600; }
+.sys-item.link { background: none; border: 0; padding: 0; cursor: pointer; font-family: var(--sans); }
+.sys-item.link:hover { color: var(--gold); }
+.sys-item.link:hover .ic { color: var(--gold); }
+
+/* Album covers: embedded art when present, album-hash gradient placeholder otherwise */
+.cover {
+  flex: none; display: flex; align-items: center; justify-content: center;
+  border-radius: var(--r-sm); border: 1px solid var(--soft);
+  color: hsl(var(--h) 65% 72%);
+  background: linear-gradient(135deg, hsl(var(--h) 55% 24% / .6), hsl(calc(var(--h) + 45) 50% 15% / .55));
+}
+img.cover { object-fit: cover; background: none; }
+.cover.thumb { width: 52px; height: 52px; }
+.cover.big { width: 180px; height: 180px; border-radius: var(--r-md); }
+.al-cover img.al-img {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; border-radius: inherit;
+}
+
+/* Compact player card (overview / library now-playing) */
+.now-row.pc { gap: 12px; padding: 10px 12px; }
+.pc-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.pc-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.pc-title { font-size: 14px; font-weight: 600; min-width: 0; }
+.pc-sub { font-size: 12px; color: var(--muted); }
+.pc-prog { display: flex; align-items: center; gap: 8px; }
+.pc-bar { flex: 1; height: 4px; border-radius: 2px; background: var(--soft); overflow: hidden; }
+.pc-fill { height: 100%; border-radius: 2px; background: linear-gradient(90deg, var(--cyan), var(--blue)); transition: width .5s linear; }
+.pc-time { flex: none; font-size: 11px; color: var(--faint); }
+.pc-node { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--faint); min-width: 0; }
+.pc-acts { flex: none; display: flex; align-items: center; gap: 4px; }
+.btn.pc-play { width: 34px; height: 34px; padding: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; }
+
+/* Full player console */
+.ply-top { display: flex; gap: 18px; }
+.ply-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.ply-title { font-size: 20px; font-weight: 700; }
+.ply-artist { font-size: 14px; color: var(--muted); }
+.ply-album { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--faint); min-width: 0; }
+.ply-fmt { font-size: 12px; color: var(--muted); }
+.ply-sel-row { display: flex; gap: 10px; margin-top: 6px; }
+.ply-sel-row .field { flex: 1; min-width: 0; margin: 0; }
+.ply-seek { display: flex; align-items: center; gap: 10px; margin-top: 16px; }
+.ply-seek input[type="range"] { flex: 1; accent-color: var(--amber); cursor: pointer; }
+.ply-seek input[type="range"]:disabled { cursor: default; opacity: .45; }
+.ply-time { flex: none; min-width: 42px; text-align: center; font-size: 12px; color: var(--muted); }
+.ply-transport { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+.btn.ply-big { width: 46px; height: 46px; padding: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; }
+.ply-vol { display: flex; align-items: center; gap: 8px; margin-left: auto; min-width: 190px; color: var(--muted); }
+.ply-vol input[type="range"] { flex: 1; accent-color: var(--cyan); cursor: pointer; }
+.ply-vol input[type="range"]:disabled { cursor: default; opacity: .45; }
+.ply-load { max-width: 170px; padding: 4px 8px; font-size: 12px; }
+.ply-add { border: 1px solid var(--soft); border-radius: var(--r-md); background: var(--surface); padding: 10px; margin-bottom: 10px; }
+.ply-add-list { max-height: 230px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.ply-add-row { display: flex; align-items: center; gap: 9px; padding: 5px 8px; border: 1px solid var(--soft); border-radius: var(--r-sm); cursor: pointer; }
+.ply-add-row:hover { border-color: var(--line); }
+.ply-add-row.sel { border-color: rgba(246,168,33,.5); background: rgba(246,168,33,.07); }
+.ply-add-row input { accent-color: var(--amber); flex: none; }
+.acts { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+@media (max-width: 640px) {
+  .ply-top { flex-direction: column; align-items: center; text-align: center; }
+  .cover.big { width: 140px; height: 140px; }
+  .ply-album { justify-content: center; }
+  .ply-sel-row { flex-direction: column; width: 100%; }
+  .pc-acts { flex-wrap: wrap; justify-content: flex-end; }
+  .ply-vol { margin-left: 0; width: 100%; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }

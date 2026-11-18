@@ -133,6 +133,14 @@ func (p *aaudioPlayer) Drain() error {
 	return nil
 }
 
+func (p *aaudioPlayer) Drop() error {
+	if p.stream == nil {
+		return nil
+	}
+	C.AAudioStream_requestStop(p.stream)
+	return nil
+}
+
 func (p *aaudioPlayer) Close() error {
 	if p.stream == nil {
 		return nil

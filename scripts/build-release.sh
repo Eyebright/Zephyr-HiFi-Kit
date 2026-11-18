@@ -97,7 +97,7 @@ build_agent() {
   bin="$ROOT/agent/bin/hifihub-agent-linux-$arch"
   mkdir -p "$ROOT/agent/bin"
   ( cd "$ROOT/agent" && GOOS=linux GOARCH="$goarch" GOARM="$goarm" \
-      go build -trimpath -ldflags "-s -w" -o "$bin" ./cmd/hifihub-agent )
+      go build -trimpath -ldflags "-s -w -X hifihub/agent/internal/config.BuildVersion=$VERSION" -o "$bin" ./cmd/hifihub-agent )
   ( cd "$ROOT/agent" && go run ./cmd/debpack \
       -bin "$bin" -arch "$arch" -version "$VERSION" \
       -pkgdir packaging -out "$OUT/agent/hifihub-agent_${VERSION}_${arch}.deb" )

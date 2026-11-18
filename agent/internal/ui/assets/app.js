@@ -20,9 +20,13 @@ function esc(s) {
 
 async function api(path, method = "GET", body) {
   const opt = { method, headers: {} };
-  // Mutations carry the node secret when known (standalone loopback). Behind the
-  // server reverse proxy the secret is empty here and the proxy injects it.
-  if (method !== "GET" && nodeSecret) opt.headers["X-Node-Secret"] = nodeSecret;
+  // Mutations carry the local-UI marker (CSRF-safe: browsers cannot set it
+  // cross-origin). The loopback-bootstrapped secret is added when known; behind
+  // the server reverse proxy the proxy injects X-Node-Secret instead.
+  if (method !== "GET") {
+    opt.headers["X-Local-UI"] = "1";
+    if (nodeSecret) opt.headers["X-Node-Secret"] = nodeSecret;
+  }
   if (body !== undefined) {
     opt.headers["Content-Type"] = "application/json";
     opt.body = JSON.stringify(body);

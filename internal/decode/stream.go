@@ -22,24 +22,42 @@ type FrameSink func(zat.Frame) error
 // This is the server half of the vertical slice: file -> Decoder -> PCM -> ZAT.
 // It is pure Go and transport-agnostic (sink decides where frames go).
 func StreamFrames(sink FrameSink, d Decoder, trackID string, seq uint32) (uint64, error) {
+	return StreamFramesFrom(sink, d, trackID, seq, 0)
+}
+
+// StreamFramesFrom is StreamFrames starting at sample startSample: decoded
+// samples below it are discarded and the first emitted frame carries
+// PTS=startSample, so a seek restart keeps the absolute sample clock. It
+// returns the ending sample position.
+func StreamFramesFrom(sink FrameSink, d Decoder, trackID string, seq uint32, startSample uint64) (uint64, error) {
 	format := d.Format()
 	bpf := format.BytesPerFrame()
 	if bpf <= 0 {
 		return 0, fmt.Errorf("stream: invalid PCM format %+v", format)
 	}
 	buf := make([]byte, zat.MaxAudioPCM)
-	var pts uint64
+	var pos uint64
+	pts := startSample
 	for {
 		n, err := d.Read(buf)
 		if n > 0 {
 			usable := n - n%bpf
 			if usable > 0 {
-				payload := zat.AudioPayload{PTS: pts, TrackID: trackID, PCM: buf[:usable]}
-				if serr := sink(zat.AudioFrame(seq, payload)); serr != nil {
-					return pts, serr
+				frames := uint64(usable / bpf)
+				chunkStart := pos
+				pos += frames
+				if pos > startSample {
+					off := 0
+					if chunkStart < startSample {
+						off = int(startSample-chunkStart) * bpf
+					}
+					payload := zat.AudioPayload{PTS: pts, TrackID: trackID, PCM: buf[off:usable]}
+					if serr := sink(zat.AudioFrame(seq, payload)); serr != nil {
+						return pts, serr
+					}
+					seq++
+					pts += uint64((usable - off) / bpf)
 				}
-				seq++
-				pts += uint64(usable / bpf)
 			}
 		}
 		if err == io.EOF {

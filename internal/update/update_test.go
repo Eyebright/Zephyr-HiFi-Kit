@@ -50,7 +50,7 @@ func newHarness(t *testing.T, feed Feed, opt Options) *harness {
 	boms := bom.New(st, cat)
 	lic := license.New(st, ver)
 	cmds := commands.New(st)
-	tasks := task.New(st, nodes, boms, cat, lic, false, time.Minute)
+	tasks := task.New(st, nodes, boms, cat, false, time.Minute)
 	sv := New(st, nodes, cmds, tasks, lic, ver, feed, opt)
 	return &harness{sv: sv, st: st, nodes: nodes, cmds: cmds}
 }
@@ -174,7 +174,7 @@ func TestNewRestoresRestart(t *testing.T) {
 	nodes := node.New(st, 90*time.Second)
 	cat := catalog.New(st)
 	lic := license.New(st, ver)
-	tasks := task.New(st, nodes, bom.New(st, cat), cat, lic, false, time.Minute)
+	tasks := task.New(st, nodes, bom.New(st, cat), cat, false, time.Minute)
 	sv := New(st, nodes, commands.New(st), tasks, lic, ver, stubFeed{}, Options{Current: "0.4.0"})
 	got := sv.ServerStatus()
 	if got.State != "idle" || got.RestartReq || got.Detail == "" {

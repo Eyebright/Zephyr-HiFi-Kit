@@ -66,7 +66,7 @@ build_target() {
 
   echo "== $arch: audio agent (CC=$cc, alsa $(pkg-config --modversion alsa)) =="
   bin="$OUT/hifihub-agent-linux-$arch"
-  ( cd "$ROOT/agent" && go build -trimpath -ldflags "-s -w" -o "$bin" ./cmd/hifihub-agent )
+  ( cd "$ROOT/agent" && go build -trimpath -ldflags "-s -w -X hifihub/agent/internal/config.BuildVersion=$VERSION" -o "$bin" ./cmd/hifihub-agent )
   "$DEBPACK" -audio -bin "$bin" -arch "$arch" -version "$VERSION" \
     -pkgdir "$ROOT/agent/packaging" -out "$OUT/hifihub-agent_${VERSION}_${arch}.deb"
 
@@ -74,7 +74,7 @@ build_target() {
   if [ "$arch" = arm64 ]; then
     if pkg-config --exists flac; then
       echo "== arm64: audio server (flac $(pkg-config --modversion flac)) =="
-      ( cd "$ROOT" && go build -trimpath -ldflags "-s -w" \
+      ( cd "$ROOT" && go build -trimpath -ldflags "-s -w -X hifihub/server/internal/metrics.Version=$VERSION" \
           -o "$OUT/hifihub-server-linux-arm64" ./cmd/hifihub-server )
     else
       echo "note: libflac-dev:arm64 absent; skipping arm64 audio server" >&2

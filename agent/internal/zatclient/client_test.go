@@ -51,6 +51,7 @@ func (p *testPlayer) Write(pcm []byte) error {
 	return nil
 }
 func (p *testPlayer) Drain() error { p.mu.Lock(); p.drained = true; p.mu.Unlock(); return nil }
+func (p *testPlayer) Drop() error  { p.mu.Lock(); p.drained = true; p.mu.Unlock(); return nil }
 func (p *testPlayer) Close() error { p.mu.Lock(); p.closed = true; p.mu.Unlock(); return nil }
 func (p *testPlayer) snapshot() ([]byte, int, bool, bool) {
 	p.mu.Lock()
@@ -484,6 +485,79 @@ func TestPauseDiscardsAudioThenResume(t *testing.T) {
 	}
 	if _, writes, _, _ := fp.snapshot(); writes == 0 {
 		t.Fatal("no audio rendered after resume")
+	}
+	src.send(zat.TypeStop, zat.Stop{SessionID: "s-1"})
+	src.close()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("client hung")
+	}
+}
+
+// gatePlayer blocks the first Write until released, emulating the ALSA sample
+// clock so a pause can land mid-render (the real-device resume scenario).
+type gatePlayer struct {
+	*testPlayer
+	gate chan struct{}
+}
+
+func (g *gatePlayer) Write(pcm []byte) error {
+	<-g.gate
+	return g.testPlayer.Write(pcm)
+}
+
+// TestPauseHoldsQueuedAudioThenResume pauses while a render is blocked and more
+// chunks are queued: the held chunks must survive the pause and render on
+// resume (a nil-channel pause gate without a resume wake hangs here).
+func TestPauseHoldsQueuedAudioThenResume(t *testing.T) {
+	fp := &testPlayer{}
+	gp := &gatePlayer{testPlayer: fp, gate: make(chan struct{})}
+	src := newFakeSource(t)
+	defer src.close()
+	c := New(src.addr(), "test/0.1", func() (string, string) { return "n-1", "secret-1" },
+		func() []string { return []string{"null"} })
+	c.WithPlayerFactory(func() player.Player { return gp })
+	done := runClient(c)
+	src.accept()
+	src.read()
+	src.send(zat.TypeHelloAck, zat.HelloAck{PrebufferMS: 200})
+	src.send(zat.TypeSetup, zat.Setup{SessionID: "s-1", TrackID: "trk-1", Format: zat.S16LE, Rate: 44100, Channels: 2, ALSADevice: "null"})
+	src.read()
+	src.send(zat.TypePlay, zat.Play{SessionID: "s-1"})
+	waitPlaying(t, c, true)
+
+	c1 := rampPCM(500, 2, 2)
+	c2 := rampPCM(500, 2, 2)
+	c3 := rampPCM(500, 2, 2)
+	src.sendAudio(0, c1)
+	time.Sleep(80 * time.Millisecond) // renderLoop is now blocked inside Write
+	src.sendAudio(500, c2)
+	src.sendAudio(1000, c3)
+	src.send(zat.TypePause, zat.Pause{SessionID: "s-1"})
+	waitPlaying(t, c, false)
+	close(gp.gate) // finish the in-flight write; loop must now hold c2/c3
+	time.Sleep(150 * time.Millisecond)
+	if _, writes, _, _ := fp.snapshot(); writes != 1 {
+		t.Fatalf("held chunks rendered while paused: writes=%d want 1", writes)
+	}
+
+	src.send(zat.TypePlay, zat.Play{SessionID: "s-1"})
+	waitPlaying(t, c, true)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, writes, _, _ := fp.snapshot(); writes >= 3 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	pcm, writes, _, _ := fp.snapshot()
+	if writes != 3 {
+		t.Fatalf("resume did not render held chunks: writes=%d want 3", writes)
+	}
+	want := append(append(append([]byte{}, c1...), c2...), c3...)
+	if !bytes.Equal(pcm, want) {
+		t.Fatal("resume PCM not continuous with pre-pause audio")
 	}
 	src.send(zat.TypeStop, zat.Stop{SessionID: "s-1"})
 	src.close()

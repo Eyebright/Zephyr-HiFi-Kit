@@ -139,11 +139,20 @@ func validateSegment(v, label string) error {
 	return nil
 }
 
+// IsUNC reports whether target is a UNC share path (//host/share or \\host\share)
+// rather than a local directory. UNC targets are read directly over SMB and need
+// no kernel mount point directory.
+func IsUNC(target string) bool {
+	return strings.HasPrefix(target, "//") || strings.HasPrefix(target, `\\`)
+}
+
 func validateTarget(t string) error {
 	if t == "" {
 		return errors.New("挂载点不能为空")
 	}
-	if !strings.HasPrefix(t, "/") {
+	drive := len(t) >= 3 && t[1] == ':' && (t[2] == '/' || t[2] == '\\') &&
+		((t[0] >= 'a' && t[0] <= 'z') || (t[0] >= 'A' && t[0] <= 'Z'))
+	if !strings.HasPrefix(t, "/") && !strings.HasPrefix(t, `\\`) && !drive {
 		return errors.New("挂载点必须是绝对路径")
 	}
 	if strings.ContainsAny(t, "\n\r\x00") {

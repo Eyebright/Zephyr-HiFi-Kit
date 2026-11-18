@@ -24,6 +24,11 @@ import (
 // license but none is present.
 var ErrInactive = errors.New("许可证未激活或已过期，请先激活许可证")
 
+// BuiltinSeats is the grant bundled with every server: up to three terminals
+// can be authorized without any license. Terminals themselves never need a
+// certificate; a license only extends the server's seat limit beyond this.
+const BuiltinSeats = 3
+
 // Service manages the license row and activation.
 type Service struct {
 	db       *sql.DB
@@ -52,7 +57,7 @@ func (s *Service) Get() (domain.License, error) {
 	err := s.db.QueryRow(`SELECT key,account,seats,expires_at,activated_at FROM license WHERE id=1`).
 		Scan(&key, &account, &seats, &exp, &act)
 	if errors.Is(err, sql.ErrNoRows) {
-		return domain.License{Status: domain.LicenseNone}, nil
+		return domain.License{Status: domain.LicenseNone, BuiltinSeats: BuiltinSeats, EffectiveSeats: BuiltinSeats}, nil
 	}
 	if err != nil {
 		return l, err
@@ -63,7 +68,22 @@ func (s *Service) Get() (domain.License, error) {
 	} else {
 		l.Status = domain.LicenseActivated
 	}
+	l.BuiltinSeats = BuiltinSeats
+	l.EffectiveSeats = BuiltinSeats
+	if l.Status == domain.LicenseActivated && l.Seats > l.EffectiveSeats {
+		l.EffectiveSeats = l.Seats
+	}
 	return l, nil
+}
+
+// SeatLimit returns the effective seat limit and whether an activated license
+// provides it. The built-in grant is a floor: a license only raises the limit.
+func (s *Service) SeatLimit() (int, bool, error) {
+	l, err := s.Get()
+	if err != nil {
+		return 0, false, err
+	}
+	return l.EffectiveSeats, l.Status == domain.LicenseActivated, nil
 }
 
 // RequireActive returns the license only when activated and unexpired.

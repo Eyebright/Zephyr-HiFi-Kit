@@ -57,6 +57,7 @@ type session struct {
 	pts         uint64
 	volume      int
 	paused      bool
+	resumeCh    chan struct{} // closed on resume; replaced on each pause
 	skipUntil   uint64
 	queuedBytes int64
 	bytesPerMS  int
@@ -143,10 +144,23 @@ func (s *session) publish() {
 
 // renderLoop owns the ALSA player: it opens on SETUP, writes PCM (blocking at the
 // sample clock, which backpressures the source), and drains/closes on STOP.
+// While paused the PCM channel is disabled (nil), holding queued chunks instead
+// of rendering them, so resume continues seamlessly; control frames still flow.
 func (s *session) renderLoop() {
 	defer close(s.renderDone)
 	var p player.Player
 	for {
+		s.mu.Lock()
+		paused := s.paused
+		var resumeCh chan struct{}
+		if paused {
+			resumeCh = s.resumeCh
+		}
+		s.mu.Unlock()
+		var pcmCh chan audioChunk
+		if !paused {
+			pcmCh = s.pcmCh
+		}
 		select {
 		case <-s.stopRender:
 			if p != nil {
@@ -154,13 +168,28 @@ func (s *session) renderLoop() {
 				_ = p.Close()
 			}
 			return
+		case <-resumeCh:
+			// Resumed: re-loop so the PCM channel is re-enabled.
 		case cmd := <-s.ctrlCh:
 			switch cmd.kind {
 			case cmdSetup:
 				if p != nil {
-					_ = p.Drain()
+					// Drop, not Drain: a re-SETUP (seek or track change) must cut
+					// the old buffer immediately instead of playing out its tail.
+					_ = p.Drop()
 					_ = p.Close()
 					p = nil
+				}
+				// Discard stale chunks from the previous session; the source
+				// only sends new audio after the SETUP_ACK, so nothing new is
+				// lost here.
+				for {
+					select {
+					case <-s.pcmCh:
+						continue
+					default:
+					}
+					break
 				}
 				np := s.c.newPlayer()
 				err := np.Open(cmd.setup.Format, cmd.setup.Rate, cmd.setup.Channels, cmd.device)
@@ -181,7 +210,7 @@ func (s *session) renderLoop() {
 				s.mu.Unlock()
 				cmd.ack <- nil
 			}
-		case chunk := <-s.pcmCh:
+		case chunk := <-pcmCh:
 			if p == nil {
 				s.addQueued(-int64(len(chunk.pcm)))
 				continue
@@ -232,15 +261,20 @@ func (s *session) readLoop(ctx context.Context, prebufferMS int) error {
 			_ = json.Unmarshal(fr.Payload, &pl)
 			s.mu.Lock()
 			s.state = zat.StatePlaying
+			if s.paused {
+				close(s.resumeCh)
+			}
 			s.paused = false
 			if pl.StartPTS > 0 {
 				s.skipUntil = pl.StartPTS
+				s.pts = pl.StartPTS
 			}
 			s.mu.Unlock()
 			s.publish()
 		case zat.TypePause:
 			s.mu.Lock()
 			s.paused = true
+			s.resumeCh = make(chan struct{})
 			s.state = zat.StatePaused
 			s.mu.Unlock()
 			s.publish()
@@ -412,8 +446,10 @@ func (s *session) togglePause() bool {
 	s.mu.Lock()
 	if s.state == zat.StatePlaying {
 		s.paused = true
+		s.resumeCh = make(chan struct{})
 		s.state = zat.StatePaused
 	} else if s.state == zat.StatePaused {
+		close(s.resumeCh)
 		s.paused = false
 		s.state = zat.StatePlaying
 	}

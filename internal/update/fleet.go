@@ -58,7 +58,7 @@ func (s *Service) fleetTick(ctx context.Context, dryRun, force bool) FleetReport
 			row.Detail = "终端离线，回连后自动继续"
 		case !n.Authorized:
 			row.State = "unsupported"
-			row.Detail = "终端未授权，先占用许可证席位"
+			row.Detail = "终端未授权，先在控制台授权该终端"
 		case n.AgentVersion == target:
 			row.State = "converged"
 			row.Detail = ""

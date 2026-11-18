@@ -102,6 +102,16 @@ func (p *alsaPlayer) Drain() error {
 	return nil
 }
 
+func (p *alsaPlayer) Drop() error {
+	if p.handle == nil {
+		return nil
+	}
+	if rc := C.snd_pcm_drop(p.handle); rc < 0 {
+		return fmt.Errorf("player: snd_pcm_drop: %s", alsaErr(rc))
+	}
+	return nil
+}
+
 func (p *alsaPlayer) Close() error {
 	if p.handle == nil {
 		return nil

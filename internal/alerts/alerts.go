@@ -162,7 +162,7 @@ func (s *Service) Scan() (int, error) {
 	switch lic.Status {
 	case domain.LicenseExpired:
 		if err := s.upsertOpen(KindLicenseExpired, "", domain.SeverityCritical,
-			"许可证已过期，请及时续期", now); err != nil {
+			fmt.Sprintf("许可证已过期，已回退内置授权（%d 台终端），请及时续期", license.BuiltinSeats), now); err != nil {
 			return count, err
 		}
 		count++
@@ -178,17 +178,24 @@ func (s *Service) Scan() (int, error) {
 			}
 			count++
 		}
-		used, err := s.nodes.AuthorizedCount()
-		if err != nil {
+	}
+	seats, licensed, err := s.lic.SeatLimit()
+	if err != nil {
+		return count, err
+	}
+	used, err := s.nodes.AuthorizedCount()
+	if err != nil {
+		return count, err
+	}
+	if used >= seats {
+		msg := fmt.Sprintf("内置授权席位已满（%d/%d），激活许可证可授权更多终端", used, seats)
+		if licensed {
+			msg = fmt.Sprintf("许可证席位已满（%d/%d），新终端将无法授权", used, seats)
+		}
+		if err := s.upsertOpen(KindSeatsFull, "", domain.SeverityWarning, msg, now); err != nil {
 			return count, err
 		}
-		if used >= lic.Seats {
-			if err := s.upsertOpen(KindSeatsFull, "", domain.SeverityWarning,
-				fmt.Sprintf("许可证席位已满（%d/%d），新终端将无法授权", used, lic.Seats), now); err != nil {
-				return count, err
-			}
-			count++
-		}
+		count++
 	}
 	return count, nil
 }

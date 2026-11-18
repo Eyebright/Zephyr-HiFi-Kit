@@ -16,6 +16,7 @@ import (
 type fakeSource struct {
 	ver        serverclient.AppVersion
 	payload    string
+	bin        []byte
 	downloaded []string
 }
 
@@ -30,10 +31,14 @@ func (f *fakeSource) Download(_ context.Context, app, ver, arch, dest string) (s
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return "", err
 	}
-	if err := os.WriteFile(dest, []byte(f.payload), 0o644); err != nil {
+	body := []byte(f.payload)
+	if f.bin != nil {
+		body = f.bin
+	}
+	if err := os.WriteFile(dest, body, 0o644); err != nil {
 		return "", err
 	}
-	sum := sha256.Sum256([]byte(f.payload))
+	sum := sha256.Sum256(body)
 	return hex.EncodeToString(sum[:]), nil
 }
 
@@ -44,6 +49,7 @@ func (f *fakeUnits) Start(u string) error   { f.rec("start", u); return nil }
 func (f *fakeUnits) Stop(u string) error    { f.rec("stop", u); return nil }
 func (f *fakeUnits) Enable(u string) error  { f.rec("enable", u); return nil }
 func (f *fakeUnits) Disable(u string) error { f.rec("disable", u); return nil }
+func (f *fakeUnits) DaemonReload() error    { f.calls = append(f.calls, "daemon-reload"); return nil }
 
 type fakePackages struct {
 	installed []string
@@ -53,6 +59,10 @@ type fakePackages struct {
 
 func (f *fakePackages) Install(_ context.Context, deb string, deps []string) error {
 	f.installed = append(f.installed, deb)
+	f.deps = deps
+	return nil
+}
+func (f *fakePackages) InstallDeps(_ context.Context, deps []string) error {
 	f.deps = deps
 	return nil
 }

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -21,7 +22,11 @@ func TestMountCRUDAndRedaction(t *testing.T) {
 	if strings.Contains(string(b), "s3cr3t") || strings.Contains(string(b), "password") {
 		t.Fatalf("password leaked: %s", b)
 	}
-	if !strings.HasPrefix(m["target"].(string), "/mnt/zephyr/") {
+	if runtime.GOOS == "windows" {
+		if m["target"].(string) != "//nas.local/music" {
+			t.Fatalf("target: %v", m["target"])
+		}
+	} else if !strings.HasPrefix(m["target"].(string), "/mnt/zephyr/") {
 		t.Fatalf("target: %v", m["target"])
 	}
 
@@ -98,5 +103,13 @@ func TestPlayRequiresTrackID(t *testing.T) {
 	s, _ := doJSON(t, "POST", base+"/nodes/"+nodeID+"/play", map[string]any{})
 	if s != 400 {
 		t.Fatalf("expected 400 for missing track_id, got %d", s)
+	}
+}
+
+func TestCoverNotFound(t *testing.T) {
+	base := setup(t, "dev")
+	s, _ := doJSON(t, "GET", base+"/covers/0000000000000000000000000000000000000000000000000000000000000000", nil)
+	if s != 404 {
+		t.Fatalf("expected 404 for unknown cover, got %d", s)
 	}
 }

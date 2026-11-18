@@ -15,6 +15,8 @@ type Player interface {
 	Write(pcm []byte) error
 	// Drain flushes pending samples to the device.
 	Drain() error
+	// Drop discards pending samples immediately (seek / track change).
+	Drop() error
 	// Close releases the device.
 	Close() error
 }

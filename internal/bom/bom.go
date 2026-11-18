@@ -214,7 +214,7 @@ func (s *Service) Validate(b domain.Bom, arch string) Report {
 		}
 		var v domain.AppVersion
 		if arch != "" {
-			v, err = s.cat.GetVersion(ba.AppID, ba.Version, arch)
+			v, err = s.cat.ResolveVersion(ba.AppID, ba.Version, arch)
 			if err != nil {
 				r.Errors = append(r.Errors, fmt.Sprintf("NFR-R7: artifact %s %s (%s) missing from repo", ba.AppID, ba.Version, arch))
 				continue
@@ -226,7 +226,9 @@ func (s *Service) Validate(b domain.Bom, arch string) Report {
 				continue
 			}
 		}
-		if !v.Signed {
+		// format=apt installs from the distro repository, whose own signature
+		// chain replaces the artifact signature (NFR-S2 does not apply).
+		if !v.Signed && v.Format != "apt" {
 			r.Errors = append(r.Errors, fmt.Sprintf("NFR-S2: %s %s is unsigned", ba.AppID, ba.Version))
 		}
 		if v.Banned {

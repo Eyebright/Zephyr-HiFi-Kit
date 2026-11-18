@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -44,7 +45,11 @@ func TestAddMountValidatesAndComputesTarget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddMount: %v", err)
 	}
-	if !strings.HasPrefix(m.Target, "/mnt/zephyr/") {
+	if runtime.GOOS == "windows" {
+		if m.Target != "//nas.local/music" {
+			t.Fatalf("windows target must be the UNC share: %q", m.Target)
+		}
+	} else if !strings.HasPrefix(m.Target, "/mnt/zephyr/") {
 		t.Fatalf("target not under root: %q", m.Target)
 	}
 	if m.Status != StatusUnmounted || m.Version != mount.DefaultVersion {
@@ -58,6 +63,22 @@ func TestAddMountValidatesAndComputesTarget(t *testing.T) {
 	b, _ := json.Marshal(got)
 	if strings.Contains(string(b), "p\"") || strings.Contains(string(b), "password") {
 		t.Fatalf("password leaked in JSON: %s", b)
+	}
+}
+
+func TestAddMountWindowsDedupe(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("windows UNC targets only")
+	}
+	s, _ := newService(t, &fakeRunner{}, "/mnt/zephyr")
+	if _, err := s.AddMount(AddMountRequest{Host: "nas", Share: "music"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AddMount(AddMountRequest{Host: "nas", Share: "music"}); err == nil {
+		t.Fatal("expected duplicate UNC share rejection")
+	}
+	if _, err := s.AddMount(AddMountRequest{Host: "nas", Share: "other"}); err != nil {
+		t.Fatalf("different share must be allowed: %v", err)
 	}
 }
 
@@ -248,6 +269,84 @@ func TestScanFlatAndTwoLevelMeta(t *testing.T) {
 				t.Fatalf("two-level meta wrong: %+v", tr)
 			}
 		}
+	}
+}
+
+func buildFLACCover(t *testing.T, path string, art []byte) {
+	t.Helper()
+	put32 := func(b []byte, v int) []byte { return binary.BigEndian.AppendUint32(b, uint32(v)) }
+	pic := put32(nil, 3) // front cover
+	pic = put32(pic, len("image/png"))
+	pic = append(pic, "image/png"...)
+	pic = put32(pic, 0) // description
+	pic = put32(pic, 100)
+	pic = put32(pic, 100)
+	pic = put32(pic, 24)
+	pic = put32(pic, 0)
+	pic = put32(pic, len(art))
+	pic = append(pic, art...)
+	block := func(typ byte, last bool, body []byte) []byte {
+		h := []byte{typ, byte(len(body) >> 16), byte(len(body) >> 8), byte(len(body))}
+		if last {
+			h[0] |= 0x80
+		}
+		return append(h, body...)
+	}
+	buf := []byte("fLaC")
+	buf = append(buf, block(0, false, make([]byte, 18))...)
+	buf = append(buf, block(6, true, pic)...)
+	if err := os.WriteFile(path, buf, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestScanExtractsAndPrunesCovers(t *testing.T) {
+	s, st := newService(t, &fakeRunner{}, "/mnt/zephyr")
+	target := t.TempDir()
+	m := insertMounted(t, s, target)
+	album := filepath.Join(target, "Artist", "Album")
+	if err := os.MkdirAll(album, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	art := []byte{0x89, 'P', 'N', 'G', 13, 10, 26, 10}
+	buildFLACCover(t, filepath.Join(album, "song.flac"), art)
+	buildWAV(t, filepath.Join(album, "plain.wav"))
+
+	if _, err := s.Scan(context.Background(), m.ID); err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	tracks, _ := s.ListTracks(m.ID)
+	var hash string
+	for _, tr := range tracks {
+		if tr.Title == "song" {
+			hash = tr.CoverHash
+		} else if tr.CoverHash != "" {
+			t.Fatalf("wav must not carry a cover: %+v", tr)
+		}
+	}
+	if hash == "" {
+		t.Fatalf("flac cover not extracted: %+v", tracks)
+	}
+	mime, data, err := s.GetCover(hash)
+	if err != nil || mime != "image/png" || string(data) != string(art) {
+		t.Fatalf("GetCover: %q %v %v", mime, data, err)
+	}
+	// Rescan replaces tracks but the content-addressed cover stays single.
+	if _, err := s.Scan(context.Background(), m.ID); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := st.DB.QueryRow(`SELECT COUNT(*) FROM covers`).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("covers after rescan: %d %v", n, err)
+	}
+	if err := s.DeleteMount(context.Background(), m.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.DB.QueryRow(`SELECT COUNT(*) FROM covers`).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("covers not pruned on delete: %d %v", n, err)
+	}
+	if _, _, err := s.GetCover(hash); err == nil {
+		t.Fatal("cover still present after prune")
 	}
 }
 

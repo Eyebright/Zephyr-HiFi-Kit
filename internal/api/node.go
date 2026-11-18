@@ -207,9 +207,9 @@ func (a *API) restoreNode(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) authorizeNode(w http.ResponseWriter, r *http.Request) {
-	lic, err := a.lic.RequireActive()
+	seats, licensed, err := a.lic.SeatLimit()
 	if err != nil {
-		writeError(w, http.StatusConflict, err.Error())
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	id := r.PathValue("id")
@@ -224,8 +224,12 @@ func (a *API) authorizeNode(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		if used >= lic.Seats {
-			writeError(w, http.StatusConflict, fmt.Sprintf("许可证席位已满（%d/%d），无法授权新终端", used, lic.Seats))
+		if used >= seats {
+			msg := fmt.Sprintf("内置授权席位已满（%d/%d），激活许可证可授权更多终端", used, seats)
+			if licensed {
+				msg = fmt.Sprintf("许可证席位已满（%d/%d），无法授权新终端", used, seats)
+			}
+			writeError(w, http.StatusConflict, msg)
 			return
 		}
 		if err := a.nodes.SetAuthorized(id, true); err != nil {

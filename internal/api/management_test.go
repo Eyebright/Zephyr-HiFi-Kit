@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -146,23 +147,44 @@ func TestLicenseReceipt(t *testing.T) {
 
 func TestLicenseSeatGate(t *testing.T) {
 	base := setup(t, "dev")
-	nid := registerNode(t, base, "seat-a")
-	if s, _ := doJSON(t, "POST", base+"/nodes/"+nid+"/authorize", nil); s != 409 {
-		t.Fatalf("authorize without license: %d", s)
+	// Built-in grant: up to 3 terminals can be authorized without any license.
+	_, b := doJSON(t, "GET", base+"/license", nil)
+	l := mustJSON(t, b)
+	if l["builtin_seats"].(float64) != 3 || l["effective_seats"].(float64) != 3 {
+		t.Fatalf("builtin seats: %s", b)
 	}
-	activateDevLicense(t, base, 1)
-	if s, b := doJSON(t, "POST", base+"/nodes/"+nid+"/authorize", nil); s != 200 {
-		t.Fatalf("authorize: %d %s", s, b)
+	var ids []string
+	for i := 0; i < 3; i++ {
+		nid := registerNode(t, base, fmt.Sprintf("seat-%d", i))
+		if s, b := doJSON(t, "POST", base+"/nodes/"+nid+"/authorize", nil); s != 200 {
+			t.Fatalf("builtin authorize %d: %d %s", i, s, b)
+		}
+		ids = append(ids, nid)
 	}
-	nid2 := registerNode(t, base, "seat-b")
-	if s, b := doJSON(t, "POST", base+"/nodes/"+nid2+"/authorize", nil); s != 409 {
-		t.Fatalf("seat full expected 409: %d %s", s, b)
+	nid4 := registerNode(t, base, "seat-3")
+	if s, b := doJSON(t, "POST", base+"/nodes/"+nid4+"/authorize", nil); s != 409 {
+		t.Fatalf("builtin seat full expected 409: %d %s", s, b)
 	}
-	if s, b := doJSON(t, "POST", base+"/nodes/"+nid+"/revoke", nil); s != 200 {
+	// An activated license extends the seat limit beyond the built-in grant.
+	activateDevLicense(t, base, 4)
+	if s, b := doJSON(t, "POST", base+"/nodes/"+nid4+"/authorize", nil); s != 200 {
+		t.Fatalf("authorize after license: %d %s", s, b)
+	}
+	nid5 := registerNode(t, base, "seat-4")
+	if s, b := doJSON(t, "POST", base+"/nodes/"+nid5+"/authorize", nil); s != 409 {
+		t.Fatalf("licensed seat full expected 409: %d %s", s, b)
+	}
+	if s, b := doJSON(t, "POST", base+"/nodes/"+ids[0]+"/revoke", nil); s != 200 {
 		t.Fatalf("revoke: %d %s", s, b)
 	}
-	if s, b := doJSON(t, "POST", base+"/nodes/"+nid2+"/authorize", nil); s != 200 {
+	if s, b := doJSON(t, "POST", base+"/nodes/"+nid5+"/authorize", nil); s != 200 {
 		t.Fatalf("authorize after revoke: %d %s", s, b)
+	}
+	// A small license never shrinks the built-in floor.
+	activateDevLicense(t, base, 1)
+	_, b = doJSON(t, "GET", base+"/license", nil)
+	if mustJSON(t, b)["effective_seats"].(float64) != 3 {
+		t.Fatalf("builtin floor: %s", b)
 	}
 }
 

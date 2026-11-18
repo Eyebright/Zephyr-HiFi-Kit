@@ -15,6 +15,7 @@ type fakePlayer struct {
 	pcm            []byte
 	writes         int
 	drained        bool
+	dropped        bool
 	closed         bool
 	writeErr       error
 }
@@ -32,6 +33,7 @@ func (f *fakePlayer) Write(pcm []byte) error {
 	return nil
 }
 func (f *fakePlayer) Drain() error { f.drained = true; return nil }
+func (f *fakePlayer) Drop() error  { f.dropped = true; return nil }
 func (f *fakePlayer) Close() error { f.closed = true; return nil }
 
 func rampPCM(frames, channels, bps int) []byte {

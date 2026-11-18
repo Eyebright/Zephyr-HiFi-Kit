@@ -44,7 +44,7 @@ func setupUpdate(t *testing.T, feed update.Feed, opt update.Options) (string, *s
 	cat := catalog.New(st)
 	lic := license.New(st, ver)
 	cmds := commands.New(st)
-	tasks := task.New(st, nodes, bom.New(st, cat), cat, lic, false, time.Minute)
+	tasks := task.New(st, nodes, bom.New(st, cat), cat, false, time.Minute)
 	if opt.DistDir == "" {
 		opt.DistDir = filepath.Join(dir, "dist")
 	}

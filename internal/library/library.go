@@ -9,13 +9,16 @@ package library
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -81,18 +84,20 @@ type Track struct {
 	Decodable    bool   `json:"decodable"`
 	Size         int64  `json:"size"`
 	ScannedAt    int64  `json:"scanned_at"`
+	CoverHash    string `json:"cover_hash"`
 }
 
 // Service manages mounts and the scanned track catalog.
 type Service struct {
 	db        *sql.DB
-	mounts    *mount.Manager
+	mounts    mount.Backend
 	mountRoot string
 }
 
 // New builds a library service. mountRoot is the parent directory under which
-// each share is mounted (one subdirectory per mount id).
-func New(s *store.Store, m *mount.Manager, mountRoot string) *Service {
+// each share is mounted (one subdirectory per mount id). On Windows shares are
+// reached directly over UNC and mountRoot is unused.
+func New(s *store.Store, m mount.Backend, mountRoot string) *Service {
 	return &Service{db: s.DB, mounts: m, mountRoot: mountRoot}
 }
 
@@ -105,12 +110,17 @@ func (m Mount) spec() mount.Spec {
 	}
 }
 
-// AddMount validates and registers a share (unmounted). The local mount point is
-// mountRoot/<id>; path.Join keeps Linux-style forward slashes on every host.
+// AddMount validates and registers a share (unmounted). On Linux the local mount
+// point is mountRoot/<id>; path.Join keeps Linux-style forward slashes on every
+// host. On Windows there is no kernel mount: the target is the UNC share itself,
+// read directly through the system SMB client.
 func (s *Service) AddMount(req AddMountRequest) (Mount, error) {
 	var out Mount
 	id := "mnt-" + uuid.NewString()
 	target := path.Join(s.mountRoot, id)
+	if runtime.GOOS == "windows" {
+		target = "//" + req.Host + "/" + req.Share
+	}
 	spec := mount.Spec{
 		Host: req.Host, Share: req.Share, Target: target,
 		Username: req.Username, Password: req.Password, Domain: req.Domain,
@@ -118,6 +128,12 @@ func (s *Service) AddMount(req AddMountRequest) (Mount, error) {
 	}
 	if err := spec.Validate(); err != nil {
 		return out, err
+	}
+	if runtime.GOOS == "windows" {
+		var n int
+		if err := s.db.QueryRow(`SELECT COUNT(*) FROM mounts WHERE host=? AND share=?`, req.Host, req.Share).Scan(&n); err == nil && n > 0 {
+			return out, fmt.Errorf("共享 %s/%s 已添加", req.Host, req.Share)
+		}
 	}
 	ver := req.Version
 	if ver == "" {
@@ -187,6 +203,7 @@ func (s *Service) DeleteMount(ctx context.Context, id string) error {
 	if _, err := s.db.Exec(`DELETE FROM tracks WHERE mount_id=?`, id); err != nil {
 		return err
 	}
+	s.pruneCovers()
 	_, err = s.db.Exec(`DELETE FROM mounts WHERE id=?`, id)
 	return err
 }
@@ -198,7 +215,10 @@ func (s *Service) Mount(ctx context.Context, id string) (Mount, error) {
 		return m, err
 	}
 	// Best-effort: mount.cifs needs this dir and surfaces the real error if absent.
-	_ = os.MkdirAll(m.Target, 0o755)
+	// UNC targets are remote shares; creating them locally would be wrong.
+	if !mount.IsUNC(m.Target) {
+		_ = os.MkdirAll(m.Target, 0o755)
+	}
 	if err := s.mounts.Mount(ctx, m.spec()); err != nil {
 		s.setStatus(id, StatusError, err.Error(), 0)
 		return s.GetMount(id)
@@ -281,6 +301,7 @@ func (s *Service) Scan(ctx context.Context, id string) (int, error) {
 			Codec: pr.Codec, Container: pr.Container, Rate: pr.Rate, Channels: pr.Channels,
 			Bits: pr.Bits, TotalSamples: pr.TotalSamples, DurationMS: pr.DurationMS,
 			Decodable: pr.Decodable, Size: info.Size(), ScannedAt: now,
+			CoverHash: s.storeCover(p, pr, now),
 		})
 		return nil
 	})
@@ -293,14 +314,50 @@ func (s *Service) Scan(ctx context.Context, id string) (int, error) {
 	for _, t := range tracks {
 		if _, err := s.db.Exec(`INSERT INTO tracks
 			(id,mount_id,path,rel_path,title,artist,album,codec,container,rate,channels,bits,
-			 total_samples,duration_ms,decodable,size,scanned_at)
-			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			 total_samples,duration_ms,decodable,size,scanned_at,cover_hash)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			t.ID, t.MountID, t.Path, t.RelPath, t.Title, t.Artist, t.Album, t.Codec, t.Container,
-			t.Rate, t.Channels, t.Bits, t.TotalSamples, t.DurationMS, boolInt(t.Decodable), t.Size, t.ScannedAt); err != nil {
+			t.Rate, t.Channels, t.Bits, t.TotalSamples, t.DurationMS, boolInt(t.Decodable), t.Size, t.ScannedAt, t.CoverHash); err != nil {
 			return 0, err
 		}
 	}
+	s.pruneCovers()
 	return len(tracks), nil
+}
+
+// storeCover extracts embedded FLAC art and caches it content-addressed. Cover
+// failures never fail a scan: the track simply keeps its placeholder art.
+func (s *Service) storeCover(p string, pr media.ProbeResult, now int64) string {
+	if pr.Container != "flac" {
+		return ""
+	}
+	c, err := media.ReadFLACCover(p)
+	if err != nil || len(c.Data) == 0 {
+		return ""
+	}
+	sum := sha256.Sum256(c.Data)
+	hash := hex.EncodeToString(sum[:])
+	if _, err := s.db.Exec(`INSERT OR IGNORE INTO covers (hash,mime,data,created_at) VALUES(?,?,?,?)`,
+		hash, c.MIME, c.Data, now); err != nil {
+		return ""
+	}
+	return hash
+}
+
+// pruneCovers drops cached art no track references any more (rescan, delete).
+func (s *Service) pruneCovers() {
+	_, _ = s.db.Exec(`DELETE FROM covers WHERE hash NOT IN (SELECT cover_hash FROM tracks WHERE cover_hash <> '')`)
+}
+
+// GetCover returns cached album art by content hash.
+func (s *Service) GetCover(hash string) (string, []byte, error) {
+	var mime string
+	var data []byte
+	err := s.db.QueryRow(`SELECT mime,data FROM covers WHERE hash=?`, hash).Scan(&mime, &data)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil, catalog.ErrNotFound
+	}
+	return mime, data, err
 }
 
 // deriveMeta extracts title/artist/album from the path relative to the share root.
@@ -324,14 +381,14 @@ func deriveMeta(root, p string) (title, artist, album string) {
 }
 
 const trackCols = `id,mount_id,path,rel_path,title,artist,album,codec,container,rate,channels,bits,
-	total_samples,duration_ms,decodable,size,scanned_at`
+	total_samples,duration_ms,decodable,size,scanned_at,cover_hash`
 
 func scanTrack(row interface{ Scan(...any) error }) (Track, error) {
 	var t Track
 	var decodable int
 	err := row.Scan(&t.ID, &t.MountID, &t.Path, &t.RelPath, &t.Title, &t.Artist, &t.Album,
 		&t.Codec, &t.Container, &t.Rate, &t.Channels, &t.Bits, &t.TotalSamples, &t.DurationMS,
-		&decodable, &t.Size, &t.ScannedAt)
+		&decodable, &t.Size, &t.ScannedAt, &t.CoverHash)
 	t.Decodable = decodable == 1
 	return t, err
 }

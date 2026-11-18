@@ -131,11 +131,23 @@ type QueueState struct {
 // CommandParams carries optional command arguments. os-upgrade uses Packages;
 // agent-upgrade uses the exact signed-chain artifact the terminal must install.
 type CommandParams struct {
-	Packages []string `json:"packages,omitempty"`
-	Version  string   `json:"version,omitempty"`
-	Arch     string   `json:"arch,omitempty"`
-	SHA256   string   `json:"sha256,omitempty"`
-	URL      string   `json:"url,omitempty"`
+	Packages []string        `json:"packages,omitempty"`
+	Version  string          `json:"version,omitempty"`
+	Arch     string          `json:"arch,omitempty"`
+	SHA256   string          `json:"sha256,omitempty"`
+	URL      string          `json:"url,omitempty"`
+	Sources  []AptSourceSpec `json:"sources,omitempty"`
+}
+
+// AptSourceSpec is one third-party APT repository to configure. An empty Suite
+// means the agent resolves its own codename from /etc/os-release.
+type AptSourceSpec struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	URL        string `json:"url"`
+	Suite      string `json:"suite,omitempty"`
+	Components string `json:"components"`
+	KeyURL     string `json:"key_url"`
 }
 
 // Command is a server-issued terminal command

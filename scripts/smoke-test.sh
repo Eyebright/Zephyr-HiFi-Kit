@@ -127,6 +127,12 @@ check "BOM validate no errors" "$(printf '%s' "$BODY" | sed -n 's/.*"errors":\[\
 req POST "/boms/smoke/versions/$BVER/publish?arch=amd64" ""
 check "BOM published" "$(jsonbool "$BODY" published)" "true"
 
+# --- built-in grant: up to 3 terminals authorized without any license ---
+req GET /license ""; check "builtin seats=3" "$(jsonint "$BODY" builtin_seats)" "3"
+check "effective seats=3 before activation" "$(jsonint "$BODY" effective_seats)" "3"
+req POST "/nodes/$NODE/authorize" ""; check "authorize without license 200" "$CODE" "200"
+req POST "/nodes/$NODE/revoke" ""; check "revoke releases builtin seat" "$CODE" "200"
+
 # --- license: sign -> activate -> authorize -> job gate (FR-6) ---
 EXP=$(( $(date +%s) + 2592000 ))
 printf '{"key":"ZEPHYR-SMOKE-0001","account":"smoke@zephyr.hk","seats":5,"expires_at":%s}' "$EXP" > "$TMP/license.json"
@@ -144,6 +150,7 @@ check "license activated" "$(jsonstr "$BODY" status)" "activated"
 check "license seats=5" "$(jsonint "$BODY" seats)" "5"
 req GET /license ""; check "license GET 200" "$CODE" "200"
 check "license GET seats=5" "$(jsonint "$BODY" seats)" "5"
+check "license GET effective=5" "$(jsonint "$BODY" effective_seats)" "5"
 # a job against an unauthorized node is gated even with an active license
 req POST /jobs "{\"node_id\":\"$NODE\",\"bom_id\":\"smoke\",\"bom_version\":$BVER,\"kind\":\"provision\"}"
 check "job before authorize rejected 409" "$CODE" "409"

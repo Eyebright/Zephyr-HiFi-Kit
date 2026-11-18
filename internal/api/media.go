@@ -134,6 +134,24 @@ func (a *API) getTrack(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, t)
 }
 
+// getCover serves content-addressed album art; hashes are immutable so clients
+// may cache forever.
+func (a *API) getCover(w http.ResponseWriter, r *http.Request) {
+	if a.lib == nil {
+		writeError(w, http.StatusServiceUnavailable, "媒体库未启用")
+		return
+	}
+	mime, data, err := a.lib.GetCover(r.PathValue("hash"))
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", mime)
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
+}
+
 // --- ZAT push playback ---
 
 func (a *API) playTrack(w http.ResponseWriter, r *http.Request) {
@@ -222,6 +240,97 @@ func (a *API) setNodeDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "device": body.Device})
+}
+
+// zatControlFail maps transport-control errors to HTTP status codes.
+func zatControlFail(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, zatserver.ErrNotConnected), errors.Is(err, zatserver.ErrNoSession):
+		writeError(w, http.StatusConflict, err.Error())
+	default:
+		fail(w, err)
+	}
+}
+
+func (a *API) pausePlay(w http.ResponseWriter, r *http.Request) {
+	if a.zat == nil {
+		writeError(w, http.StatusServiceUnavailable, "ZAT 服务未启用")
+		return
+	}
+	if err := a.zat.Pause(r.PathValue("id")); err != nil {
+		zatControlFail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "state": "paused"})
+}
+
+func (a *API) resumePlay(w http.ResponseWriter, r *http.Request) {
+	if a.zat == nil {
+		writeError(w, http.StatusServiceUnavailable, "ZAT 服务未启用")
+		return
+	}
+	if err := a.zat.Resume(r.PathValue("id")); err != nil {
+		zatControlFail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "state": "playing"})
+}
+
+func (a *API) seekPlay(w http.ResponseWriter, r *http.Request) {
+	if a.zat == nil {
+		writeError(w, http.StatusServiceUnavailable, "ZAT 服务未启用")
+		return
+	}
+	var body struct {
+		PositionMS int `json:"position_ms"`
+	}
+	if err := decode(r, &body); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_json", err.Error(), "")
+		return
+	}
+	if body.PositionMS < 0 {
+		writeError(w, http.StatusBadRequest, "position_ms 不能为负")
+		return
+	}
+	id := r.PathValue("id")
+	st, err := a.zat.Status(id)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	if st.Rate <= 0 {
+		writeError(w, http.StatusConflict, "当前没有可定位的播放会话")
+		return
+	}
+	samples := uint64(body.PositionMS) * uint64(st.Rate) / 1000
+	if err := a.zat.Seek(id, samples); err != nil {
+		zatControlFail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "pts": samples})
+}
+
+func (a *API) setNodeVolume(w http.ResponseWriter, r *http.Request) {
+	if a.zat == nil {
+		writeError(w, http.StatusServiceUnavailable, "ZAT 服务未启用")
+		return
+	}
+	var body struct {
+		Volume int `json:"volume"`
+	}
+	if err := decode(r, &body); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_json", err.Error(), "")
+		return
+	}
+	if body.Volume < 0 || body.Volume > 100 {
+		writeError(w, http.StatusBadRequest, "volume 须在 0..100")
+		return
+	}
+	if err := a.zat.SetVolume(r.PathValue("id"), body.Volume); err != nil {
+		zatControlFail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "volume": body.Volume})
 }
 
 // --- per-node playback queue ---

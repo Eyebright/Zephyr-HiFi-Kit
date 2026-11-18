@@ -267,6 +267,14 @@ func TestGateSecret(t *testing.T) {
 	if code, body := doWithSecret(t, h, "POST", "/local/api/services/shairport-sync/install", `{"version":"4.3.2"}`, "s3cret"); code != 200 || !f.installed["shairport-sync"] {
 		t.Fatalf("correct secret: %d %s", code, body)
 	}
+	// The standalone local console authenticates with the X-Local-UI marker.
+	req := httptest.NewRequest("POST", "/local/api/services/shairport-sync/install", strings.NewReader(`{"version":"4.3.2"}`))
+	req.Header.Set("X-Local-UI", "1")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("local UI marker: %d %s", w.Code, w.Body.String())
+	}
 }
 
 func TestGateAllowLocalFalse(t *testing.T) {
@@ -276,6 +284,13 @@ func TestGateAllowLocalFalse(t *testing.T) {
 	code, body := do(t, h, "POST", "/local/api/services/shairport-sync/install", `{}`)
 	if code != 403 || !strings.Contains(body, "ALLOW_LOCAL=false") {
 		t.Fatalf("allow_local gate: %d %s", code, body)
+	}
+	req := httptest.NewRequest("POST", "/local/api/services/shairport-sync/install", strings.NewReader(`{}`))
+	req.Header.Set("X-Local-UI", "1")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != 403 || !strings.Contains(w.Body.String(), "ALLOW_LOCAL=false") {
+		t.Fatalf("marker must not bypass ALLOW_LOCAL=false: %d %s", w.Code, w.Body.String())
 	}
 	if code, _ := do(t, h, "GET", "/local/api/status", ""); code != 200 {
 		t.Fatal("GET must stay open when ALLOW_LOCAL=false")

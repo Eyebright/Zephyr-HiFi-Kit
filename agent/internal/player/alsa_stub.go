@@ -19,4 +19,5 @@ func newPlatform() Player { return stubPlayer{} }
 func (stubPlayer) Open(zat.Format, int, int, string) error { return errStub }
 func (stubPlayer) Write([]byte) error                      { return errStub }
 func (stubPlayer) Drain() error                            { return errStub }
+func (stubPlayer) Drop() error                             { return errStub }
 func (stubPlayer) Close() error                            { return nil }

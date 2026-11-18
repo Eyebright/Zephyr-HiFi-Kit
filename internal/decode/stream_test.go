@@ -132,3 +132,43 @@ func TestStreamWriterError(t *testing.T) {
 type failWriter struct{}
 
 func (failWriter) Write([]byte) (int, error) { return 0, io.ErrClosedPipe }
+
+func TestStreamFramesFromOffset(t *testing.T) {
+	pcm := rampPCM(40000, 2, 2) // 160000 bytes => multiple 64KiB chunks
+	path := buildWAV(t, zat.S16LE, 44100, 2, pcm)
+	d, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+
+	const start = 20000 // mid-chunk offset: exercises the trim path
+	var got []byte
+	var firstPTS uint64
+	var frames int
+	sink := func(f zat.Frame) error {
+		ap, err := zat.DecodeAudio(f.Payload)
+		if err != nil {
+			return err
+		}
+		if frames == 0 {
+			firstPTS = ap.PTS
+		}
+		frames++
+		got = append(got, ap.PCM...)
+		return nil
+	}
+	end, err := StreamFramesFrom(sink, d, "trk-1", 0, start)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstPTS != start {
+		t.Fatalf("first PTS = %d want %d", firstPTS, start)
+	}
+	if end != 40000 {
+		t.Fatalf("end = %d want 40000", end)
+	}
+	if !bytes.Equal(got, pcm[start*4:]) {
+		t.Fatalf("offset PCM mismatch: got %d bytes want %d", len(got), len(pcm)-start*4)
+	}
+}

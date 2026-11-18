@@ -16,6 +16,7 @@ import (
 
 	"hifihub/server/internal/alerts"
 	"hifihub/server/internal/api"
+	"hifihub/server/internal/aptsrc"
 	"hifihub/server/internal/audit"
 	"hifihub/server/internal/bom"
 	"hifihub/server/internal/catalog"
@@ -63,9 +64,19 @@ func main() {
 	lic := license.New(st, verifier)
 	ks := keys.New(cfg.GPGHome, st)
 	cmds := commands.New(st)
+	aptSrc := aptsrc.New(st)
+	if err := aptSrc.Seed(); err != nil {
+		logger.Warn("seed apt sources", "err", err)
+	}
+	if err := cat.SeedAptApps(); err != nil {
+		logger.Warn("seed open-source apps", "err", err)
+	}
+	if err := cat.SeedCommercialApps(); err != nil {
+		logger.Warn("seed commercial apps", "err", err)
+	}
 	aud := audit.New(st)
 	alts := alerts.New(st, nodes, lic, cmds)
-	tasks := task.New(st, nodes, boms, cat, lic, cfg.PlayGateEnabled, cfg.IdleWaitTimeout)
+	tasks := task.New(st, nodes, boms, cat, cfg.PlayGateEnabled, cfg.IdleWaitTimeout)
 	rolls := rollouts.New(st, nodes, tasks, boms)
 	met := metrics.New(cfg.DBPath)
 
@@ -80,7 +91,7 @@ func main() {
 	if err := os.MkdirAll(cfg.MountCredDir, 0o700); err != nil {
 		logger.Warn("mount cred dir unavailable", "dir", cfg.MountCredDir, "err", err)
 	}
-	mntMgr := mount.NewManager(mount.ExecRunner{}, cfg.MountCredDir)
+	mntMgr := mount.NewBackend(mount.ExecRunner{}, cfg.MountCredDir)
 	lib := library.New(st, mntMgr, cfg.MountDir)
 	zat := zatserver.New(cfg.ZATAddr, nodes, lib, st)
 
@@ -110,7 +121,7 @@ func main() {
 
 	a := api.New(cfg, api.Deps{
 		Cat: cat, Repo: rp, Boms: boms, Nodes: nodes, Tasks: tasks,
-		License: lic, Keys: ks, Audit: aud, Alerts: alts, Commands: cmds,
+		License: lic, Keys: ks, Audit: aud, Alerts: alts, Commands: cmds, AptSrc: aptSrc,
 		Rollouts: rolls, Metrics: met, Library: lib, ZAT: zat, Update: upd,
 	})
 

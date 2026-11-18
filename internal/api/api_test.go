@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"hifihub/server/internal/alerts"
+	"hifihub/server/internal/aptsrc"
 	"hifihub/server/internal/audit"
 	"hifihub/server/internal/bom"
 	"hifihub/server/internal/catalog"
@@ -70,16 +71,17 @@ func setupFull(t *testing.T, sigMode string) (base, root, dir string) {
 	lic := license.New(st, verifier)
 	ks := keys.New("", st)
 	cmds := commands.New(st)
+	aptSrc := aptsrc.New(st)
 	aud := audit.New(st)
 	alts := alerts.New(st, nodes, lic, cmds)
-	tasks := task.New(st, nodes, boms, cat, lic, cfg.PlayGateEnabled, cfg.IdleWaitTimeout)
+	tasks := task.New(st, nodes, boms, cat, cfg.PlayGateEnabled, cfg.IdleWaitTimeout)
 	rolls := rollouts.New(st, nodes, tasks, boms)
 	met := metrics.New(cfg.DBPath)
 	lib := library.New(st, mount.NewManager(mount.ExecRunner{}, filepath.Join(dir, "cifs")), "/mnt/zephyr")
 	zat := zatserver.New("127.0.0.1:0", nodes, lib, st)
 	a := New(cfg, Deps{
 		Cat: cat, Repo: rp, Boms: boms, Nodes: nodes, Tasks: tasks,
-		License: lic, Keys: ks, Audit: aud, Alerts: alts, Commands: cmds,
+		License: lic, Keys: ks, Audit: aud, Alerts: alts, Commands: cmds, AptSrc: aptSrc,
 		Rollouts: rolls, Metrics: met, Library: lib, ZAT: zat,
 	})
 	srv := httptest.NewServer(a.Handler())
@@ -314,8 +316,8 @@ func TestDistributionFlow(t *testing.T) {
 		t.Fatalf("token reuse expected 401: %d", s)
 	}
 
-	// License + authorization gate (FR-6): a job requires an activated license
-	// AND an authorized node holding a seat.
+	// Seat gate (FR-6): a job requires an authorized node holding a seat
+	// (built-in grant or licensed).
 	activateDevLicense(t, base, 10)
 	if s, b := doJSON(t, "POST", base+"/jobs", map[string]any{"node_id": nid, "bom_id": "living-airplay", "kind": "provision"}); s != 409 {
 		t.Fatalf("job before authorize expected 409, got %d %s", s, b)

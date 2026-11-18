@@ -26,11 +26,18 @@ func New(s *store.Store) *Service { return &Service{db: s.DB} }
 // protection enabled (FR-3.10). The message is user-facing Chinese.
 var ErrPlaying = errors.New("FR-3.10：终端正在播放且开启了播放保护，已拒绝升级")
 
+// ErrPlayingInstall is the apt-install variant of the play-protection gate.
+var ErrPlayingInstall = errors.New("FR-3.10：终端正在播放且开启了播放保护，已拒绝安装")
+
+// IsPlaying reports whether err is a FR-3.10 play-protection gate.
+func IsPlaying(err error) bool { return errors.Is(err, ErrPlaying) || errors.Is(err, ErrPlayingInstall) }
+
 // Create queues a pending command for a node after validating its type.
 func (s *Service) Create(nodeID, typ string, params domain.CommandParams) (domain.Command, error) {
 	var c domain.Command
 	switch typ {
-	case domain.CommandOSCheck, domain.CommandOSUpgrade, domain.CommandNetdiag, domain.CommandAgentUpgrade:
+	case domain.CommandOSCheck, domain.CommandOSUpgrade, domain.CommandNetdiag, domain.CommandAgentUpgrade,
+		domain.CommandAptSource, domain.CommandAptInstall:
 	default:
 		return c, fmt.Errorf("无效的命令类型：%s", typ)
 	}
@@ -42,7 +49,10 @@ func (s *Service) Create(nodeID, typ string, params domain.CommandParams) (domai
 	if err != nil {
 		return c, err
 	}
-	if (typ == domain.CommandOSUpgrade || typ == domain.CommandAgentUpgrade) && playing == 1 && protect == 1 {
+	if (typ == domain.CommandOSUpgrade || typ == domain.CommandAgentUpgrade || typ == domain.CommandAptInstall) && playing == 1 && protect == 1 {
+		if typ == domain.CommandAptInstall {
+			return c, ErrPlayingInstall
+		}
 		return c, ErrPlaying
 	}
 	c = domain.Command{

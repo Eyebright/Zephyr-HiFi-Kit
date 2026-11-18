@@ -42,6 +42,12 @@ type Executor struct {
 	currentVersion string
 	dataDir        string
 	download       func(ctx context.Context, urlPath, dest string) (string, error)
+
+	// apt-source / apt-install filesystem targets (overridable in tests).
+	aptKeyringDir string
+	aptListDir    string
+	osReleasePath string
+	lookPath      func(string) (string, error)
 }
 
 // New builds a command Executor. run executes apt/system commands; serverURL is
@@ -94,14 +100,25 @@ func (e *Executor) Execute(ctx context.Context, cmd serverclient.Command) (resul
 		return e.netdiag(ctx)
 	case "agent-upgrade":
 		return e.agentUpgrade(ctx, cmd.Params)
+	case "apt-source":
+		return e.aptSource(ctx, cmd.Params.Sources)
+	case "apt-install":
+		return e.aptInstall(ctx, cmd.Params.Packages)
 	default:
 		return serverclient.CommandResult{Status: "err", Log: fmt.Sprintf("unknown command type %q", cmd.Type)}
 	}
 }
 
 func (e *Executor) hasApt() bool {
-	_, err := exec.LookPath("apt-get")
+	_, err := e.lookup("apt-get")
 	return err == nil
+}
+
+func (e *Executor) lookup(name string) (string, error) {
+	if e.lookPath != nil {
+		return e.lookPath(name)
+	}
+	return exec.LookPath(name)
 }
 
 func (e *Executor) rebootRequired() bool {

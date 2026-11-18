@@ -143,6 +143,15 @@ func (c *Controller) Enable(unit string) error { return c.verb(unit, "enable") }
 // Disable disables a unit at boot.
 func (c *Controller) Disable(unit string) error { return c.verb(unit, "disable") }
 
+// DaemonReload reloads systemd manager configuration after unit files change.
+func (c *Controller) DaemonReload() error {
+	out, err := c.run.Run(context.Background(), "systemctl", "daemon-reload")
+	if err != nil {
+		return fmt.Errorf("systemctl daemon-reload: %w (%s)", err, strings.TrimSpace(out))
+	}
+	return nil
+}
+
 // Reboot reboots the terminal (gated by allowPower).
 func (c *Controller) Reboot() error {
 	if !c.allowPower {

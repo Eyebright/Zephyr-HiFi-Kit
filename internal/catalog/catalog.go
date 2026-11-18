@@ -106,11 +106,11 @@ func (s *Service) AddVersion(v domain.AppVersion) (domain.AppVersion, error) {
 		v.PublishedAt = time.Now().Unix()
 	}
 	_, err := s.db.Exec(`INSERT INTO app_versions
-		(id,app_id,version,arch,format,artifact_path,size,sha256,signature,signed,build_flags,capabilities,
+		(id,app_id,version,arch,format,apt_package,artifact_path,size,sha256,signature,signed,build_flags,capabilities,
 		 distro_support,glibc_min,units,ports,config_template_id,deps_apps,deps_pkgs,occupies_dac,
 		 build_commit,airplay2_enabled,qplay_ver,patched,banned,lifecycle,build_time,published_at)
-		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		v.ID, v.AppID, v.Version, v.Arch, v.Format, v.ArtifactPath, v.Size, v.SHA256, v.Signature, boolInt(v.Signed),
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		v.ID, v.AppID, v.Version, v.Arch, v.Format, v.AptPackage, v.ArtifactPath, v.Size, v.SHA256, v.Signature, boolInt(v.Signed),
 		store.ToJSON(v.BuildFlags), store.ToJSON(v.Capabilities), store.ToJSON(v.DistroSupport),
 		v.GlibcMin, store.ToJSON(v.Units), store.ToJSON(v.Ports), v.ConfigTemplateID,
 		store.ToJSON(v.DepsApps), store.ToJSON(v.DepsPkgs), boolInt(v.OccupiesDAC), v.BuildCommit,
@@ -122,7 +122,7 @@ func (s *Service) AddVersion(v domain.AppVersion) (domain.AppVersion, error) {
 	return v, nil
 }
 
-const versionCols = `id,app_id,version,arch,COALESCE(format,''),COALESCE(artifact_path,''),size,COALESCE(sha256,''),
+const versionCols = `id,app_id,version,arch,COALESCE(format,''),COALESCE(apt_package,''),COALESCE(artifact_path,''),size,COALESCE(sha256,''),
 	COALESCE(signature,''),signed,COALESCE(build_flags,'[]'),COALESCE(capabilities,'[]'),
 	COALESCE(distro_support,'[]'),COALESCE(glibc_min,''),COALESCE(units,'[]'),COALESCE(ports,'[]'),
 	COALESCE(config_template_id,''),COALESCE(deps_apps,'[]'),COALESCE(deps_pkgs,'[]'),occupies_dac,
@@ -133,7 +133,7 @@ func scanVersion(row interface{ Scan(...any) error }) (domain.AppVersion, error)
 	var v domain.AppVersion
 	var signed, occupies, ap2, patched, banned int
 	var flags, caps, distros, units, ports, depsApps, depsPkgs string
-	err := row.Scan(&v.ID, &v.AppID, &v.Version, &v.Arch, &v.Format, &v.ArtifactPath, &v.Size, &v.SHA256,
+	err := row.Scan(&v.ID, &v.AppID, &v.Version, &v.Arch, &v.Format, &v.AptPackage, &v.ArtifactPath, &v.Size, &v.SHA256,
 		&v.Signature, &signed, &flags, &caps, &distros, &v.GlibcMin, &units, &ports,
 		&v.ConfigTemplateID, &depsApps, &depsPkgs, &occupies, &v.BuildCommit, &ap2,
 		&v.QPlayVer, &patched, &banned, &v.Lifecycle, &v.BuildTime, &v.PublishedAt)
@@ -205,6 +205,136 @@ func (s *Service) SetBanned(id string, banned bool) error {
 func (s *Service) SetLifecycle(id, lifecycle string) error {
 	res, err := s.db.Exec(`UPDATE app_versions SET lifecycle=? WHERE id=?`, lifecycle, id)
 	return affected(res, err)
+}
+
+// ResolveVersion looks up a version for the node arch, falling back to the
+// architecture-independent "all" entry used by format=apt packages.
+func (s *Service) ResolveVersion(appID, version, arch string) (domain.AppVersion, error) {
+	v, err := s.GetVersion(appID, version, arch)
+	if err == nil {
+		return v, nil
+	}
+	if !errors.Is(err, ErrNotFound) || arch == "all" {
+		return v, err
+	}
+	return s.GetVersion(appID, version, "all")
+}
+
+// AptApp pairs an open-source catalog app with its format=apt version.
+type AptApp struct {
+	App     domain.App        `json:"app"`
+	Version domain.AppVersion `json:"version"`
+}
+
+// ListAptApps returns every catalog app that installs through distro APT.
+func (s *Service) ListAptApps() ([]AptApp, error) {
+	rows, err := s.db.Query(`SELECT ` + versionCols + ` FROM app_versions
+		WHERE format='apt' AND banned=0 AND lifecycle<>'revoked' ORDER BY app_id`)
+	if err != nil {
+		return nil, err
+	}
+	vers := []domain.AppVersion{}
+	for rows.Next() {
+		v, err := scanVersion(rows)
+		if err != nil {
+			rows.Close()
+			return nil, err
+		}
+		vers = append(vers, v)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+	// The store serializes on one connection: app lookups must run after the
+	// version rows are closed, never inside the iteration.
+	out := []AptApp{}
+	for _, v := range vers {
+		app, err := s.GetApp(v.AppID)
+		if err != nil {
+			continue
+		}
+		out = append(out, AptApp{App: app, Version: v})
+	}
+	return out, nil
+}
+
+// SeedAptApps registers the open-source audio services once (idempotent via a
+// server_state marker): they install from distro APT, not from signed artifacts.
+func (s *Service) SeedAptApps() error {
+	var done string
+	err := s.db.QueryRow(`SELECT value FROM server_state WHERE key='seed_apt_apps_v1'`).Scan(&done)
+	if err == nil && done == "1" {
+		return nil
+	}
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	seed := []struct {
+		app  domain.App
+		pkg  string
+		deps []string
+		unit string
+	}{
+		{domain.App{AppID: "mpd", Name: "Music Player Daemon", Category: domain.CategoryRenderer,
+			Upstream: "https://www.musicpd.org", License: "GPL-2.0"}, "mpd", nil, "mpd.service"},
+		{domain.App{AppID: "upmpdcli", Name: "UPnP Media Renderer (upmpdcli)", Category: domain.CategoryRenderer,
+			Upstream: "https://www.lesbonscomptes.com/upmpdcli/", License: "GPL-2.0"}, "upmpdcli", []string{"mpd"}, "upmpdcli.service"},
+		{domain.App{AppID: "shairport-sync", Name: "AirPlay 1 接收器 (shairport-sync)", Category: domain.CategoryRenderer,
+			Upstream: "https://github.com/mikebrady/shairport-sync", License: "MIT"}, "shairport-sync", nil, "shairport-sync.service"},
+	}
+	for _, sd := range seed {
+		if _, err := s.GetApp(sd.app.AppID); err != nil {
+			if _, err := s.CreateApp(sd.app); err != nil {
+				return err
+			}
+		}
+		if _, err := s.GetVersion(sd.app.AppID, "apt", "all"); err != nil {
+			v := domain.AppVersion{
+				AppID: sd.app.AppID, Version: "apt", Arch: "all", Format: "apt",
+				AptPackage: sd.pkg, DepsPkgs: sd.deps, Units: []string{sd.unit},
+				DistroSupport: []string{"bookworm", "trixie", "bullseye"},
+				Signed:        true, // distro repository signature, not artifact chain
+			}
+			if _, err := s.AddVersion(v); err != nil {
+				return err
+			}
+		}
+	}
+	_, err = s.db.Exec(`INSERT INTO server_state(key,value) VALUES('seed_apt_apps_v1','1')
+		ON CONFLICT(key) DO UPDATE SET value='1'`)
+	return err
+}
+
+// SeedCommercialApps registers the commercial renderer app definitions once.
+// Their versions carry vendor installers (tar.bz2 / deb) and are added through
+// the local-package import endpoint, never seeded with empty artifacts.
+func (s *Service) SeedCommercialApps() error {
+	var done string
+	err := s.db.QueryRow(`SELECT value FROM server_state WHERE key='seed_commercial_apps_v1'`).Scan(&done)
+	if err == nil && done == "1" {
+		return nil
+	}
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	seed := []domain.App{
+		{AppID: "roonbridge", Name: "Roon Bridge", Category: domain.CategoryRenderer,
+			Upstream: "https://roonlabs.com", License: "Commercial"},
+		{AppID: "networkaudiod", Name: "HQPlayer NAA", Category: domain.CategoryRenderer,
+			Upstream: "https://signalyst.com", License: "Commercial"},
+	}
+	for _, app := range seed {
+		if _, err := s.GetApp(app.AppID); err != nil {
+			if _, err := s.CreateApp(app); err != nil {
+				return err
+			}
+		}
+	}
+	_, err = s.db.Exec(`INSERT INTO server_state(key,value) VALUES('seed_commercial_apps_v1','1')
+		ON CONFLICT(key) DO UPDATE SET value='1'`)
+	return err
 }
 
 func affected(res sql.Result, err error) error {

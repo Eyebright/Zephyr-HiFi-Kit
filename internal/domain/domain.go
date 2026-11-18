@@ -56,8 +56,9 @@ type AppVersion struct {
 	ID               string     `json:"id"`
 	AppID            string     `json:"app_id"`
 	Version          string     `json:"version"`
-	Arch             string     `json:"arch"` // amd64|arm64|armhf|armv7hf
+	Arch             string     `json:"arch"` // amd64|arm64|armhf|armv7hf|all
 	Format           string     `json:"format"`
+	AptPackage       string     `json:"apt_package"` // format=apt: distro package name
 	ArtifactPath     string     `json:"artifact_path"`
 	Size             int64      `json:"size"`
 	SHA256           string     `json:"sha256"`
@@ -301,12 +302,14 @@ type Audit struct {
 
 // License is the single-row activation record (FR-6).
 type License struct {
-	Status      string `json:"status"` // none|activated|expired
-	Key         string `json:"key,omitempty"`
-	Account     string `json:"account,omitempty"`
-	Seats       int    `json:"seats,omitempty"`
-	ExpiresAt   int64  `json:"expires_at,omitempty"`
-	ActivatedAt int64  `json:"activated_at,omitempty"`
+	Status         string `json:"status"` // none|activated|expired
+	Key            string `json:"key,omitempty"`
+	Account        string `json:"account,omitempty"`
+	Seats          int    `json:"seats,omitempty"`
+	ExpiresAt      int64  `json:"expires_at,omitempty"`
+	ActivatedAt    int64  `json:"activated_at,omitempty"`
+	BuiltinSeats   int    `json:"builtin_seats"`
+	EffectiveSeats int    `json:"effective_seats"`
 }
 
 // License statuses.
@@ -322,6 +325,8 @@ const (
 	CommandOSUpgrade    = "os-upgrade"
 	CommandNetdiag      = "netdiag"
 	CommandAgentUpgrade = "agent-upgrade"
+	CommandAptSource    = "apt-source"
+	CommandAptInstall   = "apt-install"
 )
 
 // Command is a queued server->agent instruction and its eventual result.
@@ -346,6 +351,31 @@ type CommandParams struct {
 	Arch    string `json:"arch,omitempty"`
 	SHA256  string `json:"sha256,omitempty"`
 	URL     string `json:"url,omitempty"`
+	// apt-source: the repository entries the terminal must configure.
+	Sources []AptSourceSpec `json:"sources,omitempty"`
+}
+
+// AptSource is a managed third-party APT repository. Distros lists the Debian
+// codenames it applies to; empty means every apt-based terminal.
+type AptSource struct {
+	ID         string   `json:"id"`
+	Name       string   `json:"name"`
+	URL        string   `json:"url"`
+	Components string   `json:"components"`
+	KeyURL     string   `json:"key_url"`
+	Distros    []string `json:"distros"`
+	CreatedAt  int64    `json:"created_at"`
+}
+
+// AptSourceSpec is the per-terminal wire form of an AptSource. An empty Suite
+// lets the agent resolve its own codename from /etc/os-release.
+type AptSourceSpec struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	URL        string `json:"url"`
+	Suite      string `json:"suite,omitempty"`
+	Components string `json:"components"`
+	KeyURL     string `json:"key_url"`
 }
 
 // ServerUpdateState is the persisted self-update status of the management

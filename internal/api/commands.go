@@ -25,7 +25,7 @@ func (a *API) createCommand(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "终端不存在")
 			return
 		}
-		if errors.Is(err, commands.ErrPlaying) {
+		if commands.IsPlaying(err) {
 			writeError(w, http.StatusConflict, err.Error())
 			return
 		}

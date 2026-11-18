@@ -8,11 +8,13 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"runtime"
 	"time"
 
 	"github.com/google/uuid"
 
 	"hifihub/server/internal/alerts"
+	"hifihub/server/internal/aptsrc"
 	"hifihub/server/internal/audit"
 	"hifihub/server/internal/bom"
 	"hifihub/server/internal/catalog"
@@ -43,6 +45,7 @@ type Deps struct {
 	Audit    *audit.Service
 	Alerts   *alerts.Service
 	Commands *commands.Service
+	AptSrc   *aptsrc.Service
 	Rollouts *rollouts.Service
 	Metrics  *metrics.Collector
 	Library  *library.Service
@@ -63,6 +66,7 @@ type API struct {
 	aud    *audit.Service
 	alerts *alerts.Service
 	cmds   *commands.Service
+	apt    *aptsrc.Service
 	rolls  *rollouts.Service
 	met    *metrics.Collector
 	lib    *library.Service
@@ -75,7 +79,7 @@ type API struct {
 func New(cfg config.Config, d Deps) *API {
 	a := &API{
 		cfg: cfg, cat: d.Cat, repo: d.Repo, boms: d.Boms, nodes: d.Nodes, tasks: d.Tasks,
-		lic: d.License, keys: d.Keys, aud: d.Audit, alerts: d.Alerts, cmds: d.Commands,
+		lic: d.License, keys: d.Keys, aud: d.Audit, alerts: d.Alerts, cmds: d.Commands, apt: d.AptSrc,
 		rolls: d.Rollouts, met: d.Metrics, lib: d.Library, zat: d.ZAT, upd: d.Update, mux: http.NewServeMux(),
 	}
 	a.routes()
@@ -99,8 +103,15 @@ func (a *API) routes() {
 	a.route("GET /api/v1/apps/{id}", a.getApp)
 	a.route("GET /api/v1/apps/{id}/versions", a.listVersions)
 	a.route("POST /api/v1/apps/{id}/versions", a.addVersion)
+	a.route("POST /api/v1/apps/{id}/versions/import-local", a.importLocalVersion)
 	a.route("POST /api/v1/apps/{id}/versions/{ver}/{arch}/ban", a.banVersion)
 	a.route("POST /api/v1/apps/{id}/versions/{ver}/{arch}/lifecycle", a.lifecycleVersion)
+
+	// Open-source APT delivery (phase 2)
+	a.route("GET /api/v1/apt-apps", a.listAptApps)
+	a.route("GET /api/v1/apt-sources", a.listAptSources)
+	a.route("POST /api/v1/apt-sources", a.createAptSource)
+	a.route("DELETE /api/v1/apt-sources/{id}", a.deleteAptSource)
 
 	// Artifact repository (FR-3.3)
 	a.route("GET /api/v1/repo/{app}/{ver}/{arch}", a.downloadArtifact)
@@ -132,6 +143,7 @@ func (a *API) routes() {
 	a.route("POST /api/v1/nodes/{id}/heartbeat", a.heartbeat)
 	a.route("POST /api/v1/nodes/{id}/snapshot", a.snapshot)
 	a.route("POST /api/v1/nodes/{id}/commands", a.createCommand)
+	a.route("POST /api/v1/nodes/{id}/apt-sources/apply", a.applyAptSources)
 	// GET node sub-resources are dispatched through one single-segment wildcard
 	// instead of separate literal routes: a literal "/nodes/token/{token}" would
 	// otherwise ambiguity-conflict with "/nodes/{id}/apps" (and friends) because
@@ -201,12 +213,17 @@ func (a *API) routes() {
 	a.route("POST /api/v1/mounts/{id}/scan", a.scanMount)
 	a.route("GET /api/v1/tracks", a.listTracks)
 	a.route("GET /api/v1/tracks/{id}", a.getTrack)
+	a.route("GET /api/v1/covers/{hash}", a.getCover)
 
 	// ZAT push playback to terminals. GET play status is dispatched through the
 	// {sub} wildcard below: a literal "/nodes/{id}/play" would ambiguity-conflict
 	// with "/nodes/token/{token}" (neither is a subset of the other).
 	a.route("POST /api/v1/nodes/{id}/play", a.playTrack)
 	a.route("POST /api/v1/nodes/{id}/stop", a.stopPlay)
+	a.route("POST /api/v1/nodes/{id}/pause", a.pausePlay)
+	a.route("POST /api/v1/nodes/{id}/resume", a.resumePlay)
+	a.route("POST /api/v1/nodes/{id}/seek", a.seekPlay)
+	a.route("POST /api/v1/nodes/{id}/volume", a.setNodeVolume)
 	a.route("POST /api/v1/nodes/{id}/device", a.setNodeDevice)
 	// Per-node playback queue (GET goes through the {sub} wildcard).
 	a.route("PUT /api/v1/nodes/{id}/queue", a.setNodeQueue)
@@ -214,6 +231,18 @@ func (a *API) routes() {
 	a.route("POST /api/v1/nodes/{id}/queue/next", a.queueNext)
 	a.route("POST /api/v1/nodes/{id}/queue/prev", a.queuePrev)
 	a.route("POST /api/v1/nodes/{id}/queue/jump", a.queueJump)
+
+	// Playlists + play history (music-centric console).
+	a.route("GET /api/v1/history", a.listHistory)
+	a.route("GET /api/v1/playlists", a.listPlaylists)
+	a.route("POST /api/v1/playlists", a.createPlaylist)
+	a.route("GET /api/v1/playlists/{id}", a.getPlaylist)
+	a.route("PATCH /api/v1/playlists/{id}", a.renamePlaylist)
+	a.route("DELETE /api/v1/playlists/{id}", a.deletePlaylist)
+	a.route("POST /api/v1/playlists/{id}/items", a.addPlaylistItems)
+	a.route("PUT /api/v1/playlists/{id}/items", a.setPlaylistItems)
+	a.route("DELETE /api/v1/playlists/{id}/items/{pos}", a.removePlaylistItem)
+	a.route("POST /api/v1/playlists/{id}/push", a.pushPlaylist)
 
 	// Root-level distribution downloads and self metrics.
 	a.route("GET /dl/{name}", a.downloadDist)
@@ -227,6 +256,7 @@ func (a *API) health(w http.ResponseWriter, _ *http.Request) {
 		"version":        metrics.Version,
 		"signature_mode": a.cfg.SignatureMode,
 		"play_gate":      a.cfg.PlayGateEnabled,
+		"platform":       runtime.GOOS,
 	})
 }
 

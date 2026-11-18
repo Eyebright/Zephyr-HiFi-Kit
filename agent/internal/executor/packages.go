@@ -15,11 +15,8 @@ type DpkgPackages struct{ Run systemctrl.Runner }
 // Install installs OS dependencies from the server's apt mirror, then the
 // downloaded artifact, repairing dependencies if dpkg reports missing ones.
 func (p DpkgPackages) Install(ctx context.Context, debPath string, deps []string) error {
-	if len(deps) > 0 {
-		args := append([]string{"install", "-y", "--no-install-recommends"}, deps...)
-		if out, err := p.Run.Run(ctx, "apt-get", args...); err != nil {
-			return fmt.Errorf("apt-get install deps: %w (%s)", err, strings.TrimSpace(out))
-		}
+	if err := p.InstallDeps(ctx, deps); err != nil {
+		return err
 	}
 	if out, err := p.Run.Run(ctx, "dpkg", "-i", debPath); err != nil {
 		// Attempt to repair broken dependencies, then retry once.
@@ -27,6 +24,18 @@ func (p DpkgPackages) Install(ctx context.Context, debPath string, deps []string
 		if out2, err2 := p.Run.Run(ctx, "dpkg", "-i", debPath); err2 != nil {
 			return fmt.Errorf("dpkg -i: %w (%s)", err, strings.TrimSpace(out+out2))
 		}
+	}
+	return nil
+}
+
+// InstallDeps installs OS dependencies from the server's apt mirror.
+func (p DpkgPackages) InstallDeps(ctx context.Context, deps []string) error {
+	if len(deps) == 0 {
+		return nil
+	}
+	args := append([]string{"install", "-y", "--no-install-recommends"}, deps...)
+	if out, err := p.Run.Run(ctx, "apt-get", args...); err != nil {
+		return fmt.Errorf("apt-get install deps: %w (%s)", err, strings.TrimSpace(out))
 	}
 	return nil
 }

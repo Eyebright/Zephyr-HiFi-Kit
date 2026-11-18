@@ -188,11 +188,13 @@ GNUPGHOME=/var/lib/hifihub-server/gnupg gpg --verify app.deb.asc app.deb
 > 终端 Agent 下载制品后校验 **SHA256 完整性**；GPG 验签在**服务端入库**这一唯一入口强制
 > 执行（服务端是唯一下发源，FR-3）。
 
-### 4.4 激活许可证（客户侧）
+### 4.4 授权与许可证（客户侧）
 
-许可证由签发方**离线签发**后交付（JSON + detached GPG 签名，服务端只验签、不签发）。
-你收到的交付包含 `license.json` + `license.json.asc`，或等价的 `payload_b64` / `sig_b64`
-两段单行 base64。未激活许可证时控制台可浏览，但**下发任务与终端授权被门控**。
+**服务端自带内置授权：无需任何许可证即可授权最多 3 台终端并下发服务。**
+授权只针对服务端；终端侧产品无需证书即可运行。需要超过 3 台终端时，才需向签发方
+购买许可证扩容。许可证由签发方**离线签发**后交付（JSON + detached GPG 签名，
+服务端只验签、不签发）。你收到的交付包含 `license.json` + `license.json.asc`，
+或等价的 `payload_b64` / `sig_b64` 两段单行 base64。
 
 激活（也可在控制台「密钥与授权」页导入两个文件或粘贴两段 base64）：
 
@@ -202,12 +204,13 @@ curl -s -X POST http://<服务端IP>:8080/api/v1/license/activate \
   -d '{"payload_b64":"<payload>","sig_b64":"<sig>"}'
 
 curl -s http://<服务端IP>:8080/api/v1/license
-# {"status":"activated","key":"ZMP-…","account":"…","seats":10,"expires_at":…}
+# {"status":"activated","key":"ZMP-…","account":"…","seats":10,"builtin_seats":3,"effective_seats":10,…}
 ```
 
-签名必须能被信任根验证，否则返回 `license_rejected`。席位用尽后新终端授权会被拒绝
-（`seat_limit`），可注销闲置终端释放席位。续期或席位变更后你会收到新版本交付包，
-用同样方式重新激活即可覆盖旧许可证。
+签名必须能被信任根验证，否则返回 `license_rejected`。有效席位取许可证席位与内置
+3 席的较大值（内置授权是保底）；许可证过期后自动回退内置授权。席位用尽后新终端
+授权会被拒绝（`seat_limit`），可注销闲置终端释放席位。续期或席位变更后你会收到
+新版本交付包，用同样方式重新激活即可覆盖旧许可证。
 
 **激活回执**：激活成功后在控制台「密钥与授权」页点击「导出激活回执」（或
 `GET /api/v1/license/receipt`），将下载的 `license-receipt.json` 发回签发方，
@@ -283,12 +286,13 @@ journalctl -u hifihub-agent -f
 系统更新 / 网络诊断）；服务端控制台「终端管理 → 终端界面」通过反向代理内嵌同一界面。
 
 > - 令牌一次性：注册成功后即失效，重注册需重新签发。
-> - **节点密钥**：注册时服务端下发 secret，本地控制台的写操作（安装/卸载/电源/系统升级）
->   必须携带 `X-Node-Secret`；服务端代理会自动注入，直接访问终端本地页面时写操作被拒绝，
+> - **节点密钥**：注册时服务端下发 secret，服务端代理写操作自动注入 `X-Node-Secret`。
+>   终端本地页面在 `ALLOW_LOCAL=true` 时允许局域网浏览器直接写操作（本地 UI 以
+>   `X-Local-UI` 标记防跨站伪造）；`ALLOW_LOCAL=false` 时本地写操作全部拒绝，
 >   只读不受影响。
 > - `ALLOW_POWER`/`ALLOW_LOCAL` 可按终端收紧（关闭电源/本地安装权限）。
 > - 新注册终端默认**未授权**：需在控制台「终端管理」或「密钥与授权」中授权（占用一个
->   许可证席位）后才能接收下发任务。
+>   授权席位，内置 3 席，许可证可扩容）后才能接收下发任务。
 
 ### 5.3 安卓终端（APK）
 
@@ -310,7 +314,7 @@ journalctl -u hifihub-agent -f
 
 > - 令牌一次性，注册成功后失效；节点密钥持久化在应用私有目录（0600）。
 > - 安卓终端经 AAudio 默认输出出声，无 ALSA 设备名；EXCLUSIVE 不可用时自动回退 SHARED。
-> - 新注册终端默认未授权，需在控制台授权（占一个许可证席位）后才能接收播放推送。
+> - 新注册终端默认未授权，需在控制台授权（占一个授权席位）后才能接收播放推送。
 > - APK 由 CI 用 NDK r26 交叉编译 Go c-shared 核心（`libzatagent.so`）+ Gradle 组装；
 >   配置 release keystore（`ANDROID_KEYSTORE_*` secrets）后为 release 签名，否则 debug
 >   签名（仍可安装）。从源码重建见 §10.2。
@@ -325,7 +329,7 @@ journalctl -u hifihub-agent -f
 ```sh
 S=http://<服务端IP>:8080/api/v1
 
-# 0) 激活许可证（见 4.4）并授权终端（占一个席位）
+# 0) 授权终端（占一个席位；内置 3 席无需许可证，更多见 4.4）
 curl -s -X POST $S/nodes/<NodeID>/authorize
 
 # 1) 创建应用（目录条目）
@@ -395,7 +399,7 @@ curl -s $S/nodes/<NodeID>/netdiag               # DNS/TCP/mDNS/SSDP/组播探测
   `ALLOW_POWER` 门控，本地写操作受 `ALLOW_LOCAL` + 节点密钥门控；不可执行白名单外的单元。
 - **唯一下发源（FR-3）**：所有制品只来自服务端；终端不自行从公网拉取应用。`/dl/` 只暴露
   白名单文件名（agent deb / 安装脚本 / SHA256SUMS），不做目录穿越。
-- **授权门控**：未激活许可证或未授权终端不能接收下发任务；席位上限由许可证约束。
+- **授权门控**：未授权终端不能接收下发任务；席位上限为内置 3 席与许可证席位的较大值。
 - **传输安全**：生产请在服务端前加 TLS 反向代理并配置控制台鉴权；注册令牌一次性、短时效。
 - **审计**：所有管理变更写入审计日志（控制台「审计」页可筛选并导出 CSV/JSON）。
 
@@ -414,7 +418,7 @@ curl -s $S/nodes/<NodeID>/netdiag               # DNS/TCP/mDNS/SSDP/组播探测
 | 命令一直 `pending` | Agent 命令轮询未运行（版本过旧/服务未起）；`systemctl status hifihub-agent`，确认 deb 为 0.4.0 |
 | 任务停在 `waiting_idle` | 终端正在播放（播放门控生效）；等待空闲、关闭该终端播放保护，或调小 `HIFIHUB_IDLE_TIMEOUT` |
 | 终端界面代理 502 | 终端离线或本地 8080 未监听；核对节点 IP 与 `HIFIHUB_AGENT_LISTEN_ADDR`，检查终端防火墙 |
-| 本地控制台写操作 403 | 直连终端页面缺少 `X-Node-Secret`（设计如此）；从服务端控制台「终端界面」操作，或收紧 `ALLOW_LOCAL` |
+| 本地控制台写操作 403 | `ALLOW_LOCAL=false` 时本地写操作被禁（设计如此）；改为服务端控制台「终端界面」操作，或开启 `ALLOW_LOCAL`。旧版 Agent 直连写操作需 `X-Node-Secret`，升级 Agent 后局域网可直接操作 |
 | 安装失败 `dpkg -i` | 终端缺依赖；执行器会自动 `apt-get -f install` 修复一次；检查终端 apt 源可达 |
 | 权限/沙箱报错 | 服务端以非 root 运行，确认 `/var/lib/hifihub-server` 属主为 `hifihub-server` |
 
@@ -439,7 +443,7 @@ sudo apt-get remove hifihub-agent          # 停止并禁用服务
 sudo apt-get purge hifihub-agent           # 同时清除 conffile
 ```
 
-在服务端控制台注销终端会释放许可证席位；注销后 30 天内可在「终端管理」中恢复。
+在服务端控制台注销终端会释放授权席位；注销后 30 天内可在「终端管理」中恢复。
 
 ---
 
@@ -464,7 +468,7 @@ sh scripts/smoke-test.sh
 ```
 
 它临时生成 GPG 密钥、以 enforce 模式启动服务端，逐项验证：签名制品入库被接受、未签名
-被拒绝（NFR-S2）、下载完整性、一次性令牌注册与复用拒绝、许可证激活与席位门控、BOM
+被拒绝（NFR-S2）、下载完整性、一次性令牌注册与复用拒绝、内置授权与许可证扩容席位门控、BOM
 校验/发布、任务状态机与播放门控（`waiting_idle` → 空闲恢复 → `done`）、命令通道往返、
 审计与 `/dl/` 白名单，结束后自动清理。
 
@@ -651,5 +655,5 @@ bind 进容器 `/mnt/zephyr`（compose 的 `./media`）。容器内直接 CIFS �
 - `HIFIHUB_UPDATE_SELF` / `UPDATE_AUTO` 预置 `false`：容器内无 systemd，**升级 = 拉新镜像 /
   导入新 tar 后重建容器**；终端收敛（`UPDATE_FLEET`）照常工作，目标版本跟随镜像版本。
   升级时同步用新 bundle 的 `server/dist` 刷新 `data/dist`。
-- enforce 验签、播放门控、许可证席位门控、审计与 systemd 版完全一致。
+- enforce 验签、播放门控、授权席位门控、审计与 systemd 版完全一致。
 - 其余环境变量（`HIFIHUB_*`）均可在 compose / NAS UI 中覆盖，语义同 3.2 与 11.3。

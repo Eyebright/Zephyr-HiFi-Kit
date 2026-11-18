@@ -82,6 +82,10 @@ func (s *Store) additiveMigrate() error {
 		// audit: human detail + duration (FR-7.2).
 		{"audit", "detail", "TEXT NOT NULL DEFAULT ''"},
 		{"audit", "duration_ms", "INTEGER NOT NULL DEFAULT 0"},
+		// tracks: embedded album art reference (covers table, sha256-keyed).
+		{"tracks", "cover_hash", "TEXT NOT NULL DEFAULT ''"},
+		// app_versions: distro package name for format=apt entries.
+		{"app_versions", "apt_package", "TEXT NOT NULL DEFAULT ''"},
 	}
 	for _, c := range cols {
 		if err := s.addColumnIfMissing(c.table, c.name, c.decl); err != nil {
@@ -407,10 +411,49 @@ CREATE TABLE IF NOT EXISTS tracks (
 );
 CREATE INDEX IF NOT EXISTS idx_tracks_mount ON tracks(mount_id);
 
+CREATE TABLE IF NOT EXISTS covers (
+  hash       TEXT PRIMARY KEY,
+  mime       TEXT NOT NULL,
+  data       BLOB NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS node_queue (
   node_id    TEXT PRIMARY KEY,
   track_ids  TEXT NOT NULL DEFAULT '[]',
   position   INTEGER NOT NULL DEFAULT 0,
   updated_at INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS play_history (
+  id         TEXT PRIMARY KEY,
+  node_id    TEXT NOT NULL,
+  track_id   TEXT NOT NULL,
+  started_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_history_at ON play_history(started_at);
+
+CREATE TABLE IF NOT EXISTS playlists (
+  id         TEXT PRIMARY KEY,
+  name       TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS playlist_items (
+  playlist_id TEXT NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+  position    INTEGER NOT NULL,
+  track_id    TEXT NOT NULL,
+  PRIMARY KEY (playlist_id, position)
+);
+
+CREATE TABLE IF NOT EXISTS apt_sources (
+  id         TEXT PRIMARY KEY,
+  name       TEXT NOT NULL,
+  url        TEXT NOT NULL,
+  components TEXT NOT NULL DEFAULT 'main',
+  key_url    TEXT NOT NULL DEFAULT '',
+  distros    TEXT NOT NULL DEFAULT '[]',
+  created_at INTEGER NOT NULL
 );
 `
