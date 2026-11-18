@@ -271,7 +271,7 @@
   } else $$(".rv").forEach(function (el) { el.classList.add("in"); });
 
   /* ─────────── marquee ─────────── */
-  var MQ = ["GPG 强制验签", "BOM 期望态", "灰度环推进", "播放门控 FR-3.10", "席位授权", "全量审计", "DAC 仲裁",
+  var MQ = ["GPG 强制验签", "BOM 期望态", "灰度环推进", "播放门控 FR-3.10", "席位授权", "操作日志", "DAC 仲裁",
     "一次性注册令牌", "systemd 白名单", "mDNS / SSDP 诊断", "版本历史回滚", "CSV / JSON 导出", "命令通道", "信任根分工",
     "SMB 媒体库", "ZAT 推流协议", "libFLAC 解码", "ALSA 比特完美", "音频格式识别", "正在播放控制台",
     "服务端自升级", "终端版本收敛", "SHA256 + GPG 校验", "原子置换重启", "失败退避重试"];
@@ -1071,14 +1071,14 @@
     ta.remove();
   }
   var DEBS = {
-    amd64: ["hifihub-agent_0.4.0_amd64.deb", "x86_64 PC · 4.0 MiB"],
-    arm64: ["hifihub-agent_0.4.0_arm64.deb", "树莓派 3/4/5 · 64 位 · 3.6 MiB"],
-    armhf: ["hifihub-agent_0.4.0_armhf.deb", "树莓派 2/3/4 · 32 位 · 3.9 MiB"]
+    amd64: ["hifihub-agent_0.4.3_amd64.deb", "x86_64 PC"],
+    arm64: ["hifihub-agent_0.4.3_arm64.deb", "树莓派 3/4/5 · 64 位"],
+    armhf: ["hifihub-agent_0.4.3_armhf.deb", "树莓派 2/3/4 · 32 位"]
   };
   var archSel = $("#dl-arch");
   if (archSel) archSel.addEventListener("change", function () {
     var d = DEBS[archSel.value], link = $("#dl-deb");
-    if (link) link.href = "https://github.com/Eyebright/zephyr-music-server/releases/download/v0.4.0/" + d[0];
+    if (link) link.href = "https://github.com/Eyebright/zephyr-music-server/releases/download/v0.4.3/" + d[0];
     var n = $("#dl-deb-name"), m = $("#dl-deb-meta");
     if (n) n.textContent = d[0]; if (m) m.textContent = d[1];
     Audio2.blip(560, .08, "sine", .08);
