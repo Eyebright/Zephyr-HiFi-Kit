@@ -81,7 +81,7 @@ func main() {
 	met := metrics.New(cfg.DBPath)
 
 	// Media library (SMB mounts + scanned tracks) and the ZAT push-playback
-	// server: the Roon-like core of Zephyr Music Player. Mount dirs are a
+	// server: the Roon-like core of Zephyr HiFi Kit. Mount dirs are a
 	// privileged, optional concern (kernel mount.cifs needs root), so create
 	// them best-effort: the management core must start unprivileged. Each mount
 	// point is created lazily at mount time by the library service.

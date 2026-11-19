@@ -11,7 +11,7 @@ import (
 
 // DefaultFeed is the official public release feed. Operators on isolated LANs
 // point HIFIHUB_UPDATE_FEED at an internal mirror serving the same JSON shape.
-const DefaultFeed = "https://api.github.com/repos/Eyebright/zephyr-music-server/releases/latest"
+const DefaultFeed = "https://api.github.com/repos/Eyebright/Zephyr-HiFi-Kit/releases/latest"
 
 // Asset is one downloadable release artifact. Digest is the feed-published
 // sha256 ("sha256:<hex>") when the feed provides it; it pins the exact bytes.

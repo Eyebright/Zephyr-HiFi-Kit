@@ -107,7 +107,7 @@ const consoleHTML = `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Zephyr Music Player · 终端</title>
+<title>Zephyr HiFi Kit · 终端</title>
 <style>
 :root{
   --bg0:#0b1020; --bg1:#131a33; --card:#161d3a; --line:#26305c;
@@ -164,7 +164,7 @@ h3{font-size:12px;letter-spacing:.8px;text-transform:uppercase;color:var(--mut);
 <div class="wrap">
   <header>
     <div class="logo">Z</div>
-    <div class="brand">Zephyr Music Player<small>ANDROID 终端 · ZAT 播放</small></div>
+    <div class="brand">Zephyr HiFi Kit<small>ANDROID 终端 · ZAT 播放</small></div>
   </header>
 
   <div class="card">
@@ -209,7 +209,7 @@ h3{font-size:12px;letter-spacing:.8px;text-transform:uppercase;color:var(--mut);
     </div>
   </div>
 
-  <div class="foot">Zephyr Music Player · 比特完美 ZAT 终端 · AAudio 输出</div>
+  <div class="foot">Zephyr HiFi Kit · 比特完美 ZAT 终端 · AAudio 输出</div>
 </div>
 <script>
 var seekMax = 0, seeking = false, volBusy = false;

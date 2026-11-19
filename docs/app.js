@@ -1,5 +1,5 @@
 /* ============================================================
-   Zephyr Music Player · Product Site
+   Zephyr HiFi Kit · Product Site
    Single rAF loop · shared fleet state · WebAudio ambience
    ============================================================ */
 (function () {
@@ -1078,7 +1078,7 @@
   var archSel = $("#dl-arch");
   if (archSel) archSel.addEventListener("change", function () {
     var d = DEBS[archSel.value], link = $("#dl-deb");
-    if (link) link.href = "https://github.com/Eyebright/zephyr-music-server/releases/download/v0.4.3/" + d[0];
+    if (link) link.href = "https://github.com/Eyebright/Zephyr-HiFi-Kit/releases/download/v0.4.3/" + d[0];
     var n = $("#dl-deb-name"), m = $("#dl-deb-meta");
     if (n) n.textContent = d[0]; if (m) m.textContent = d[1];
     Audio2.blip(560, .08, "sine", .08);

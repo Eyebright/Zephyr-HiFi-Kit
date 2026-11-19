@@ -1,4 +1,4 @@
-# Zephyr Music Player — NAS / container server image (audio-capable).
+# Zephyr HiFi Kit — NAS / container server image (audio-capable).
 # Multi-stage: CGO libFLAC server build, then a slim runtime with gnupg for
 # enforce-mode signature verification. No systemd/apt assumptions: the binary
 # runs directly, all state lives in the /data volume.

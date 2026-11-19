@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Zephyr Music Player · Hi-Fi 机群唯一下发源 | Roon / HQPlayer 多终端听音室管理</title>
-<meta name="description" content="Zephyr Music Player 适用于多终端 Hi-Fi 机群、听音室与音响展厅：一台 x86 Linux 服务端统一编排 Roon / HQPlayer / 系统更新，并以自有 ZAT 协议（RAAT-like）把 SMB 媒体库音频比特完美推送到终端出声。签名制品、灰度下发、播放门控、席位授权、操作日志；服务端自动检测新版本自升级、终端版本跟随服务端逐环收敛；管理版纯 Go 单二进制、可离线内网运行，音频版 CGO + libFLAC + ALSA。">
+<title>Zephyr HiFi Kit · Hi-Fi 机群唯一下发源 | Roon / HQPlayer 多终端听音室管理</title>
+<meta name="description" content="Zephyr HiFi Kit 适用于多终端 Hi-Fi 机群、听音室与音响展厅：一台 x86 Linux 服务端统一编排 Roon / HQPlayer / 系统更新，并以自有 ZAT 协议（RAAT-like）把 SMB 媒体库音频比特完美推送到终端出声。签名制品、灰度下发、播放门控、席位授权、操作日志；服务端自动检测新版本自升级、终端版本跟随服务端逐环收敛；管理版纯 Go 单二进制、可离线内网运行，音频版 CGO + libFLAC + ALSA。">
 <meta name="keywords" content="Hi-Fi 机群管理,Roon 多终端管理,HQPlayer NAA,听音室系统,音响展厅,多房间音频,树莓派 Hi-Fi 终端,x86 Linux 音乐服务器,灰度下发,播放门控,席位授权,ZAT 音频协议,SMB 媒体库,FLAC 解码,ALSA 比特完美,RAAT-like 推流">
 <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
 <meta name="theme-color" content="#07090d">
@@ -12,17 +12,17 @@
 <link rel="alternate" hreflang="zh-CN" href="https://zephyr.hk/">
 <link rel="alternate" hreflang="x-default" href="https://zephyr.hk/">
 <meta property="og:type" content="website">
-<meta property="og:site_name" content="Zephyr Music Player">
+<meta property="og:site_name" content="Zephyr HiFi Kit">
 <meta property="og:locale" content="zh_CN">
-<meta property="og:title" content="Zephyr Music Player · Hi-Fi 机群唯一下发源 | Roon / HQPlayer 多终端听音室管理">
+<meta property="og:title" content="Zephyr HiFi Kit · Hi-Fi 机群唯一下发源 | Roon / HQPlayer 多终端听音室管理">
 <meta property="og:description" content="适用于多终端 Hi-Fi 机群、听音室与音响展厅。一台 x86 Linux 服务端统一编排 Roon / HQPlayer / 系统更新，并以自有 ZAT 协议把 SMB 媒体库音频比特完美推送到终端；签名制品、灰度下发、播放门控、席位授权、操作日志；服务端自升级、终端版本自动收敛。">
 <meta property="og:url" content="https://zephyr.hk/">
 <meta property="og:image" content="https://zephyr.hk/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Zephyr Music Player — Hi-Fi 机群唯一下发源">
+<meta property="og:image:alt" content="Zephyr HiFi Kit — Hi-Fi 机群唯一下发源">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Zephyr Music Player · Hi-Fi 机群唯一下发源">
+<meta name="twitter:title" content="Zephyr HiFi Kit · Hi-Fi 机群唯一下发源">
 <meta name="twitter:description" content="适用于多终端 Hi-Fi 机群、听音室与音响展厅：Roon / HQPlayer 统一编排 + 自有 ZAT 协议音频推流，签名制品、灰度下发、播放门控、席位授权。">
 <meta name="twitter:image" content="https://zephyr.hk/og.png">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
@@ -37,14 +37,14 @@
   "@graph": [
     {
       "@type": "WebSite",
-      "name": "Zephyr Music Player",
+      "name": "Zephyr HiFi Kit",
       "url": "https://zephyr.hk/",
       "inLanguage": "zh-CN"
     },
     {
       "@type": "SoftwareApplication",
-      "name": "Zephyr Music Player",
-      "alternateName": "Zephyr Music Server",
+      "name": "Zephyr HiFi Kit",
+      "alternateName": ["Zephyr Music Player", "Zephyr Music Server"],
       "url": "https://zephyr.hk/",
       "image": "https://zephyr.hk/og.png",
       "screenshot": "https://zephyr.hk/og.png",
@@ -54,7 +54,7 @@
       "operatingSystem": "Linux x86_64 服务端；终端 amd64 / arm64 / armhf；Android 8.0+（arm64 / armv7）",
       "softwareVersion": "0.4.3",
       "license": "https://opensource.org/licenses/MIT",
-      "downloadUrl": "https://github.com/Eyebright/zephyr-music-server/releases/tag/v0.4.3",
+      "downloadUrl": "https://github.com/Eyebright/Zephyr-HiFi-Kit/releases/tag/v0.4.3",
       "installUrl": "https://zephyr.hk/#install",
       "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
       "featureList": [
@@ -103,13 +103,13 @@
 
 <header class="nav" id="nav">
   <div class="nav-in">
-    <a class="brand" href="#top" aria-label="Zephyr Music Player 首页">
+    <a class="brand" href="#top" aria-label="Zephyr HiFi Kit 首页">
       <span class="brand-mark" aria-hidden="true">
         <svg viewBox="0 0 32 32" width="30" height="30"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffd479"/><stop offset="1" stop-color="#f6a821"/></linearGradient></defs><rect x="1.2" y="1.2" width="29.6" height="29.6" rx="9" fill="none" stroke="url(#bm)" stroke-width="1.6"/><path d="M7 20.5V11.5M11.5 23V9M16 25.5V6.5M20.5 23V9M25 20.5V11.5" stroke="url(#bm)" stroke-width="2.1" stroke-linecap="round"/></svg>
       </span>
       <span class="brand-txt">
         <b>ZEPHYR</b>
-        <i>MUSIC PLAYER</i>
+        <i>HIFI KIT</i>
       </span>
     </a>
     <nav class="links" id="nav-links" aria-label="页面导航">
@@ -126,7 +126,7 @@
       <button class="snd" id="snd" type="button" aria-pressed="true" title="声音总开关：一键静音全部声音 · 背景音乐《500 Miles》">
         <span class="snd-ico" aria-hidden="true"></span><span id="snd-txt">声音 开</span>
       </button>
-      <a class="btn gold sm" href="https://github.com/Eyebright/zephyr-music-server" target="_blank" rel="noopener">
+      <a class="btn gold sm" href="https://github.com/Eyebright/Zephyr-HiFi-Kit" target="_blank" rel="noopener">
         <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
         GitHub
       </a>
@@ -146,7 +146,7 @@
       <div class="eyebrow rv" style="--d:0ms"><span class="dot"></span>SINGLE SOURCE OF TRUTH · 唯一下发源</div>
       <h1 class="rv" style="--d:70ms">把整片机群<br><span class="grad-warm">收敛到一台服务端</span></h1>
       <p class="lede rv" style="--d:150ms">
-        Zephyr Music Player 用一台 x86 Linux 主机统一管理数十至数百台 Hi-Fi 终端：
+        Zephyr HiFi Kit 用一台 x86 Linux 主机统一管理数十至数百台 Hi-Fi 终端：
         签名制品仓库、BOM 期望态、灰度下发、播放门控、席位授权与操作日志，并以自有 ZAT 协议
         （RAAT-like）把 SMB 媒体库的音频比特完美推送到终端出声。服务端自动检测新版本并
         自升级，终端版本跟随服务端逐环自动收敛。
@@ -155,7 +155,7 @@
       <div class="hero-cta rv" style="--d:230ms">
         <a class="btn gold" href="#install">立即部署<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M3 8h10M9 4l4 4-4 4"/></svg></a>
         <a class="btn line" href="#demo">操纵机群演示</a>
-        <a class="btn ghost" href="https://github.com/Eyebright/zephyr-music-server/releases/tag/v0.4.3" target="_blank" rel="noopener">v0.4.3 下载</a>
+        <a class="btn ghost" href="https://github.com/Eyebright/Zephyr-HiFi-Kit/releases/tag/v0.4.3" target="_blank" rel="noopener">v0.4.3 下载</a>
       </div>
       <ul class="hero-chips rv" style="--d:310ms">
         <li><b>9</b>能力域</li>
@@ -193,7 +193,7 @@
     <header class="sec-h rv">
       <span class="kicker">SCENARIOS · 适用范围</span>
       <h2>它管哪些机器，<span class="grad-warm">适合谁用</span></h2>
-      <p>从一间听音室到一片多终端 Hi-Fi 机群——Zephyr Music Player 把 Roon / HQPlayer 播放终端、x86 小主机与树莓派 ARM 终端收敛到一台 x86 Linux 服务端，统一编排、签名下发、灰度推进。下面这些场景，都是它的主场。</p>
+      <p>从一间听音室到一片多终端 Hi-Fi 机群——Zephyr HiFi Kit 把 Roon / HQPlayer 播放终端、x86 小主机与树莓派 ARM 终端收敛到一台 x86 Linux 服务端，统一编排、签名下发、灰度推进。下面这些场景，都是它的主场。</p>
     </header>
     <div class="bento">
       <article class="cell rv" data-hue="amber">
@@ -537,7 +537,7 @@ curl -s http://127.0.0.1:8080/api/v1/health</code></pre>
           <span class="pill">install.sh 一键装机</span>
         </div>
         <div class="dl-stack">
-          <a class="dl-item" href="https://github.com/Eyebright/zephyr-music-server/releases/download/v0.4.3/zephyr-music-server-0.4.3.tar.gz">
+          <a class="dl-item" href="https://github.com/Eyebright/Zephyr-HiFi-Kit/releases/download/v0.4.3/zephyr-music-server-0.4.3.tar.gz">
             <span class="dl-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 19h16"/></svg></span>
             <span class="dl-txt"><b>zephyr-music-server-0.4.3.tar.gz</b><i>完整安装包：服务端 + 三架构终端 deb + 安装器</i></span>
             <span class="dl-go">下载</span>
@@ -545,8 +545,8 @@ curl -s http://127.0.0.1:8080/api/v1/health</code></pre>
           <div class="dl-sub">
             <span class="dl-sub-t">真实播放选音频版（libFLAC 解码 + ALSA 出声）</span>
             <span class="dl-chips">
-              <a href="https://github.com/Eyebright/zephyr-music-server/releases/download/v0.4.3/zephyr-music-server-0.4.3-audio-amd64.tar.gz">x86_64</a>
-              <a href="https://github.com/Eyebright/zephyr-music-server/releases/download/v0.4.3/zephyr-music-server-0.4.3-audio-arm64.tar.gz">aarch64</a>
+              <a href="https://github.com/Eyebright/Zephyr-HiFi-Kit/releases/download/v0.4.3/zephyr-music-server-0.4.3-audio-amd64.tar.gz">x86_64</a>
+              <a href="https://github.com/Eyebright/Zephyr-HiFi-Kit/releases/download/v0.4.3/zephyr-music-server-0.4.3-audio-arm64.tar.gz">aarch64</a>
             </span>
           </div>
         </div>
@@ -566,12 +566,12 @@ curl -s http://127.0.0.1:8080/api/v1/health</code></pre>
               <option value="armhf">ARM 32 位</option>
             </select>
           </div>
-          <a class="dl-item" id="dl-deb" href="https://github.com/Eyebright/zephyr-music-server/releases/download/v0.4.3/hifihub-agent_0.4.3_arm64.deb">
+          <a class="dl-item" id="dl-deb" href="https://github.com/Eyebright/Zephyr-HiFi-Kit/releases/download/v0.4.3/hifihub-agent_0.4.3_arm64.deb">
             <span class="dl-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 9h6v6H9z"/></svg></span>
             <span class="dl-txt"><b id="dl-deb-name">hifihub-agent_0.4.3_arm64.deb</b><i id="dl-deb-meta">树莓派 3/4/5 · 64 位</i></span>
             <span class="dl-go">下载</span>
           </a>
-          <a class="dl-item" href="https://github.com/Eyebright/zephyr-music-server/releases/download/v0.4.3/zephyr-terminal-0.4.3.apk">
+          <a class="dl-item" href="https://github.com/Eyebright/Zephyr-HiFi-Kit/releases/download/v0.4.3/zephyr-terminal-0.4.3.apk">
             <span class="dl-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg></span>
             <span class="dl-txt"><b>zephyr-terminal-0.4.3.apk</b><i>安卓终端 · Android 8.0+ · arm64 / armv7</i></span>
             <span class="dl-go">下载</span>
@@ -581,12 +581,12 @@ curl -s http://127.0.0.1:8080/api/v1/health</code></pre>
       </div>
     </div>
     <div class="dl-docs">
-      <a class="dl-item rv" href="https://github.com/Eyebright/zephyr-music-server/releases/tag/v0.4.3" target="_blank" rel="noopener">
+      <a class="dl-item rv" href="https://github.com/Eyebright/Zephyr-HiFi-Kit/releases/tag/v0.4.3" target="_blank" rel="noopener">
         <span class="dl-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
         <span class="dl-txt"><b>Release 说明与校验和</b><i>v0.4.3 已发布，下载后核对 SHA256SUMS</i></span>
         <span class="dl-go">查看</span>
       </a>
-      <a class="dl-item rv" href="https://github.com/Eyebright/zephyr-music-server/blob/main/INSTALL.md" target="_blank" rel="noopener">
+      <a class="dl-item rv" href="https://github.com/Eyebright/Zephyr-HiFi-Kit/blob/main/INSTALL.md" target="_blank" rel="noopener">
         <span class="dl-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
         <span class="dl-txt"><b>部署说明 INSTALL.md</b><i>服务端装机 · 终端入网 · 安卓安装 · 自动更新</i></span>
         <span class="dl-go">查看</span>
@@ -674,9 +674,9 @@ curl -s http://127.0.0.1:8080/api/v1/health</code></pre>
       <h2>把机群交给<span class="grad-warm">一个下发源</span></h2>
       <p>v0.4.3 已发布：下载安装包，每台终端一条命令入网。</p>
       <div class="cta-btns">
-        <a class="btn gold lg" href="https://github.com/Eyebright/zephyr-music-server/releases/download/v0.4.3/zephyr-music-server-0.4.3.tar.gz">下载 v0.4.3</a>
-        <a class="btn line lg" href="https://github.com/Eyebright/zephyr-music-server" target="_blank" rel="noopener">查看源码</a>
-        <a class="btn ghost lg" href="https://github.com/Eyebright/zephyr-music-server/blob/main/INSTALL.md" target="_blank" rel="noopener">部署文档</a>
+        <a class="btn gold lg" href="https://github.com/Eyebright/Zephyr-HiFi-Kit/releases/download/v0.4.3/zephyr-music-server-0.4.3.tar.gz">下载 v0.4.3</a>
+        <a class="btn line lg" href="https://github.com/Eyebright/Zephyr-HiFi-Kit" target="_blank" rel="noopener">查看源码</a>
+        <a class="btn ghost lg" href="https://github.com/Eyebright/Zephyr-HiFi-Kit/blob/main/INSTALL.md" target="_blank" rel="noopener">部署文档</a>
       </div>
     </div>
   </div>
@@ -690,17 +690,17 @@ curl -s http://127.0.0.1:8080/api/v1/health</code></pre>
       <div class="foot-brand">
         <div class="brand">
           <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" width="28" height="28"><rect x="1.2" y="1.2" width="29.6" height="29.6" rx="9" fill="none" stroke="#f6a821" stroke-width="1.6"/><path d="M7 20.5V11.5M11.5 23V9M16 25.5V6.5M20.5 23V9M25 20.5V11.5" stroke="#ffd479" stroke-width="2.1" stroke-linecap="round"/></svg></span>
-          <span class="brand-txt"><b>ZEPHYR</b><i>MUSIC PLAYER</i></span>
+          <span class="brand-txt"><b>ZEPHYR</b><i>HIFI KIT</i></span>
         </div>
         <p>面向家庭与小型商用 Hi-Fi 机群的音乐服务与终端推送平台：唯一下发源 + 自有 ZAT 协议比特完美推流。</p>
         <div class="foot-eq" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
       </div>
       <div class="foot-col"><h4>产品</h4><a href="#scenarios">适用范围</a><a href="#features">能力</a><a href="#architecture">架构</a><a href="#security">安全</a><a href="#demo">交互演示</a></div>
-      <div class="foot-col"><h4>资源</h4><a href="#install">安装</a><a href="#specs">规格</a><a href="#faq">FAQ</a><a href="https://github.com/Eyebright/zephyr-music-server/blob/main/INSTALL.md" target="_blank" rel="noopener">INSTALL.md</a><a href="https://github.com/Eyebright/zephyr-music-server/releases" target="_blank" rel="noopener">全部发布</a></div>
-      <div class="foot-col"><h4>联系</h4><a href="mailto:services@zephyr.hk">services@zephyr.hk</a><a href="https://www.zephyr.hk" target="_blank" rel="noopener">www.zephyr.hk</a><a href="https://github.com/Eyebright/zephyr-music-server" target="_blank" rel="noopener">GitHub 仓库</a><a href="https://github.com/Eyebright/zephyr-music-server/issues" target="_blank" rel="noopener">问题反馈</a></div>
+      <div class="foot-col"><h4>资源</h4><a href="#install">安装</a><a href="#specs">规格</a><a href="#faq">FAQ</a><a href="https://github.com/Eyebright/Zephyr-HiFi-Kit/blob/main/INSTALL.md" target="_blank" rel="noopener">INSTALL.md</a><a href="https://github.com/Eyebright/Zephyr-HiFi-Kit/releases" target="_blank" rel="noopener">全部发布</a></div>
+      <div class="foot-col"><h4>联系</h4><a href="mailto:services@zephyr.hk">services@zephyr.hk</a><a href="https://www.zephyr.hk" target="_blank" rel="noopener">www.zephyr.hk</a><a href="https://github.com/Eyebright/Zephyr-HiFi-Kit" target="_blank" rel="noopener">GitHub 仓库</a><a href="https://github.com/Eyebright/Zephyr-HiFi-Kit/issues" target="_blank" rel="noopener">问题反馈</a></div>
     </div>
     <div class="foot-bar">
-      <span>© 2026 Zephyr Music Player contributors · MIT License</span>
+      <span>© 2026 Zephyr HiFi Kit contributors · MIT License</span>
       <span class="foot-ver">v0.4.3 · 管理版纯 Go · 音频版 CGO + libFLAC + ALSA · SQLite 单文件</span>
     </div>
   </div>

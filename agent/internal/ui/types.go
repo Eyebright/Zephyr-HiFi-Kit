@@ -1,4 +1,4 @@
-// Package ui serves the terminal's local web console (Zephyr Music Player
+// Package ui serves the terminal's local web console (Zephyr HiFi Kit
 // style): browse to the terminal's IP to install/uninstall/enable/disable the
 // audio services the server provides, watch performance, run system updates and
 // network diagnostics, and reboot/shutdown. The UI depends only on the Backend

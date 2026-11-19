@@ -1,5 +1,5 @@
 #!/bin/sh
-# Zephyr Music Player — build the Android terminal APK on a Linux host.
+# Zephyr HiFi Kit — build the Android terminal APK on a Linux host.
 #
 # Cross-builds the Go c-shared core (libzatagent.so) with the NDK clang toolchain
 # and the AAudio backend, places it in the app's jniLibs, then assembles the

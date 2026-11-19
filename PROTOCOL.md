@@ -1,6 +1,6 @@
 # Zephyr Audio Transport (ZAT) 协议规格 · v0.1
 
-> 状态：功能验证阶段草案（vertical slice）。本协议是 Zephyr Music Player 自有的
+> 状态：功能验证阶段草案（vertical slice）。本协议是 Zephyr HiFi Kit 自有的
 > 音频传输协议，设计参照 Roon RAAT 的「服务端解码 → 缓冲流式推送 → 终端时钟驱动播放」
 > 模型，但为独立实现，不兼容也不复用 RAAT 的私有报文。
 >

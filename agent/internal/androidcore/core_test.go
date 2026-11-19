@@ -49,7 +49,7 @@ func TestConsoleServesHTML(t *testing.T) {
 	if rec.Code != 200 {
 		t.Fatalf("GET / = %d", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), "Zephyr Music Player") {
+	if !strings.Contains(rec.Body.String(), "Zephyr HiFi Kit") {
 		t.Fatal("console HTML missing brand")
 	}
 }

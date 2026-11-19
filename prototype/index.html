@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Zephyr Music Server · 家庭音乐服务器管控平台</title>
+<title>Zephyr HiFi Kit · 家庭音乐服务器管控平台</title>
 <style>
 /* ============================ design system ============================ */
 :root{
@@ -769,7 +769,7 @@ input.invalid,select.invalid,textarea.invalid{border-color:var(--red);box-shadow
   <div class="brand">
     <div class="mark" id="mark"></div>
     <div>
-      <h1>Zephyr Music Server</h1>
+      <h1>Zephyr HiFi Kit</h1>
       <p class="tag">服务端 x86 Linux · 唯一下发源 · www.zephyr.hk</p>
     </div>
   </div>
@@ -1012,9 +1012,9 @@ function seed(){
   ],
   cpu_hist:[12,15,13,18,22,19,14,11,16,20,24,18,15,13,17,21,19,14,12,14]
  };
- // ---- Zephyr Music Server host consumption (服务端自身资源) ----
+ // ---- Zephyr HiFi Kit host consumption (服务端自身资源) ----
  DB.server={
-  name:'Zephyr Music Server',host:'zephyr-core',arch:'x86_64',distro:'Debian 12',kernel:'6.1.0',version:'0.1.0',
+  name:'Zephyr HiFi Kit',host:'zephyr-core',arch:'x86_64',distro:'Debian 12',kernel:'6.1.0',version:'0.1.0',
   uptime:now()-260000,signature_mode:'enforce',
   cpu:24,cpu_cores:8,cpu_model:'Intel N100 · 8 threads',
   mem_used_mb:3180,mem_total_mb:8192,
@@ -1047,13 +1047,13 @@ function seed(){
  ];
  // ---- GPG keys (NFR-S2 / FR-3.11.8) ----
  DB.keys=[
-  {id:'key-sign',fingerprint:'A1B2 C3D4 E5F6 7890 ABCD EF12 3456 7890 DEAD BEEF',name:'Zephyr Signing 2026',email:'services@zephyr.hk',type:'public',algo:'ed25519',created:now()-6e5,expires:now()+3e7,role:'制品签名信任根 · 内置到所有 Zephyr Music Player',distributed:['n-livingroom','n-study','n-avroom'],status:'active'},
+  {id:'key-sign',fingerprint:'A1B2 C3D4 E5F6 7890 ABCD EF12 3456 7890 DEAD BEEF',name:'Zephyr Signing 2026',email:'services@zephyr.hk',type:'public',algo:'ed25519',created:now()-6e5,expires:now()+3e7,role:'制品签名信任根 · 内置到所有 Zephyr HiFi Kit',distributed:['n-livingroom','n-study','n-avroom'],status:'active'},
   {id:'key-sub',fingerprint:'9F8E 7D6C 5B4A 3928 1706 F5E4 D3C2 B1A0 9876 5432',name:'Zephyr Signing Subkey',email:'services@zephyr.hk',type:'subkey',algo:'ed25519',created:now()-6e5,expires:now()+1.5e7,role:'服务端持有的签名子密钥（主密钥离线）',distributed:[],status:'active'},
   {id:'key-old',fingerprint:'1234 5678 9ABC DEF0 1234 5678 9ABC DEF0 1234 5678',name:'Zephyr Signing 2025',email:'services@zephyr.hk',type:'public',algo:'rsa4096',created:now()-3e7,expires:now()-1e6,role:'已过期旧公钥',distributed:['n-bedroom'],status:'expired'}
  ];
  // ---- service license / authorization (官方签发 · www.zephyr.hk) ----
  DB.license={
-  product:'Zephyr Music Server',edition:'Studio',channel:'stable',
+  product:'Zephyr HiFi Kit',edition:'Studio',channel:'stable',
   license_key:'ZMS-7Q4K-9XRT-2MPL-6VBN',
   status:'activated',
   account:'services@zephyr.hk',domain:'www.zephyr.hk',org:'Zephyr Audio',
@@ -1508,7 +1508,7 @@ async function viewOverview(){
  const pt=(ic,t,h)=>`<div class="panel-title"><span style="display:flex;align-items:center;gap:8px">${icon(ic,18)} ${t}</span><span class="hint">${h}</span></div>`;
  $('#view').innerHTML=`
  <div class="grid stats">
-  ${stat('k-online',k.online,'在线终端','nodes','var(--green)','共 '+k.total+' 台 Zephyr Music Player')}
+  ${stat('k-online',k.online,'在线终端','nodes','var(--green)','共 '+k.total+' 台 Zephyr HiFi Kit')}
   ${stat('k-playing',k.playing,'正在播放','music','var(--magenta)','跨协议会话')}
   ${stat('k-running',k.running,'运行服务','signal','var(--cyan)','AirPlay / RAAT / NAA / QPlay')}
   ${stat('k-cpu',k.cpu,'服务端 CPU','chip','var(--amber)','8 核 · load '+k.load)}
@@ -1516,12 +1516,12 @@ async function viewOverview(){
   ${stat('k-alerts',k.alerts,'待处理告警','bell',k.crit?'var(--red)':'var(--green)',k.crit+' 严重')}
  </div>
  <div class="card srv-core-card enter section" style="--i:6">
-  ${pt('server','服务端消耗','Zephyr Music Server 主机资源与同机核心服务实时监控')}
+  ${pt('server','服务端消耗','Zephyr HiFi Kit 主机资源与同机核心服务实时监控')}
   <div id="srv-panel">${serverPanelHTML()}</div>
   <div id="roon-panel">${roonPanelHTML()}</div>
  </div>
  <div class="card enter section" style="--i:7">
-  ${pt('nodes','终端状态',k.online+'/'+k.total+' 在线 · 点击打开 Zephyr Music Player')}
+  ${pt('nodes','终端状态',k.online+'/'+k.total+' 在线 · 点击打开 Zephyr HiFi Kit')}
   <div id="term-grid" class="term-grid">${termCardsHTML()}</div>
  </div>
  <div class="card enter" style="--i:8">
@@ -1563,7 +1563,7 @@ async function viewNodes(){
    <button class="btn ghost sm" data-act="node-cfg" data-id="${n.node_id}" title="别名 / 期望 BOM / DAC 仲裁 / 播放保护 / 授权与注销">${icon('config',14)}配置</button>
    <button class="btn ghost sm" data-act="os-open" data-id="${n.node_id}" title="系统更新（apt）">${icon('osupdate',14)}系统更新${pc?`<span class="act-badge">${pc}</span>`:rb?`<span class="act-badge rb" title="待重启">${icon('reboot',10)}</span>`:''}</button>
    <button class="btn ghost sm" data-act="net-open" data-id="${n.node_id}" title="网络诊断（mDNS / SSDP / 多播）">${icon('network',14)}网络诊断</button>
-   <button class="btn ghost sm" data-act="term" data-id="${n.node_id}" title="打开 Zephyr Music Player 本地控制台，控制该主机">${icon('terminal',14)}终端界面</button>
+   <button class="btn ghost sm" data-act="term" data-id="${n.node_id}" title="打开 Zephyr HiFi Kit 本地控制台，控制该主机">${icon('terminal',14)}终端界面</button>
   </div></td></tr>`;}).join('');
  $('#view').innerHTML=`
  <div class="ws-head"><div class="panel-title">${icon('nodes',18)} 终端管理 <span class="hint">节点注册 · 系统更新 · 网络诊断 · 终端全生命周期</span></div>
@@ -1600,7 +1600,7 @@ function renderWiz(){
  const groups=[...new Set(DB.nodes.map(n=>n.group).filter(Boolean))];
  if(w.step===1){
   body=`${wizSteps(1)}
-   <div class="banner info">${icon('nodes',18)}<span><b>接入一台新的 Zephyr Music Player</b> · 先登记房间与架构，服务端签发一次性令牌，终端持令牌自动注册（FR-4.1）。</span></div>
+   <div class="banner info">${icon('nodes',18)}<span><b>接入一台新的 Zephyr HiFi Kit</b> · 先登记房间与架构，服务端签发一次性令牌，终端持令牌自动注册（FR-4.1）。</span></div>
    <label class="field"><span>终端别名 <b style="color:var(--red)">*</b></span><input id="wz-alias" maxlength="40" placeholder="例如：客厅 · 树莓派4" value="${esc(w.alias)}"><div class="hint" style="margin-top:5px">家人能看懂的名字，建议「房间 · 设备」。</div></label>
    <div class="row">
     <label class="field"><span>房间分组</span><input id="wz-group" list="wz-groups" maxlength="24" placeholder="客厅" value="${esc(w.group)}"><datalist id="wz-groups">${groups.map(g=>`<option value="${esc(g)}">`).join('')}</datalist></label>
@@ -1636,7 +1636,7 @@ function renderWiz(){
    <div class="node-ops">
     <button class="node-op" data-act="wiz-auth"><span class="no-ic" style="background:#9b8cff22;color:#9b8cff">${icon('shield',19)}</span><span class="no-tx"><span class="no-tt">授权终端${n.authorized?'<span class="badge ok">已授权</span>':''}</span><span class="no-ds">${n.authorized?'已占用 1 个席位，可接收服务下发':licOk?`占用 1 个授权席位（${used}/${L.seats}），下发前必须授权`:'服务许可证未激活，请先前往「密钥与授权」'}</span></span><span class="no-ar">${icon('arrowRight',16)}</span></button>
     <button class="node-op primary" data-act="wiz-cfg"><span class="no-ic" style="background:#46e08a22;color:#46e08a">${icon('config',19)}</span><span class="no-tx"><span class="no-tt">配置期望态</span><span class="no-ds">指定房间 BOM、DAC 仲裁与播放保护，随后一键下发</span></span><span class="no-ar">${icon('arrowRight',16)}</span></button>
-    <button class="node-op" data-act="wiz-term"><span class="no-ic" style="background:#34d3eb22;color:#34d3eb">${icon('terminal',19)}</span><span class="no-tx"><span class="no-tt">打开控制台</span><span class="no-ds">进入 Zephyr Music Player 本地界面查看该主机</span></span><span class="no-ar">${icon('arrowRight',16)}</span></button>
+    <button class="node-op" data-act="wiz-term"><span class="no-ic" style="background:#34d3eb22;color:#34d3eb">${icon('terminal',19)}</span><span class="no-tx"><span class="no-tt">打开控制台</span><span class="no-ds">进入 Zephyr HiFi Kit 本地界面查看该主机</span></span><span class="no-ar">${icon('arrowRight',16)}</span></button>
    </div>`;
   foot=`<button class="btn ghost" data-act="close-modal">稍后再说</button><button class="btn" data-act="wiz-cfg">${icon('config',16)}配置期望态</button>`;
  }
@@ -1817,7 +1817,7 @@ async function openNode(id){
   <div class="section">${dacViz(n)}</div>
   <div class="panel-title">已安装应用 <span class="hint">${apps.length} 个</span></div>
   <div class="table-scroll"><table><thead><tr><th>应用</th><th>版本</th><th>启用</th><th>单元</th></tr></thead><tbody>${appRows}</tbody></table></div>`,
-  `<button class="btn ghost" data-act="close-drawer">关闭</button><button class="btn" data-act="term" data-id="${n.node_id}" title="打开 Zephyr Music Player 本地控制台，控制该主机的播放 / 服务 / 电源">${icon('terminal',16)}控制该主机</button>`);
+  `<button class="btn ghost" data-act="close-drawer">关闭</button><button class="btn" data-act="term" data-id="${n.node_id}" title="打开 Zephyr HiFi Kit 本地控制台，控制该主机的播放 / 服务 / 电源">${icon('terminal',16)}控制该主机</button>`);
 }
 function nodeOps(n){
  const o=DB.osupdates[n.node_id]||{packages:[]};const pc=o.packages.length;const rb=o.reboot_required;
@@ -1829,7 +1829,7 @@ function nodeOps(n){
  return `<div class="node-ops">
   ${op('os-open','osupdate','#f6a821',`系统更新${badge}`,'查看可升级系统包，远程触发 apt 升级')}
   ${op('net-open','network','#34d3eb','网络诊断','mDNS / SSDP / 多播 连通性一键自检')}
-  ${op('term','terminal','#46e08a','终端界面 · 控制该主机','打开 Zephyr Music Player 本地控制台，管理播放 / 服务 / 电源',' primary')}
+  ${op('term','terminal','#46e08a','终端界面 · 控制该主机','打开 Zephyr HiFi Kit 本地控制台，管理播放 / 服务 / 电源',' primary')}
   ${op('node-cfg','config','#9b8cff','终端配置','别名 / 房间 · 期望 BOM · DAC 仲裁 · 播放保护 · 授权与注销')}
  </div>`;
 }
@@ -1853,10 +1853,10 @@ async function openTerminal(id){
     :`<button class="btn sm" data-act="svc-install" data-node="${id}" data-app="${a.app_id}">${icon('download',14)}安装</button>`}
    </div></div>`;
  }).join('');
- modalWide(`Zephyr Music Player · ${esc(n.alias)}`,`
+ modalWide(`Zephyr HiFi Kit · ${esc(n.alias)}`,`
   <div class="term">
    <div class="term-head"><div class="ti">${icon('terminal',21)}</div>
-    <div><h4>${esc(n.alias)}</h4><div class="ts">Zephyr Music Player · ${esc(n.arch)} · ${esc(n.distro)} · ${statusBadge(n.status)} ${n.playing?'· 播放中 '+esc(n.active_proto):'· 空闲'}</div></div>
+    <div><h4>${esc(n.alias)}</h4><div class="ts">Zephyr HiFi Kit · ${esc(n.arch)} · ${esc(n.distro)} · ${statusBadge(n.status)} ${n.playing?'· 播放中 '+esc(n.active_proto):'· 空闲'}</div></div>
     <div class="term-power"><button class="btn ghost sm" data-act="power" data-node="${id}" data-op="reboot">${icon('reboot',14)}重启</button>
     <button class="btn danger sm" data-act="power" data-node="${id}" data-op="shutdown">${icon('power',14)}关机</button></div></div>
    <div class="gauges">
@@ -1868,7 +1868,7 @@ async function openTerminal(id){
   </div>
   <div class="panel-title" style="margin:16px 0 10px">DAC 声卡占用</div>
   ${dacViz(n)}
-  <div class="hint" style="margin-top:14px">Zephyr Music Player 本地控制台：访问终端 IP 即可启用/停用/安装/卸载服务端下发的音频服务，查看性能，关机/重启。所有操作实时同步到服务端期望态。</div>`,
+  <div class="hint" style="margin-top:14px">Zephyr HiFi Kit 本地控制台：访问终端 IP 即可启用/停用/安装/卸载服务端下发的音频服务，查看性能，关机/重启。所有操作实时同步到服务端期望态。</div>`,
   `<button class="btn ghost" data-act="close-modal">关闭</button>`);
 }
 async function svcToggle(nodeId,appId){const n=DB.nodes.find(n=>n.node_id===nodeId);const a=n.apps.find(x=>x.app_id===appId);if(!a)return;a.enabled=!a.enabled;Sound.toggle(a.enabled);toast(`${appId} 已${a.enabled?'启用':'停用'}`,'ok');openTerminal(nodeId);if(state.view==='nodes')viewNodes();}
@@ -2921,7 +2921,7 @@ async function viewKeys(){
 
  <div class="section">
   <div class="panel-title">${icon('key',18)} 签名信任根 <span class="hint">NFR-S2 / FR-3.11.8 · 制品验签 · enforce 拒未签名</span></div>
-  <div class="banner warn">${icon('lock',18)}<span>GPG <b>主私钥离线保管</b>，服务端只持有签名子密钥；公钥内置到所有 Zephyr Music Player 作为唯一信任根。<b>未签名 / 验签失败一律拒绝安装</b>。</span></div>
+  <div class="banner warn">${icon('lock',18)}<span>GPG <b>主私钥离线保管</b>，服务端只持有签名子密钥；公钥内置到所有 Zephyr HiFi Kit 作为唯一信任根。<b>未签名 / 验签失败一律拒绝安装</b>。</span></div>
   <div class="grid stats">
    ${miniStat(keys.length,'密钥总数','key','var(--gold)')}
    ${miniStat(signed,'已签名制品','shield','var(--green)')}
@@ -2966,7 +2966,7 @@ function keyForm(){
   <label class="field"><span>算法</span><select id="kf-algo"><option>ed25519</option><option>rsa4096</option><option>rsa2048</option></select></label></div>
   <label class="field"><span>指纹（40 位十六进制，可含空格）</span><input id="kf-fp" placeholder="A1B2 C3D4 …"></label>
   <label class="field"><span>或粘贴 armored 公钥（-----BEGIN PGP PUBLIC KEY-----）</span><textarea id="kf-armored" placeholder="-----BEGIN PGP PUBLIC KEY BLOCK-----"></textarea></label>
-  <div class="hint">导入后需分发到所有 Zephyr Music Player，作为验签信任根。私钥永不上传服务端。官方签名身份：services@zephyr.hk（www.zephyr.hk）。</div>
+  <div class="hint">导入后需分发到所有 Zephyr HiFi Kit，作为验签信任根。私钥永不上传服务端。官方签名身份：services@zephyr.hk（www.zephyr.hk）。</div>
   <div class="field-err" id="kf-err"></div>`,
   `<button class="btn ghost" data-act="close-modal">取消</button><button class="btn" data-act="key-submit">${icon('key',16)}导入</button>`);
 }

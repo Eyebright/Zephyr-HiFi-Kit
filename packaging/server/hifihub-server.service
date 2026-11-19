@@ -1,5 +1,5 @@
 [Unit]
-Description=Zephyr Music Player (hifihub delivery core)
+Description=Zephyr HiFi Kit (hifihub delivery core)
 Documentation=https://www.zephyr.hk
 After=network-online.target
 Wants=network-online.target

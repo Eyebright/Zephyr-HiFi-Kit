@@ -1,4 +1,4 @@
-# Zephyr Music Player
+# Zephyr HiFi Kit
 
 面向家庭与小型商用 Hi-Fi 机群的**音乐服务与终端推送**平台：一台 x86 Linux 服务端统一管理
 数十至数百台播放终端（树莓派 / x86 小主机），负责签名制品仓库、BOM 期望态、灰度下发、
@@ -44,8 +44,8 @@ CGO + libFLAC + ALSA 实现真实解码与比特完美出声（见 INSTALL.md §
 
 ```sh
 sudo apt-get update && sudo apt-get install -y gnupg
-tar -xzf zephyr-music-server-0.4.0.tar.gz
-cd zephyr-music-server-0.4.0/server
+tar -xzf zephyr-music-server-0.4.3.tar.gz
+cd zephyr-music-server-0.4.3/server
 sudo ./install.sh                      # 二进制 + systemd + 配置 + 信任根 + /dl 分发目录
 curl -s http://127.0.0.1:8080/api/v1/health
 ```
@@ -67,7 +67,7 @@ curl -fsSL http://<服务端IP>:8080/dl/agent-install.sh | \
 安装器自动识别 amd64 / arm64 / armhf，从服务端 `/dl/` 拉取对应 deb，写入
 `/etc/hifihub/agent.env` 并启用服务；注册成功后终端立即出现在控制台。
 
-离线环境可用包内 deb：`sudo dpkg -i agent/hifihub-agent_0.4.0_<arch>.deb && sudo apt-get -f install -y`。
+离线环境可用包内 deb：`sudo dpkg -i agent/hifihub-agent_0.4.3_<arch>.deb && sudo apt-get -f install -y`。
 
 完整部署、密钥分工、许可证激活与排障见 [INSTALL.md](INSTALL.md)。
 
@@ -90,7 +90,7 @@ prototype/               UI 可行性验证原型（纯前端 mock，非运行�
 
 ```sh
 sh scripts/build-release.sh                 # 纯 Go 管理版：交叉编译 + 三架构 deb + 发布包 + SHA256SUMS
-VERSION=0.4.0 sh scripts/build-release.sh
+VERSION=0.4.3 sh scripts/build-release.sh
 go test ./... && (cd agent && go test ./...)
 sh scripts/smoke-test.sh                    # enforce 模式端到端冒烟（需 go/gpg/curl）
 ```

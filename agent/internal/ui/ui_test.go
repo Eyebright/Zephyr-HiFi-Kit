@@ -158,7 +158,7 @@ func do(t *testing.T, h http.Handler, method, path, body string) (int, string) {
 func TestServesIndex(t *testing.T) {
 	h := New(newFake()).Handler()
 	code, body := do(t, h, "GET", "/", "")
-	if code != 200 || !strings.Contains(body, "Zephyr Music Player") {
+	if code != 200 || !strings.Contains(body, "Zephyr HiFi Kit") {
 		t.Fatalf("index: %d %s", code, body[:min(80, len(body))])
 	}
 	if code, _ := do(t, h, "GET", "/app.js", ""); code != 200 {

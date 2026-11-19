@@ -1,5 +1,5 @@
 #!/bin/sh
-# Zephyr Music Player installer — x86_64 / aarch64 Linux with systemd.
+# Zephyr HiFi Kit installer — x86_64 / aarch64 Linux with systemd.
 # Installs the single-file binary, a hardened systemd unit, an editable
 # conffile and the GPG trust-root home used by enforce-mode verification.
 set -eu

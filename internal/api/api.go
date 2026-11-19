@@ -239,7 +239,7 @@ func (a *API) routes() {
 	a.route("POST /api/v1/update/fleet/converge", a.updateFleetConverge)
 	a.route("POST /api/v1/update/fleet/{id}/retry", a.updateFleetRetry)
 
-	// Media library: SMB mounts + scanned tracks (Zephyr Music Player).
+	// Media library: SMB mounts + scanned tracks (Zephyr HiFi Kit).
 	a.route("GET /api/v1/mounts", a.listMounts)
 	a.route("POST /api/v1/mounts", a.addMount)
 	a.route("GET /api/v1/mounts/{id}", a.getMount)

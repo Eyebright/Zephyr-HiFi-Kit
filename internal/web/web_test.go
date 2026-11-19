@@ -26,7 +26,7 @@ func TestServesIndex(t *testing.T) {
 		t.Fatalf("content-type = %q, want text/html", ct)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, "Zephyr Music Player") || !strings.Contains(body, "/app.js") {
+	if !strings.Contains(body, "Zephyr HiFi Kit") || !strings.Contains(body, "/app.js") {
 		t.Fatalf("index shell missing expected markers")
 	}
 	previous := -1
@@ -92,7 +92,7 @@ func TestUnknownPathFallsBackToShell(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (SPA fallback)", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), "Zephyr Music Player") {
+	if !strings.Contains(rec.Body.String(), "Zephyr HiFi Kit") {
 		t.Fatalf("fallback did not serve index shell")
 	}
 }

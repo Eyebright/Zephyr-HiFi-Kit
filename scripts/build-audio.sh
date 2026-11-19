@@ -1,5 +1,5 @@
 #!/bin/sh
-# Zephyr Music Player — native Linux audio build (CGO + libFLAC + ALSA).
+# Zephyr HiFi Kit — native Linux audio build (CGO + libFLAC + ALSA).
 #
 # build-release.sh cross-compiles the pure-Go server/agent without CGO. This
 # script builds the audio-enabled binaries on a Linux host with libflac-dev and

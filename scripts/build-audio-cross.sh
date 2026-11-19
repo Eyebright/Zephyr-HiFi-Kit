@@ -1,5 +1,5 @@
 #!/bin/sh
-# Zephyr Music Player — cross-build the CGO audio agent for ARM on an x86_64
+# Zephyr HiFi Kit — cross-build the CGO audio agent for ARM on an x86_64
 # Debian/Ubuntu host using multiarch. Produces audio-enabled .deb packages for
 # arm64 (Raspberry Pi 64-bit) and armhf (32-bit), plus the arm64 audio server
 # (FLAC decode) when libflac-dev:arm64 is present.

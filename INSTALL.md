@@ -1,6 +1,6 @@
-# Zephyr Music Player — 安装与部署说明
+# Zephyr HiFi Kit — 安装与部署说明
 
-版本 0.4.0 · 服务端 x86_64 / aarch64 Linux · 终端 Zephyr Music Player（Debian / 树莓派）
+版本 0.4.3 · 服务端 x86_64 / aarch64 Linux · 终端 Zephyr HiFi Kit（Debian / 树莓派）
 
 本包交付**已编译、已测试**的完整确认功能集：
 
@@ -23,7 +23,7 @@
 ## 1. 包内容
 
 ```
-zephyr-music-server-0.4.0/
+zephyr-music-server-0.4.3/
 ├── server/
 │   ├── hifihub-server-linux-amd64      # x86_64 服务端单文件（内嵌管理控制台）
 │   ├── hifihub-server-linux-arm64      # aarch64 服务端单文件
@@ -32,15 +32,15 @@ zephyr-music-server-0.4.0/
 │   ├── server.env                      # 配置模板（enforce 模式）
 │   ├── hifihub-server.service          # systemd 单元（非 root 运行 + 沙箱加固）
 │   └── dist/                           # 终端自助下载目录（由 /dl/ 白名单暴露）
-│       ├── hifihub-agent_0.4.0_amd64.deb
-│       ├── hifihub-agent_0.4.0_arm64.deb
-│       ├── hifihub-agent_0.4.0_armhf.deb
+│       ├── hifihub-agent_0.4.3_amd64.deb
+│       ├── hifihub-agent_0.4.3_arm64.deb
+│       ├── hifihub-agent_0.4.3_armhf.deb
 │       ├── agent-install.sh            # 终端一键安装脚本
 │       └── SHA256SUMS
 ├── agent/
-│   ├── hifihub-agent_0.4.0_amd64.deb   # x86_64 终端
-│   ├── hifihub-agent_0.4.0_arm64.deb   # 树莓派 3/4/5 64 位、ARM 服务器
-│   └── hifihub-agent_0.4.0_armhf.deb   # 树莓派 2/3/4 32 位（ARMv7）
+│   ├── hifihub-agent_0.4.3_amd64.deb   # x86_64 终端
+│   ├── hifihub-agent_0.4.3_arm64.deb   # 树莓派 3/4/5 64 位、ARM 服务器
+│   └── hifihub-agent_0.4.3_armhf.deb   # 树莓派 2/3/4 32 位（ARMv7）
 ├── INSTALL.md                          # 本文件
 └── SHA256SUMS                          # 全部文件校验和
 ```
@@ -51,7 +51,7 @@ zephyr-music-server-0.4.0/
 校验完整性：
 
 ```sh
-cd zephyr-music-server-0.4.0
+cd zephyr-music-server-0.4.3
 sha256sum -c SHA256SUMS
 ```
 
@@ -81,8 +81,8 @@ sha256sum -c SHA256SUMS
 sudo apt-get update && sudo apt-get install -y gnupg
 
 # 解压后进入 server/ 目录运行安装器
-tar -xzf zephyr-music-server-0.4.0.tar.gz
-cd zephyr-music-server-0.4.0/server
+tar -xzf zephyr-music-server-0.4.3.tar.gz
+cd zephyr-music-server-0.4.3/server
 sudo ./install.sh
 ```
 
@@ -218,7 +218,7 @@ curl -s http://<服务端IP>:8080/api/v1/license
 
 ---
 
-## 5. 终端 Agent 安装（Zephyr Music Player）
+## 5. 终端 Agent 安装（Zephyr HiFi Kit）
 
 ### 5.1 一键安装（推荐，各架构通用）
 
@@ -238,7 +238,7 @@ curl -fsSL http://<服务端IP>:8080/dl/agent-install.sh | sudo bash -s -- \
   --server http://<服务端IP>:8080 --token <一次性令牌>
 ```
 
-脚本会：按 `uname -m` 下载对应架构 deb（`/dl/hifihub-agent_0.4.0_<arch>.deb`）→
+脚本会：按 `uname -m` 下载对应架构 deb（`/dl/hifihub-agent_0.4.3_<arch>.deb`）→
 `dpkg -i` + `apt-get -f install` → 写入 `/etc/hifihub/agent.env`（SERVER_URL / TOKEN /
 LOCAL_BIND，保留其它自定义键，0600 root 属主）→ 启用并启动 `hifihub-agent`。
 重复执行安全（幂等）。可选参数：
@@ -255,10 +255,10 @@ LOCAL_BIND，保留其它自定义键，0600 root 属主）→ 启用并启动 `
 
 ### 5.2 离线安装（无网络直连服务端时）
 
-把 `agent/hifihub-agent_0.4.0_<arch>.deb` 拷到终端：
+把 `agent/hifihub-agent_0.4.3_<arch>.deb` 拷到终端：
 
 ```sh
-sudo dpkg -i hifihub-agent_0.4.0_arm64.deb
+sudo dpkg -i hifihub-agent_0.4.3_arm64.deb
 sudo apt-get -f install -y        # 修复依赖（alsa-utils 等）
 ```
 
@@ -306,7 +306,7 @@ journalctl -u hifihub-agent -f
 
 **安装三步**
 
-1. 从 Release 下载 `zephyr-terminal-0.4.0.apk`（控制台「添加终端」向导架构选 Android
+1. 从 Release 下载 `zephyr-terminal-0.4.3.apk`（控制台「添加终端」向导架构选 Android
    后也给出同款下载链接），在系统设置允许「安装未知应用」后安装。
 2. 启动「Zephyr 终端」，填写服务端地址（`http://<服务端IP>:8080`）、注册令牌（控制台
    「终端管理 → 添加终端」向导、架构选 **Android** 签发的一次性令牌）与可选别名。
@@ -415,7 +415,7 @@ curl -s $S/nodes/<NodeID>/netdiag               # DNS/TCP/mDNS/SSDP/组播探测
 | 下发被拒 `license_required` / `not_authorized` / `seat_limit` | 先激活许可证（4.4），再授权终端；席位满时注销闲置终端 |
 | `/dl/agent-install.sh` 404 | `HIFIHUB_DIST_DIR` 指向的目录缺文件；重跑 `install.sh` 或手动把 `server/dist/*` 拷入 |
 | 终端不上线 | 检查 `agent.env` 的 `SERVER_URL`/`TOKEN`；令牌是否过期/已用；`journalctl -u hifihub-agent -f` |
-| 命令一直 `pending` | Agent 命令轮询未运行（版本过旧/服务未起）；`systemctl status hifihub-agent`，确认 deb 为 0.4.0 |
+| 命令一直 `pending` | Agent 命令轮询未运行（版本过旧/服务未起）；`systemctl status hifihub-agent`，确认 deb 为 0.4.3 |
 | 任务停在 `waiting_idle` | 终端正在播放（播放门控生效）；等待空闲、关闭该终端播放保护，或调小 `HIFIHUB_IDLE_TIMEOUT` |
 | 终端界面代理 502 | 终端离线或本地 8080 未监听；核对节点 IP 与 `HIFIHUB_AGENT_LISTEN_ADDR`，检查终端防火墙 |
 | 本地控制台写操作 403 | `ALLOW_LOCAL=false` 时本地写操作被禁（设计如此）；改为服务端控制台「终端界面」操作，或开启 `ALLOW_LOCAL`。旧版 Agent 直连写操作需 `X-Node-Secret`，升级 Agent 后局域网可直接操作 |
@@ -432,7 +432,7 @@ curl -s $S/nodes/<NodeID>/netdiag               # DNS/TCP/mDNS/SSDP/组播探测
 服务端（保留配置与数据，可安全重装）：
 
 ```sh
-cd zephyr-music-server-0.4.0/server
+cd zephyr-music-server-0.4.3/server
 sudo ./uninstall.sh
 ```
 
@@ -453,7 +453,7 @@ sudo apt-get purge hifihub-agent           # 同时清除 conffile
 
 ```sh
 sh scripts/build-release.sh                # 产出 release/ bundle + tarball + SHA256SUMS
-VERSION=0.4.0 sh scripts/build-release.sh  # 指定版本号
+VERSION=0.4.3 sh scripts/build-release.sh  # 指定版本号
 ```
 
 脚本交叉编译服务端（linux amd64/arm64）与终端（amd64/arm64/armhf），用内置 `debpack`
@@ -527,7 +527,7 @@ export ANDROID_HOME=/opt/android-sdk
 export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/26.3.11579264"
 # 可选 release 签名（不设则 debug 签名，仍可安装）：
 # export KEYSTORE_FILE=/path/release.keystore KEYSTORE_PASSWORD=… KEY_ALIAS=… KEY_PASSWORD=…
-VERSION=0.4.0 sh scripts/build-android.sh   # 产出 release/zephyr-terminal-0.4.0.apk
+VERSION=0.4.3 sh scripts/build-android.sh   # 产出 release/zephyr-terminal-0.4.3.apk
 ```
 
 脚本对 `arm64-v8a` 与 `armeabi-v7a` 各交叉编译一份 `libzatagent.so` 放入
@@ -619,20 +619,20 @@ NAS：QNAP Container Station、群晖 Container Manager、TrueNAS SCALE、Unraid
 
 ```sh
 # 在线拉取（amd64 / arm64 多架构 manifest，NAS 按自身架构自动选）
-docker pull ghcr.io/eyebright/zephyr-music-server:0.4.0
+docker pull ghcr.io/eyebright/zephyr-music-server:0.4.3
 
 # 离线导入（Release 资产中的 docker save 包；Container Station / Container Manager
 # 的「导入镜像」也可直接选择该 tar.gz）
-docker load -i zephyr-music-server-0.4.0-docker-amd64.tar.gz   # 或 arm64
-# 导入后镜像名为 zephyr-music-server:0.4.0，compose 的 image 改成它即可
+docker load -i zephyr-music-server-0.4.3-docker-amd64.tar.gz   # 或 arm64
+# 导入后镜像名为 zephyr-music-server:0.4.3，compose 的 image 改成它即可
 ```
 
 ### 12.2 准备数据目录与分发集
 
 ```sh
 mkdir -p data/dist media
-tar -xzf zephyr-music-server-0.4.0.tar.gz
-cp -r zephyr-music-server-0.4.0/server/dist/* data/dist/
+tar -xzf zephyr-music-server-0.4.3.tar.gz
+cp -r zephyr-music-server-0.4.3/server/dist/* data/dist/
 # 真实播放请改用音频版 bundle 的 server/dist（见 10.1）
 ```
 

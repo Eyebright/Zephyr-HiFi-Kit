@@ -1,5 +1,5 @@
 #!/bin/sh
-# Zephyr Music Player — end-to-end runtime smoke test.
+# Zephyr HiFi Kit — end-to-end runtime smoke test.
 # Builds a host-native server, generates an ephemeral GPG signing key, starts
 # the server in ENFORCE mode, and exercises the full delivery core:
 #   health -> console -> catalog -> signed upload (accepted) -> unsigned upload
@@ -84,7 +84,7 @@ check "signature_mode=enforce" "$(jsonstr "$BODY" signature_mode)" "enforce"
 # console shell
 CCODE=$(curl -s -o "$TMP/idx" -w '%{http_code}' "http://127.0.0.1:$PORT/")
 check "console 200" "$CCODE" "200"
-grep -q "Zephyr Music Player" "$TMP/idx" && ok "console branded Zephyr" || bad "console branding" "missing"
+grep -q "Zephyr HiFi Kit" "$TMP/idx" && ok "console branded Zephyr" || bad "console branding" "missing"
 
 CODE=$(curl -s -o "$TMP/resp" -w '%{http_code}' -X POST "$BASE/apps" -H "Origin: http://127.0.0.1:$PORT" -H 'Content-Type: application/json' -d '{"app_id":"anonymous","name":"Anonymous"}')
 check "anonymous mutation rejected 401" "$CODE" "401"

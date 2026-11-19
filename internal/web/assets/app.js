@@ -1,5 +1,5 @@
 "use strict";
-/* Zephyr Music Player · Operations Console · vanilla ES2020, no deps */
+/* Zephyr HiFi Kit · Operations Console · vanilla ES2020, no deps */
 
 /* ---------- tiny helpers ---------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -916,7 +916,7 @@ async function deleteNodes(ids) {
 
 /* ================= ADD-NODE WIZARD ================= */
 const WZ = { step: 1, alias: "", group: "", arch: "amd64", distro: "debian", ttl: 1800, note: "", token: "", expiresAt: 0, nodeId: "", node: null };
-const ANDROID_APK = "https://github.com/Eyebright/zephyr-music-server/releases/download/v0.4.0/zephyr-terminal-0.4.0.apk";
+const ANDROID_APK = "https://github.com/Eyebright/Zephyr-HiFi-Kit/releases/download/v0.4.3/zephyr-terminal-0.4.3.apk";
 function installCmd() {
   if (WZ.arch === "android") return `1. 下载安装 APK：${ANDROID_APK}\n2. 启动「Zephyr 终端」，服务端地址填 ${location.origin}\n3. 注册令牌填 ${WZ.token}`;
   return `curl -fsSL ${location.origin}/dl/agent-install.sh | sudo bash -s -- --server ${location.origin} --token ${WZ.token}`;

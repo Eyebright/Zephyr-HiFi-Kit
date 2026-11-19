@@ -1,5 +1,5 @@
 #!/bin/sh
-# Zephyr Music Player — one-shot release builder.
+# Zephyr HiFi Kit — one-shot release builder.
 # Cross-compiles the pure-Go server (linux amd64/arm64) and terminal agent
 # (linux amd64/arm64/armhf), builds the agent .deb packages with the in-tree
 # debpack tool (no dpkg-deb needed), and assembles a self-contained release
