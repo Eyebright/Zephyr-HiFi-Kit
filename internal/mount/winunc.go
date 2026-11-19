@@ -25,23 +25,23 @@ type netResourceW struct {
 }
 
 var (
-	mpr                    = syscall.NewLazyDLL("mpr.dll")
-	procWNetAddConnection  = mpr.NewProc("WNetAddConnection2W")
-	procWNetCancelConnect  = mpr.NewProc("WNetCancelConnection2W")
+	mpr                   = syscall.NewLazyDLL("mpr.dll")
+	procWNetAddConnection = mpr.NewProc("WNetAddConnection2W")
+	procWNetCancelConnect = mpr.NewProc("WNetCancelConnection2W")
 )
 
 const (
-	resTypeAny         = 0
-	connectTemporary   = 0x00000004
-	wnSuccess          = 0
-	wnAccessDenied     = 5
-	wnBadNetName       = 67
-	wnNetPathNotFound  = 53
-	wnAlreadyAssigned  = 85
-	wnInvalidPassword  = 86
-	wnCredConflict     = 1219
-	wnNoNetwork        = 1222
-	wnNotConnected     = 2250
+	resTypeAny        = 0
+	connectTemporary  = 0x00000004
+	wnSuccess         = 0
+	wnAccessDenied    = 5
+	wnBadNetName      = 67
+	wnNetPathNotFound = 53
+	wnAlreadyAssigned = 85
+	wnInvalidPassword = 86
+	wnCredConflict    = 1219
+	wnNoNetwork       = 1222
+	wnNotConnected    = 2250
 )
 
 type winBackend struct{}

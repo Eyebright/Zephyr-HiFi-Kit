@@ -54,6 +54,6 @@ type ServiceDef struct {
 	ConfigFields   []ConfigField `json:"config_fields,omitempty"`
 	// UnitTemplate marks a tar.bz2-installed app: the archive carries no systemd
 	// unit, so the agent renders this template (var: .InstallDir) itself.
-	UnitTemplate string        `json:"-"`
-	Description  string        `json:"description,omitempty"`
+	UnitTemplate string `json:"-"`
+	Description  string `json:"description,omitempty"`
 }

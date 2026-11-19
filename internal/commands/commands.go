@@ -30,7 +30,9 @@ var ErrPlaying = errors.New("FR-3.10：终端正在播放且开启了播放保�
 var ErrPlayingInstall = errors.New("FR-3.10：终端正在播放且开启了播放保护，已拒绝安装")
 
 // IsPlaying reports whether err is a FR-3.10 play-protection gate.
-func IsPlaying(err error) bool { return errors.Is(err, ErrPlaying) || errors.Is(err, ErrPlayingInstall) }
+func IsPlaying(err error) bool {
+	return errors.Is(err, ErrPlaying) || errors.Is(err, ErrPlayingInstall)
+}
 
 // Create queues a pending command for a node after validating its type.
 func (s *Service) Create(nodeID, typ string, params domain.CommandParams) (domain.Command, error) {
