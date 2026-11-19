@@ -5,6 +5,7 @@ package mount
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"syscall"
@@ -120,6 +121,21 @@ func winConnect(s Spec) error {
 		return fmt.Errorf("访问 %s 失败：%w（共享需要认证时请填写用户名与密码）", unc, err)
 	}
 	return nil
+}
+
+func (winBackend) Check(ctx context.Context, target string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	f, err := os.Open(target)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if _, err := f.ReadDir(1); err != nil && err != io.EOF {
+		return err
+	}
+	return ctx.Err()
 }
 
 func (winBackend) Unmount(_ context.Context, target string) error {

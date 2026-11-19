@@ -16,6 +16,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -173,6 +174,150 @@ func TestLibraryBackupRoundTripAndSecrets(t *testing.T) {
 	}
 }
 
+func maintenanceRequireScanSchema(t *testing.T, s *Service) {
+	t.Helper()
+	var count int
+	if err := s.db.QueryRow(`SELECT (SELECT COUNT(*) FROM pragma_table_info('tracks') WHERE name='mtime_ns') + (SELECT COUNT(*) FROM pragma_table_info('mounts') WHERE name IN ('last_scan','scan_result'))`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 3 {
+		t.Fatal("incremental scan migration missing")
+	}
+}
+
+func TestLibraryBackupScanFieldsRoundTrip(t *testing.T) {
+	const mtimeNS int64 = 1700000000123456789
+	for _, status := range []string{"archived", "unmounted", "mounted", "error"} {
+		for _, existing := range []bool{false, true} {
+			name := status + "/" + map[bool]string{false: "new-source", true: "existing-source"}[existing]
+			t.Run(name, func(t *testing.T) {
+				s, _ := maintenanceTestService(t)
+				maintenanceRequireScanSchema(t, s)
+				maintenanceFixture(t, s)
+				maintenanceExec(t, s.db, `UPDATE tracks SET mtime_ns=?,added_at=17 WHERE id='t1'`, mtimeNS)
+				maintenanceExec(t, s.db, `UPDATE play_history SET track_id='t1' WHERE id='h1'`)
+				maintenanceExec(t, s.db, `UPDATE mounts SET status=?,detail='old detail',mounted_at=12,last_scan=42,scan_result='{"scanned":7}' WHERE id='m1'`, status)
+				data, want := maintenanceExport(t, s)
+				if want.SchemaVersion != 1 || want.Tracks[0].MtimeNS != mtimeNS || want.Sources[0].Archived != (status == "archived") {
+					t.Fatal("scan fields absent or incorrect")
+				}
+				for _, forbidden := range []string{`"last_scan"`, `"scan_result"`, `"status"`, `"detail"`, `"mounted_at"`, "test-nas-username", "test-nas-password", "test-nas-domain"} {
+					if bytes.Contains(data, []byte(forbidden)) {
+						t.Fatal("backup included runtime state or credentials")
+					}
+				}
+				dest := s
+				if existing {
+					// An existing source's state must be replaced by the backup's flag.
+					// Live SMB sources are explicitly taken offline before restoring.
+					oldStatus := "archived"
+					if status == "archived" {
+						oldStatus = "unmounted"
+					}
+					maintenanceExec(t, dest.db, `UPDATE mounts SET status=? WHERE id='m1'`, oldStatus)
+				} else {
+					dest, _ = maintenanceTestService(t)
+				}
+				if err := dest.RestoreLibrary(t.Context(), data); err != nil {
+					t.Fatal(err)
+				}
+				var gotStatus, detail, scanResult, password string
+				var mountedAt, lastScan int64
+				if err := dest.db.QueryRow(`SELECT status,detail,mounted_at,last_scan,scan_result,password FROM mounts WHERE id='m1'`).Scan(&gotStatus, &detail, &mountedAt, &lastScan, &scanResult, &password); err != nil {
+					t.Fatal(err)
+				}
+				wantStatus := "unmounted"
+				if status == "archived" {
+					wantStatus = "archived"
+				}
+				if gotStatus != wantStatus || detail != "" || mountedAt != 0 || lastScan != 0 || scanResult != "{}" {
+					t.Fatal("restored source has incorrect state or stale scan statistics")
+				}
+				if (existing && password != "test-nas-password") || (!existing && password != "") {
+					t.Fatal("restore changed credential preservation semantics")
+				}
+				// Portable SMB paths are derived from the destination mount root.
+				source, err := dest.restoredSource(want.Sources[0])
+				if err != nil {
+					t.Fatal(err)
+				}
+				want.Sources[0] = source
+				want.Tracks[0].Path = filepath.Join(source.Target, filepath.FromSlash(want.Tracks[0].RelPath))
+				_, got := maintenanceExport(t, dest)
+				if !reflect.DeepEqual(got, want) {
+					t.Fatal("round trip changed scan fields, metadata, identities or history")
+				}
+			})
+		}
+	}
+}
+
+func TestLibraryRestoreLegacyBackupScanDefaults(t *testing.T) {
+	s, _ := maintenanceTestService(t)
+	maintenanceRequireScanSchema(t, s)
+	maintenanceFixture(t, s)
+	original, want := maintenanceExport(t, s)
+	// This is the original schema-version-1 shape, with neither new field.
+	if bytes.Contains(original, []byte(`"mtime_ns"`)) || bytes.Contains(original, []byte(`"archived"`)) {
+		t.Fatal("zero-valued optional fields must be omitted")
+	}
+	maintenanceExec(t, s.db, `UPDATE tracks SET mtime_ns=1700000000123456789 WHERE id='t1'`)
+	maintenanceExec(t, s.db, `UPDATE mounts SET status='archived',last_scan=42,scan_result='{"scanned":7}' WHERE id='m1'`)
+	if err := s.RestoreLibrary(t.Context(), original); err != nil {
+		t.Fatal(err)
+	}
+	var mtimeNS, lastScan int64
+	var status, scanResult string
+	if err := s.db.QueryRow(`SELECT t.mtime_ns,m.status,m.last_scan,m.scan_result FROM tracks t JOIN mounts m ON m.id=t.mount_id WHERE t.id='t1'`).Scan(&mtimeNS, &status, &lastScan, &scanResult); err != nil {
+		t.Fatal(err)
+	}
+	if mtimeNS != 0 || status != "unmounted" || lastScan != 0 || scanResult != "{}" {
+		t.Fatal("legacy restore retained scan state instead of zero defaults")
+	}
+	after, got := maintenanceExport(t, s)
+	if !bytes.Equal(original, after) || !reflect.DeepEqual(got, want) {
+		t.Fatal("legacy round trip changed metadata, identities or history")
+	}
+}
+
+func TestLibraryBackupWithoutScanColumns(t *testing.T) {
+	s, _ := maintenanceTestService(t)
+	maintenanceFixture(t, s)
+	// Simulate the old schema only in this test's disposable on-disk database.
+	for _, field := range []struct{ table, column string }{{"tracks", "mtime_ns"}, {"mounts", "last_scan"}, {"mounts", "scan_result"}} {
+		var count int
+		if err := s.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name=?`, field.table, field.column).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != 0 {
+			maintenanceExec(t, s.db, `ALTER TABLE `+field.table+` DROP COLUMN `+field.column)
+		}
+	}
+	original, b := maintenanceExport(t, s)
+	if b.SchemaVersion != 1 || b.Tracks[0].MtimeNS != 0 || b.Sources[0].Archived || bytes.Contains(original, []byte(`"mtime_ns"`)) || bytes.Contains(original, []byte(`"archived"`)) {
+		t.Fatal("old-schema export did not use optional defaults")
+	}
+	if err := s.RestoreLibrary(t.Context(), original); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := maintenanceExport(t, s)
+	if !bytes.Equal(original, after) {
+		t.Fatal("old-schema round trip changed music data")
+	}
+	b.Tracks[0].MtimeNS = 1700000000123456789
+	data, err := json.Marshal(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RestoreLibrary(t.Context(), data); !errors.Is(err, ErrInvalidLibraryBackup) {
+		t.Fatalf("new timestamp silently lost on unsupported schema: %v", err)
+	}
+	after, _ = maintenanceExport(t, s)
+	if !bytes.Equal(original, after) {
+		t.Fatal("unsupported-schema restore did not roll back")
+	}
+}
+
 func TestLibraryRestoreStrictValidation(t *testing.T) {
 	s, _ := maintenanceTestService(t)
 	maintenanceFixture(t, s)
@@ -216,6 +361,28 @@ func TestLibraryRestoreStrictValidation(t *testing.T) {
 		if err := s.RestoreLibrary(context.Background(), data); !errors.Is(err, ErrInvalidLibraryBackup) {
 			t.Fatalf("invalid JSON accepted: %v", err)
 		}
+	}
+	for _, test := range []struct{ name, id, field string }{
+		{"mtime-string", "t1", `"mtime_ns":"123"`},
+		{"mtime-fraction", "t1", `"mtime_ns":1.5`},
+		{"mtime-overflow", "t1", `"mtime_ns":9223372036854775808`},
+		{"archived-string", "m1", `"archived":"true"`},
+		{"archived-number", "m1", `"archived":1`},
+		{"source-credentials", "m1", `"password":"test-secret"`},
+		{"scan-time", "m1", `"last_scan":42`},
+		{"scan-result", "m1", `"scan_result":{}`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			id := []byte(`"id":"` + test.id + `"`)
+			data := bytes.Replace(original, id, []byte(string(id)+","+test.field), 1)
+			if err := s.RestoreLibrary(t.Context(), data); !errors.Is(err, ErrInvalidLibraryBackup) {
+				t.Fatalf("invalid field accepted: %v", err)
+			}
+			after, _ := maintenanceExport(t, s)
+			if !bytes.Equal(original, after) {
+				t.Fatal("invalid field modified music data")
+			}
+		})
 	}
 }
 

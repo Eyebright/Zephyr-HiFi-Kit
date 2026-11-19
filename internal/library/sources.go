@@ -37,6 +37,21 @@ func withinRoot(root, p string) bool {
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
 }
 
+func sameSource(a, b Mount) bool {
+	if a.Kind != b.Kind {
+		return false
+	}
+	if a.Kind == "local" {
+		if filepath.Clean(a.Target) == filepath.Clean(b.Target) {
+			return true
+		}
+		left, leftErr := os.Stat(a.Target)
+		right, rightErr := os.Stat(b.Target)
+		return leftErr == nil && rightErr == nil && os.SameFile(left, right)
+	}
+	return strings.EqualFold(strings.TrimSpace(a.Host), strings.TrimSpace(b.Host)) && a.Share == b.Share
+}
+
 func (s *Service) configuredMount(id string, req AddMountRequest) (Mount, error) {
 	kind := req.Kind
 	if kind == "" {
@@ -63,9 +78,10 @@ func (s *Service) configuredMount(id string, req AddMountRequest) (Mount, error)
 		m.Host, m.Share, m.Target = "localhost", label, p
 		m.Username, m.Password, m.Domain, m.Version = "", "", "", ""
 	case "smb":
+		m.Host = strings.ToLower(strings.TrimSpace(m.Host))
 		m.Target = path.Join(s.mountRoot, id)
 		if runtime.GOOS == "windows" {
-			m.Target = "//" + req.Host + "/" + req.Share
+			m.Target = "//" + m.Host + "/" + m.Share
 		}
 		if m.Version == "" {
 			m.Version = mount.DefaultVersion
@@ -75,15 +91,6 @@ func (s *Service) configuredMount(id string, req AddMountRequest) (Mount, error)
 		}
 	default:
 		return Mount{}, fmt.Errorf("不支持的源类型：%s", kind)
-	}
-	if kind == "local" || runtime.GOOS == "windows" {
-		var n int
-		if err := s.db.QueryRow(`SELECT COUNT(*) FROM mounts WHERE kind=? AND target=? AND id<>?`, kind, m.Target, id).Scan(&n); err != nil {
-			return Mount{}, err
-		}
-		if n > 0 {
-			return Mount{}, fmt.Errorf("音乐源已添加")
-		}
 	}
 	return m, nil
 }
@@ -112,7 +119,7 @@ func (s *Service) UpdateMount(id string, req AddMountRequest) (Mount, error) {
 	if err != nil {
 		return Mount{}, err
 	}
-	if m.Kind != old.Kind || m.Target != old.Target || (m.Kind == "smb" && (m.Host != old.Host || m.Share != old.Share)) {
+	if !sameSource(old, m) {
 		return Mount{}, fmt.Errorf("修改源类型或实际位置请添加新音乐源")
 	}
 	if m.Kind == "smb" && old.Status == StatusMounted &&

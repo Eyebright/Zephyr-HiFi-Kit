@@ -26,7 +26,7 @@ func TestServesIndex(t *testing.T) {
 		t.Fatalf("content-type = %q, want text/html", ct)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, "Zephyr HiFi Kit") || !strings.Contains(body, "/app.js") {
+	if !strings.Contains(body, "Zephyr HiFi Kit") || !strings.Contains(body, "和风HiFi音乐播放套件") || !strings.Contains(body, "/app.js") {
 		t.Fatalf("index shell missing expected markers")
 	}
 	previous := -1

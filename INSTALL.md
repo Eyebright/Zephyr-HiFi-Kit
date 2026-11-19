@@ -1,659 +1,478 @@
-# Zephyr HiFi Kit — 安装与部署说明
+# Zephyr HiFi Kit · 和风HiFi音乐播放套件 — 安装与部署
 
-版本 0.4.3 · 服务端 x86_64 / aarch64 Linux · 终端 Zephyr HiFi Kit（Debian / 树莓派）
+**版本 0.50 · Git tag `v0.50`**
 
-本包交付**已编译、已测试**的完整确认功能集：
+[语言入口](README.md) · [中文 README](README.cn.md) · [English README / Windows quick start](README.en.md)
 
-- **服务端**：唯一下发源（应用目录 / 制品仓库 / GPG 强制验签 / BOM 期望态 / 任务状态机 /
-  播放门控 / 回滚）、节点注册与配置（分组 / 备注 / 播放保护 / 离线判定）、许可证与席位授权、
-  终端命令通道（系统更新 / 网络诊断）、灰度发布环、审计日志、告警、密钥管理、终端控制台
-  反向代理、终端安装包自助下载（`/dl/`）。
-- **终端 Agent**：指标采集 / DAC 占用探测与仲裁 / ALSA 枚举 / systemd 白名单控制 / 电源 /
-  apt·dpkg 执行器 / 命令执行（系统更新检查与升级、网络诊断）/ 本地 Web 控制台。
-- **内嵌管理控制台**：总览 / 终端管理 / 应用仓库 / 服务下发 / 密钥与授权 / 审计 + 告警抽屉。
+本指南区分服务端管理能力、解码能力与终端实际出声能力。Windows 服务端已有本机运行记录；**新认证下从初始化到真实播放的完整黄金路径尚未实测验收**，不能据此宣称全平台、全格式或所有硬件已通过验收。
 
-可行性审计后**已删减**（不在本包内，详见 README.md）：Roon 包重签名/ingest（专有签名不可
-合法再分发）、服务端在线构建流水线（工具链攻击面）、二进制补丁（破坏签名链）、远程 .sh
-拉取安装（SSRF + 未签名代码）、Agent 自更新、控制台角色切换（鉴权交由反向代理）。
+## 1. 选择发布包
 
-官方联系：services@zephyr.hk · https://www.zephyr.hk
+下载入口：[项目 Releases](https://github.com/Eyebright/Zephyr-HiFi-Kit/releases)。选择 `v0.50`，核对文件名、架构及发布校验和；以下为 0.50 交付命名，不代表资产已上传。
 
----
+| 场景 | 文件名 / 镜像 |
+|---|---|
+| Linux amd64 + arm64 服务端管理包 | `Zephyr-HiFi-Kit-server-0.50.tar.gz` |
+| Linux amd64 服务端音频包 | `Zephyr-HiFi-Kit-server-0.50-audio-amd64.tar.gz` |
+| Linux arm64 服务端音频包 | `Zephyr-HiFi-Kit-server-0.50-audio-arm64.tar.gz` |
+| Windows amd64 服务端 | `Zephyr-HiFi-Kit-server-0.50-windows-amd64.zip` |
+| Linux amd64 终端管理 deb | `Zephyr-HiFi-Kit-terminal-0.50-linux-amd64.deb` |
+| Linux arm64 终端管理 deb | `Zephyr-HiFi-Kit-terminal-0.50-linux-arm64.deb` |
+| Linux armhf 终端管理 deb | `Zephyr-HiFi-Kit-terminal-0.50-linux-armhf.deb` |
+| Linux 多架构终端管理合集 | `Zephyr-HiFi-Kit-terminal-0.50-linux.tar.gz` |
+| Linux amd64 音频终端包 | `Zephyr-HiFi-Kit-terminal-0.50-audio-amd64.tar.gz` |
+| Linux arm64 音频终端包 | `Zephyr-HiFi-Kit-terminal-0.50-audio-arm64.tar.gz` |
+| Android 终端 | `Zephyr-HiFi-Kit-terminal-0.50.apk` |
+| Linux 容器镜像 | `ghcr.io/eyebright/zephyr-hifi-kit-server:0.50` |
 
-## 1. 包内容
+Linux 服务端管理包解压布局：
 
-```
-zephyr-music-server-0.4.3/
+```text
+Zephyr-HiFi-Kit-server-0.50/
 ├── server/
-│   ├── hifihub-server-linux-amd64      # x86_64 服务端单文件（内嵌管理控制台）
-│   ├── hifihub-server-linux-arm64      # aarch64 服务端单文件
-│   ├── install.sh                      # 安装器（二进制 + systemd + 配置 + 信任根 + dist）
-│   ├── uninstall.sh                    # 卸载器（保留配置与数据）
-│   ├── server.env                      # 配置模板（enforce 模式）
-│   ├── hifihub-server.service          # systemd 单元（非 root 运行 + 沙箱加固）
-│   └── dist/                           # 终端自助下载目录（由 /dl/ 白名单暴露）
-│       ├── hifihub-agent_0.4.3_amd64.deb
-│       ├── hifihub-agent_0.4.3_arm64.deb
-│       ├── hifihub-agent_0.4.3_armhf.deb
-│       ├── agent-install.sh            # 终端一键安装脚本
+│   ├── hifihub-server-linux-amd64
+│   ├── hifihub-server-linux-arm64
+│   ├── install.sh
+│   ├── uninstall.sh
+│   ├── server.env
+│   ├── hifihub-server.service
+│   └── dist/
+│       ├── agent-install.sh
+│       ├── hifihub-agent_0.50_amd64.deb
+│       ├── hifihub-agent_0.50_arm64.deb
+│       ├── hifihub-agent_0.50_armhf.deb
 │       └── SHA256SUMS
 ├── agent/
-│   ├── hifihub-agent_0.4.3_amd64.deb   # x86_64 终端
-│   ├── hifihub-agent_0.4.3_arm64.deb   # 树莓派 3/4/5 64 位、ARM 服务器
-│   └── hifihub-agent_0.4.3_armhf.deb   # 树莓派 2/3/4 32 位（ARMv7）
-├── INSTALL.md                          # 本文件
-└── SHA256SUMS                          # 全部文件校验和
+└── SHA256SUMS
 ```
 
-> 引擎二进制沿用内部名 `hifihub-server` / `hifihub-agent`；产品对外名为 Zephyr。
-> 服务端与终端的配置/数据目录互不冲突（`/var/lib/hifihub-server` vs `/var/lib/hifihub`）。
+`agent/` 是终端分发副本。Linux 服务端音频包按架构提供，使用相应音频构建与分发集。独立音频终端包中包含 `agent-install.sh`、`hifihub-agent_0.50_amd64.deb` 或 `hifihub-agent_0.50_arm64.deb`，以及配套 `SHA256SUMS`。
 
-校验完整性：
+**品牌名不是内部协议迁移。** Linux 安装后的二进制、systemd 服务、`/etc/hifihub`、环境变量 `HIFIHUB_*`、`/api/v1/` 和 `/dl/` 保持原名。对外终端 deb 更名，但内部 `Package: hifihub-agent`、安装服务 `hifihub-agent` 不变；不要把现有服务和目录手工改名。
 
-```sh
-cd zephyr-music-server-0.4.3
-sha256sum -c SHA256SUMS
+## 2. Windows 服务端
+
+### 2.1 解压和启动
+
+适用于 Windows amd64。无需安装 Linux、systemd 或 ALSA；这是前台服务端进程，启动脚本不负责注册 Windows Service。先确认 HTTP 8080、ZAT TCP 7800 未被其他程序占用。
+
+解压目录根应直接包含 `Zephyr-HiFi-Kit-server.exe`、`start.ps1`、`dist/` 和随包 README，而不是再套一层 `server/`：
+
+```text
+Zephyr-HiFi-Kit-server-0.50-windows-amd64/
+├── Zephyr-HiFi-Kit-server.exe
+├── start.ps1
+├── dist/
+└── README（随包说明）
 ```
 
----
+在下载目录打开 PowerShell：
 
-## 2. 资源需求
+```powershell
+Expand-Archive -LiteralPath .\Zephyr-HiFi-Kit-server-0.50-windows-amd64.zip -DestinationPath .
+Set-Location .\Zephyr-HiFi-Kit-server-0.50-windows-amd64
+.\start.ps1
+```
 
-| | 服务端 | 终端 Agent |
+保持窗口运行，在浏览器打开 `http://localhost:8080/`。可在另一个 PowerShell 窗口检查：
+
+```powershell
+Invoke-RestMethod http://localhost:8080/api/v1/health
+```
+
+核对返回的 `status`、`version` 和 `platform`，应对应当前程序；HTTP 健康检查成功不代表管理员认证、扫描或播放已经验证。
+
+### 2.2 启动脚本默认配置
+
+| 环境变量 | Windows 启动默认值 | 用途 |
 |---|---|---|
-| 目标系统 | x86_64 / aarch64 Linux + systemd | Debian / Raspberry Pi OS + systemd |
-| 磁盘 | 二进制 ~12MB + SQLite + 制品缓存 + dist（.deb 为主要占用） | 二进制 ~9MB / deb ~4MB + 状态 JSON |
-| 内存 | 典型 ~20–60MB；单元硬上限 `MemoryMax=512M` | 典型 ~15–40MB；硬上限 `MemoryMax=120M` |
-| CPU | 空闲近 0（15s 清扫定时器） | 定时器 15s/10s/10s/10min + /proc 扫描，<1% |
-| 依赖 | 纯 Go 无 CGO；**enforce 需 `gnupg`**；SMB 挂载需 `cifs-utils`；音频版另需 `libflac8` | root + systemd + apt/dpkg + alsa-utils；音频版另需 `libasound2` |
-| 权限 | 专用非 root 用户 `hifihub-server` | root（动作受白名单限制，NFR-S5） |
+| `HIFIHUB_LISTEN` | `127.0.0.1:8080` | HTTP 控制台、API 与终端包下载，仅本机 |
+| `HIFIHUB_ZAT_ADDR` | `0.0.0.0:7800` | ZAT TCP 监听；仍需用防火墙限制来源 |
+| `HIFIHUB_DATA_DIR` | `$env:LOCALAPPDATA\Zephyr-HiFi-Kit\data` | 持久状态目录 |
+| `HIFIHUB_DIST_DIR` | `$PSScriptRoot\dist` | 随包终端分发集，由 `/dl/` 提供 |
+| `HIFIHUB_GPG_HOME` | 数据目录下 `gnupg` | GPG 公钥信任根 |
+| `HIFIHUB_MOUNT_DIR` | 数据目录下 `mounts` | 挂载工作目录；Windows SMB 实际走 UNC |
+| `HIFIHUB_MOUNT_CRED_DIR` | 数据目录下 `cifs` | 凭据工作目录设置；Windows 连接用 WNet API |
+| `HIFIHUB_UPDATE_SELF` | `false` | 不启用服务端自更新 |
+| `HIFIHUB_UPDATE_AUTO` | `false` | 不自动安装服务端更新 |
+| `HIFIHUB_UPDATE_FLEET` | `false` | 不自动向终端收敛版本；按需显式启用 |
 
-单台 modest x86 盒子即可管理数百终端；吞吐瓶颈为单写 SQLite，对家庭/SMB 机群足够。
+二进制直接运行的通用默认值不等于上述脚本默认值。例如通用 HTTP 默认是 `0.0.0.0:8080`，分发目录默认是 Linux 路径，因此不要不带配置直接双击 EXE。
 
----
+数据库默认位于数据目录的 `hifihub.db`，管理员凭据文件为 `settings-admin.json`。迁移时保留整个数据目录，并在启动前指向原目录：
 
-## 3. 服务端安装（x86 Linux）
+```powershell
+# 改成已有实例实际使用的目录，不要另建空目录代替
+$env:HIFIHUB_DATA_DIR = 'D:\ZephyrData'
+.\start.ps1
+```
 
-### 3.1 安装
+如原部署还设置了 `HIFIHUB_DB_PATH`、`HIFIHUB_ARTIFACTS_DIR` 等独立路径，也要保留相应配置与数据。环境变量在当前 PowerShell 会话设置；新的会话需重新设置。不要把密码写进启动脚本。
+
+### 2.3 PowerShell 限制脚本执行时
+
+不要建议或执行系统范围的执行策略关闭。可以在解压目录手动设置环境变量后直接启动 EXE；这是等价的进程启动方式，不修改执行策略：
+
+```powershell
+$root = (Get-Location).Path
+if (-not $env:HIFIHUB_DATA_DIR) {
+    $env:HIFIHUB_DATA_DIR = Join-Path $env:LOCALAPPDATA 'Zephyr-HiFi-Kit\data'
+}
+$env:HIFIHUB_LISTEN = '127.0.0.1:8080'
+$env:HIFIHUB_ZAT_ADDR = '0.0.0.0:7800'
+$env:HIFIHUB_DIST_DIR = Join-Path $root 'dist'
+$env:HIFIHUB_GPG_HOME = Join-Path $env:HIFIHUB_DATA_DIR 'gnupg'
+$env:HIFIHUB_MOUNT_DIR = Join-Path $env:HIFIHUB_DATA_DIR 'mounts'
+$env:HIFIHUB_MOUNT_CRED_DIR = Join-Path $env:HIFIHUB_DATA_DIR 'cifs'
+$env:HIFIHUB_SIGNATURE_MODE = 'enforce'
+$env:HIFIHUB_UPDATE_SELF = 'false'
+$env:HIFIHUB_UPDATE_AUTO = 'false'
+$env:HIFIHUB_UPDATE_FLEET = 'false'
+[System.IO.Directory]::CreateDirectory($env:HIFIHUB_GPG_HOME) | Out-Null
+& (Join-Path $root 'Zephyr-HiFi-Kit-server.exe')
+```
+
+既有配置若有其他自定义路径，请一并核对；不要以管理员权限或关闭系统保护代替修复目录权限和启动配置。
+
+### 2.4 LAN 与防火墙
+
+默认 HTTP 只允许本机。需要终端或其他可信 LAN 设备访问时，在启动前明确指定绑定地址：
+
+```powershell
+# 允许所有本机网卡监听；更收敛的做法是绑定本机实际 LAN IPv4 地址
+$env:HIFIHUB_LISTEN = '0.0.0.0:8080'
+.\start.ps1
+```
+
+- Windows 防火墙只向可信 LAN 地址/子网放行 TCP 8080、7800，优先仅限专用网络配置文件；不要开放到公网或关闭防火墙。
+- 终端填写服务端真实 LAN 地址，不能填终端自己的 `localhost`。改变 `HIFIHUB_LISTEN` **不会**使远程 HTTP 可以登录管理员。
+- HTTP 控制台/API、终端安装下载和 ZAT 是不同用途；HTTP 的 TLS 反代不自动保护 ZAT 7800。
+- 远程管理应采用经过验证的 TLS/反代部署；当前认证对代理有严格限制，见第 3 节。未完成该集成前保留本机管理，不要伪造请求头绕过认证。
+
+### 2.5 外部依赖与 Windows 音频边界
+
+外部工具按功能单独安装到可信位置，需供服务端启动账户访问；若需 PATH，在启动服务端的 PowerShell 会话中配置，安装后重启进程。Windows ZIP 不打包这些工具、私钥、密码或私人音乐库。
+
+| 工具 / 功能 | 是否需要 |
+|---|---|
+| GPG（可执行文件 `gpg`） | 单纯启动控制台不要求；`enforce` 制品验签、公钥管理、签名许可证验证时需要。未安装时相关操作失败，不应改用 `dev` 绕过 |
+| `ffprobe` | 可选的人工媒体参数诊断工具；当前扫描使用项目内格式探测代码，不能把系统安装了 ffprobe 当作扫描已覆盖所有格式 |
+| `ffmpeg` | 可选的外部格式转换工具；当前解码源码没有自动调用它的通用回退。可自行生成兼容 WAV 副本再扫描，不要覆盖原文件 |
+| Linux `libFLAC` / ALSA | 不适用于 Windows 终端输出；服务端原生 FLAC 解码是 Linux CGO 构建能力，ALSA 是 Linux 音频终端能力 |
+
+当前纯 Go/Windows 解码路径处理受支持的整数 PCM WAV；能扫描到 FLAC 元数据不等于 Windows 原生 FLAC 解码可用。Linux 音频版的 libFLAC 解码器是真实实现，不应把所有 FLAC 播放都描述为占位。音频格式和设备是否可播放应以所用构建的实际解码与播放结果为准。
+
+Windows 的 `dist/` 默认放管理版 Linux 终端，**没有 ALSA 实际播放后端**。需要真实播放时：
+
+1. 下载同版本、目标架构的音频终端包。
+2. 校验后把其 `agent-install.sh`、`hifihub-agent_0.50_<arch>.deb`、`SHA256SUMS` 作为一个完整分发集放入 `HIFIHUB_DIST_DIR` 指向的目录；脚本应烘焙版本 `0.50`。
+3. 多架构分发时核对各架构均是预期音频/管理类型，合并目录后重新生成与实际内容匹配的校验清单；不要用单架构清单冒充完整合集。
+4. 在终端安装音频包并验证输出。仅打开 `HIFIHUB_UPDATE_FLEET` 不会把管理构建变成音频构建；错误分发集还可能覆盖已有音频终端。
+
+## 3. 管理员、欢迎页与安全上下文
+
+### 3.1 首次管理员设置
+
+在服务端本机打开 `http://localhost:8080/`（或 `http://127.0.0.1:8080/`），从欢迎引导或“设置 → 管理员与偏好”设置：
+
+- 管理员姓名/称呼：1–40 个 Unicode 字符，不含控制字符，用于问候与显示，不是第二个登录账号。
+- 密码：至少 12 个字符；由用户自行输入并确认，没有预置密码，不会自动设密码或免登录。
+- 单管理员凭据以加盐派生值持久化，不保存明文密码；会话在进程内，Cookie 为 HttpOnly、SameSite=Strict，重启后需重新登录。
+
+当前源码的**初始化只允许本机 localhost 请求，即使远程使用 HTTPS 也不开放首次创建**。登录与管理请求要求 localhost 或服务端识别的 HTTPS，以及同源校验。现有凭据文件不可读或损坏时拒绝再次初始化，不要删除它来绕过认证，应从可信备份恢复并核对权限。
+
+无桌面 Linux 服务端可在自己的电脑通过 SSH 本地转发访问。将命令中的主机和账户替换成已配置的实际值：
 
 ```sh
-# 安装 gpg（enforce 模式必需）
-sudo apt-get update && sudo apt-get install -y gnupg
+ssh -N -L 18080:127.0.0.1:8080 user@server-host
+```
 
-# 解压后进入 server/ 目录运行安装器
-tar -xzf zephyr-music-server-0.4.3.tar.gz
-cd zephyr-music-server-0.4.3/server
+然后浏览器打开 `http://localhost:18080/`；SSH 服务必须已正确配置。该方式的服务端连接为 loopback，不需要公开管理员密码或改写认证规则。
+
+### 3.2 三步引导
+
+欢迎页提供“开始配置”和“跳过，我自己配置”，三步为：
+
+1. **管理员与安全**：设置称呼和密码；已有管理员登录并确认称呼。
+2. **添加音乐源**：直接使用“设置 → 音乐文件夹”的本地/NAS 管理，连接、检测并扫描，也可选择稍后配置。
+3. **连接播放终端**：使用终端中心现有添加向导签发令牌，手动在目标设备安装；确认注册、上线、授权和 DAC 状态。
+
+称呼和步骤保存在服务端；跳过只保存浏览器的隐藏选择，不伪造完成状态。可在“设置 → 管理员与偏好”继续。结束页显示真实源/节点/授权摘要；“开始聆听”只结束引导并进入主页，不自动播放或执行终端安装。已有管理员的旧实例不会被强制重设密码或重走新引导，可补全称呼。
+
+### 3.3 HTTPS/反代限制
+
+当前入口使用 HTTP `ListenAndServe`，不是自带证书配置的 HTTPS 监听器。管理员安全上下文只接受请求自身的 TLS 状态或严格的 localhost 连接，**故意不信任 `Forwarded` / `X-Forwarded-*`**，并核对 `Origin`、Host 与同源关系。
+
+因此，“在 Nginx/Caddy 终止 TLS，再加 `X-Forwarded-Proto: https`”不能直接视为已支持的新认证部署方法。普通 TLS 终止代理仍可能使服务端拒绝登录；容器端口转发也不保证服务端看到 loopback。不要通过伪造 Origin/Host 或关闭校验来迁就部署。
+
+在完整验证代理、Cookie、同源和首次设置流程前，使用服务端本机浏览器/SSH loopback 通道管理。对外 HTTP 与 ZAT 均只限可信网络；内置管理员保护敏感管理接口，但不是所有只读及播放 API 的统一网络认证屏障。
+
+## 4. Linux 服务端
+
+### 4.1 安装
+
+需要 Linux amd64/arm64 + systemd。安装器使用专用非 root 用户 `hifihub-server`；不承诺特定内存、吞吐或终端数量的性能指标。
+
+默认配置监听 `0.0.0.0:8080`，先用防火墙限制入口，或在首次安装前编辑包内 `server.env` 为 `HIFIHUB_LISTEN=127.0.0.1:8080`。已存在的 `/etc/hifihub/server.env` 会保留，须编辑实际配置而非只改模板。
+
+```sh
+sudo apt-get update
+sudo apt-get install -y gnupg
+tar -xzf Zephyr-HiFi-Kit-server-0.50.tar.gz
+cd Zephyr-HiFi-Kit-server-0.50
+sha256sum -c SHA256SUMS
+cd server
 sudo ./install.sh
 ```
 
-安装器会：按架构选择二进制装到 `/usr/bin/hifihub-server`；创建非 root 用户
-`hifihub-server`；写入 `/etc/hifihub/server.env`（已存在则保留）；创建
-`/var/lib/hifihub-server/{artifacts,gnupg,dist}`；把 `dist/`（终端 deb + 安装脚本 +
-SHA256SUMS）装到 `/var/lib/hifihub-server/dist`；安装并启用 systemd 单元；若同目录存在
-`trust-root.asc` 则自动导入信任根公钥。
+安装器按架构安装 `/usr/bin/hifihub-server`，创建 `/var/lib/hifihub-server`，复制分发集到其 `dist/`，安装并启动 `hifihub-server.service`。同目录有 `trust-root.asc` 时可导入公钥；必须先独立核实来源和指纹。
 
-### 3.2 配置
+### 4.2 配置与检查
 
-编辑 `/etc/hifihub/server.env`（时长用 Go 语法 `15s`/`10m`/`120m`）：
+编辑 `/etc/hifihub/server.env`。例如先采用本机管理和手动更新：
 
 ```sh
-HIFIHUB_LISTEN=0.0.0.0:8080
+HIFIHUB_LISTEN=127.0.0.1:8080
+HIFIHUB_ZAT_ADDR=0.0.0.0:7800
 HIFIHUB_DATA_DIR=/var/lib/hifihub-server
 HIFIHUB_DIST_DIR=/var/lib/hifihub-server/dist
-HIFIHUB_SIGNATURE_MODE=enforce      # 生产必须 enforce（NFR-S2）
-HIFIHUB_PLAY_GATE=true              # FR-3.10 播放门控
+HIFIHUB_GPG_HOME=/var/lib/hifihub-server/gnupg
+HIFIHUB_SIGNATURE_MODE=enforce
+HIFIHUB_PLAY_GATE=true
 HIFIHUB_IDLE_TIMEOUT=120m
-HIFIHUB_UPDATE_SELF=true            # 服务端自升级（检测发布源新版本）
-HIFIHUB_UPDATE_AUTO=true            # 检测到新版本后空闲时自动升级
-HIFIHUB_UPDATE_FLEET=true           # 终端跟随服务端版本自动收敛
-HIFIHUB_UPDATE_INTERVAL=10m         # 轮询周期
+HIFIHUB_UPDATE_SELF=false
+HIFIHUB_UPDATE_AUTO=false
+HIFIHUB_UPDATE_FLEET=false
 ```
 
-改后重启：`sudo systemctl restart hifihub-server`
-
-### 3.3 验证
+上述更新值是本指南的保守配置，不是通用代码默认值（见第 9 节）。需要 LAN 终端时选择适当 LAN 绑定并配置防火墙。
 
 ```sh
-curl -s http://127.0.0.1:8080/api/v1/health
-# {"status":"ok","service":"hifihub-server","signature_mode":"enforce","play_gate":true}
-
-curl -s http://127.0.0.1:8080/metrics/server        # 服务端自身消耗（根路径，非 /api/v1）
-curl -sI http://127.0.0.1:8080/dl/agent-install.sh    # 终端安装脚本可下载（200）
-
+sudo systemctl restart hifihub-server
 systemctl status hifihub-server
 journalctl -u hifihub-server -f
+curl -fsS http://127.0.0.1:8080/api/v1/health
+curl -fsSI http://127.0.0.1:8080/dl/agent-install.sh
 ```
 
-浏览器打开 `http://<服务端IP>:8080/` 进入内嵌管理控制台（总览 / 终端管理 / 应用仓库 /
-服务下发 / 密钥与授权 / 审计）。
+需要原生 FLAC 解码时，使用 `Zephyr-HiFi-Kit-server-0.50-audio-amd64.tar.gz` 或 `Zephyr-HiFi-Kit-server-0.50-audio-arm64.tar.gz`，按包内同样的 `server/install.sh` 安装，并提供该构建链接的 libFLAC 运行库（例如发行版提供的 `libflac12`；以实际 ABI 为准）。管理版与音频版沿用相同内部配置和服务名。
 
-> **控制台鉴权**：本包控制台不含登录页（角色切换已删减）。生产部署**必须**在前面加
-> Nginx/Caddy 做 TLS 终止 + Basic Auth / OIDC / mTLS，否则任何能访问 8080 的人都可管理机群。
+## 5. 音乐源与扫描
 
----
+在管理员解锁后进入“设置 → 音乐文件夹”。这是**服务端读取**源目录，不是从浏览器上传整个音乐库。
 
-## 4. enforce 模式：GPG 签名信任根（关键安全步骤）
+### 5.1 本地目录与 NAS
 
-enforce 模式下，**未签名制品会在入库时被拒绝**。服务端只用**公钥**验签，绝不持有私钥。
-密钥分工遵循安全不变量：
+- **本地目录**：填写服务端已有且可读的绝对路径，例如 Windows 的 `D:\Music`，Linux 的 `/srv/music`。本地“启用/停用”改变源状态，不会挂载或删除物理目录。
+- **Windows SMB**：填写主机、共享名及必要凭据；后端通过 WNet 建立当前登录会话的 UNC 连接，不调用 Linux `mount.cifs`。实际访问权由共享/系统账户控制，“只读”选项不能替代 NAS ACL。凭据冲突可能影响同账户到同 NAS 的其他连接，应先核实会话，勿批量断开系统共享。
+- **Linux SMB**：CIFS 后端依赖 `cifs-utils` 和挂载权限。默认加固 systemd 服务是非 root，不能假定安装 `cifs-utils` 后即可在控制台挂载。推荐由系统管理员在宿主机预挂载、授予服务账户只读权限，再作为本地源加入；不要为方便挂载而全局关闭沙箱。
+- **容器**：宿主机先挂载 NAS，再只读 bind 到容器内路径；不要只把宿主机路径填到容器里，也不要默认使用 privileged。
 
-- **主密钥（master）**：离线保管，仅用于生成/认证子密钥与签发许可证，永不联网、不上服务器。
-- **签名子密钥（signing subkey）**：在受控的构建/签名主机上，为每个制品生成 detached 签名。
-- **公钥（信任根）**：导入服务端 `GNUPGHOME`，作为验签信任根；控制台「密钥与授权」页也可
-  在线粘贴 armored 公钥导入并设为信任根（`POST /api/v1/keys/import` →
-  `POST /api/v1/keys/{id}/trust-root`，导出用 `GET /api/v1/keys/trust-root.asc`）。
+添加后启用/挂载，检查连接状态，再扫描。检测连接本身不挂载、不卸载；SMB 检测前应已挂载。扫描失败或网络暂时不可用时先排查连接，不要直接删除来源。
 
-### 4.1 离线主机：生成密钥并导出信任根
+### 5.2 复用、增量、归档和删除
+
+- **复用来源**：同一本地实际目录或同一 SMB 主机/共享再次添加时复用源身份，不生成另一份源记录。复用活跃源不表示覆盖原凭据；修改配置请使用编辑功能。
+- **增量扫描**：默认按大小与纳秒修改时间跳过未变化曲目，返回新增、更新、未变、移除等计数。移除指索引中不再存在的文件，不删除原文件；同源相对路径使用稳定曲目身份。
+- **完全重新扫描**：重新读取文件元数据；不是清空源再重建。更换同大小同时间的内容或需刷新标签时可使用此模式。
+- **失败保护**：遍历、连接校验或扫描期间文件检查失败时，不提交这次索引更新；不是以空目录覆盖旧曲库。
+- **归档**：保留来源和曲目索引，停止该源播放，已挂载的 SMB 会先卸载，并清除保存的 SMB 用户名/密码/域。重新添加相同来源可复用原身份，需重新连接并扫描；必要时重新填写凭据。
+- **删除来源**：删除源及曲目索引，与归档不同；并不删除源磁盘上的音乐。误删会影响曲库引用，应先备份。
+
+格式探测与实际解码分离。WAV、FLAC 等可被识别和编目，并不代表所有构建都能播放它们；MP3/AAC/DSD 等也不能仅因显示在曲库中就宣称可解码。
+
+## 6. Linux / Android 终端
+
+### 6.1 注册与在线安装
+
+先在服务端以管理员身份打开“终端中心 → 添加终端”，签发一次性令牌。**不要使用旧文档中不带会话的 `POST /nodes/token` 示例。** 令牌有有效期且只能使用一次；注册、上线和授权分别确认。
+
+使用向导给出的命令，在所选终端执行。也可先下载、检查脚本再运行（以下地址与令牌需按实际替换）：
 
 ```sh
-# 主密钥（认证用，离线机器上执行）
-gpg --quick-generate-key "Zephyr Release Signing <services@zephyr.hk>" ed25519 cert never
-# 记下输出的指纹 FPR，添加签名子密钥（有效期 2 年）
-gpg --quick-add-key <FPR> ed25519 sign 2y
-# 导出公钥信任根
-gpg --armor --export <FPR> > trust-root.asc
+curl -fsS 'http://<服务端LAN地址>:8080/dl/agent-install.sh' -o agent-install.sh
+# 检查文件来源与内容后执行；真实播放前确认服务端 dist 已换成音频分发集
+sudo bash ./agent-install.sh --server 'http://<服务端LAN地址>:8080' --token '<一次性令牌>'
 ```
 
-把 `trust-root.asc` 放到 `server/` 目录后运行 `install.sh` 会自动导入；或手动导入：
+明文 HTTP 安装只适用于可信隔离 LAN；生产应使用已验证的安全传输或通过可信渠道离线传送并核对校验和。不要将不可信网络下载的脚本直接以 root 执行。
+
+安装脚本自动识别 amd64/arm64/armhf，下载 `/dl/hifihub-agent_0.50_<arch>.deb`，通过 dpkg/apt 安装依赖，写入 `/etc/hifihub/agent.env` 并启动 `hifihub-agent`。`--bind` 控制本地控制台绑定（默认 `0.0.0.0`、端口 8080）；`--deb` 可指定本地包。
+
+新终端默认未授权。在控制台授权后再进行播放/软件下发。内置 3 席不需要另行购买许可证，但不会替你逐台授权。
+
+### 6.2 离线包与音频终端
+
+终端安装仍需 Debian/Ubuntu/Raspberry Pi OS 的 apt/dpkg + systemd；完全离线时必须预备依赖包。“离线 deb”不代表可以离线联系不到服务端仍完成注册。
+
+独立管理 deb 的安装示例：
 
 ```sh
-sudo GNUPGHOME=/var/lib/hifihub-server/gnupg gpg --batch --import trust-root.asc
-sudo chown -R hifihub-server:hifihub-server /var/lib/hifihub-server/gnupg
-sudo systemctl restart hifihub-server
+sudo dpkg -i ./Zephyr-HiFi-Kit-terminal-0.50-linux-arm64.deb
+sudo apt-get -f install
 ```
 
-### 4.2 签名主机：为制品生成 detached 签名
+服务与包查询仍用内部名：
 
 ```sh
-gpg --batch --yes --armor --detach-sign \
-    --local-user <SIGNING_SUBKEY_FPR> \
-    -o shairport-sync_4.3.2_arm64.deb.asc shairport-sync_4.3.2_arm64.deb
-```
-
-### 4.3 上传已签名制品（服务端入库时强制验签）
-
-```sh
-curl -s -X POST http://<服务端IP>:8080/api/v1/apps/shairport-sync/versions \
-  -F 'meta={"version":"4.3.2","arch":"arm64","format":"deb","units":["shairport-sync.service"],"occupies_dac":true,"lifecycle":"available"}' \
-  -F 'artifact=@shairport-sync_4.3.2_arm64.deb' \
-  -F 'signature=@shairport-sync_4.3.2_arm64.deb.asc'
-```
-
-验签失败或缺少 `.asc` 时返回 `artifact_rejected`，文件不会落盘。手动复核签名：
-
-```sh
-GNUPGHOME=/var/lib/hifihub-server/gnupg gpg --verify app.deb.asc app.deb
-```
-
-> 终端 Agent 下载制品后校验 **SHA256 完整性**；GPG 验签在**服务端入库**这一唯一入口强制
-> 执行（服务端是唯一下发源，FR-3）。
-
-### 4.4 授权与许可证（客户侧）
-
-**服务端自带内置授权：无需任何许可证即可授权最多 3 台终端并下发服务。**
-授权只针对服务端；终端侧产品无需证书即可运行。需要超过 3 台终端时，才需向签发方
-购买许可证扩容。许可证由签发方**离线签发**后交付（JSON + detached GPG 签名，
-服务端只验签、不签发）。你收到的交付包含 `license.json` + `license.json.asc`，
-或等价的 `payload_b64` / `sig_b64` 两段单行 base64。
-
-激活（也可在控制台「密钥与授权」页导入两个文件或粘贴两段 base64）：
-
-```sh
-curl -s -X POST http://<服务端IP>:8080/api/v1/license/activate \
-  -H 'Content-Type: application/json' \
-  -d '{"payload_b64":"<payload>","sig_b64":"<sig>"}'
-
-curl -s http://<服务端IP>:8080/api/v1/license
-# {"status":"activated","key":"ZMP-…","account":"…","seats":10,"builtin_seats":3,"effective_seats":10,…}
-```
-
-签名必须能被信任根验证，否则返回 `license_rejected`。有效席位取许可证席位与内置
-3 席的较大值（内置授权是保底）；许可证过期后自动回退内置授权。席位用尽后新终端
-授权会被拒绝（`seat_limit`），可注销闲置终端释放席位。续期或席位变更后你会收到
-新版本交付包，用同样方式重新激活即可覆盖旧许可证。
-
-**激活回执**：激活成功后在控制台「密钥与授权」页点击「导出激活回执」（或
-`GET /api/v1/license/receipt`），将下载的 `license-receipt.json` 发回签发方，
-用于登记激活状态与席位占用。回执不含任何密钥材料。
-
----
-
-## 5. 终端 Agent 安装（Zephyr HiFi Kit）
-
-### 5.1 一键安装（推荐，各架构通用）
-
-**第一步**：服务端签发一次性注册令牌（控制台「终端管理 → 添加终端」向导第 1 步会直接
-生成并展示下面的命令；等价 REST）：
-
-```sh
-curl -s -X POST http://<服务端IP>:8080/api/v1/nodes/token \
-  -H 'Content-Type: application/json' -d '{"ttl_seconds":1800}'
-# {"token":"<一次性令牌>","expires_at":<unix秒>}
-```
-
-**第二步**：在终端上执行（x86_64 / 树莓派 64 位 / 32 位均适用，脚本按 `uname -m` 自动选包）：
-
-```sh
-curl -fsSL http://<服务端IP>:8080/dl/agent-install.sh | sudo bash -s -- \
-  --server http://<服务端IP>:8080 --token <一次性令牌>
-```
-
-脚本会：按 `uname -m` 下载对应架构 deb（`/dl/hifihub-agent_0.4.3_<arch>.deb`）→
-`dpkg -i` + `apt-get -f install` → 写入 `/etc/hifihub/agent.env`（SERVER_URL / TOKEN /
-LOCAL_BIND，保留其它自定义键，0600 root 属主）→ 启用并启动 `hifihub-agent`。
-重复执行安全（幂等）。可选参数：
-
-| 参数 | 说明 |
-|---|---|
-| `--server <URL>` | 服务端地址（必填） |
-| `--token <TOKEN>` | 一次性注册令牌（必填） |
-| `--bind <ADDR>` | 本地控制台绑定地址（默认 `0.0.0.0`，端口固定 8080） |
-| `--deb <PATH>` | 使用本地 deb（离线安装，跳过下载） |
-
-向导第 3 步会轮询 `GET /api/v1/nodes/token/<token>` 直到终端注册成功，随后自动进入
-终端配置（分组 / BOM / 播放保护 / 授权）。
-
-### 5.2 离线安装（无网络直连服务端时）
-
-把 `agent/hifihub-agent_0.4.3_<arch>.deb` 拷到终端：
-
-```sh
-sudo dpkg -i hifihub-agent_0.4.3_arm64.deb
-sudo apt-get -f install -y        # 修复依赖（alsa-utils 等）
-```
-
-deb 会安装 `/usr/bin/hifihub-agent`、systemd 单元、`/etc/hifihub/agent.env`（conffile），
-并自动启用服务。编辑 `/etc/hifihub/agent.env`：
-
-```sh
-HIFIHUB_AGENT_SERVER_URL=http://<服务端IP>:8080
-HIFIHUB_AGENT_TOKEN=<一次性令牌>
-HIFIHUB_AGENT_ALIAS=客厅音箱
-HIFIHUB_AGENT_LISTEN_ADDR=0.0.0.0:8080
-HIFIHUB_AGENT_ALLOW_POWER=true
-HIFIHUB_AGENT_ALLOW_LOCAL=true
-```
-
-重启后 Agent 自动注册（消费一次性令牌 + machine-id），持久化 NodeID 与**节点密钥
-（node secret）**，随后开始心跳（10s）与命令轮询（10s）：
-
-```sh
-sudo systemctl restart hifihub-agent
+dpkg -s hifihub-agent
+systemctl status hifihub-agent
 journalctl -u hifihub-agent -f
 ```
 
-浏览器打开 `http://<终端IP>:8080/` 进入终端本地控制台（性能 / 服务卡片 / DAC / 电源 /
-系统更新 / 网络诊断）；服务端控制台「终端管理 → 终端界面」通过反向代理内嵌同一界面。
-
-> - 令牌一次性：注册成功后即失效，重注册需重新签发。
-> - **节点密钥**：注册时服务端下发 secret，服务端代理写操作自动注入 `X-Node-Secret`。
->   终端本地页面在 `ALLOW_LOCAL=true` 时允许局域网浏览器直接写操作（本地 UI 以
->   `X-Local-UI` 标记防跨站伪造）；`ALLOW_LOCAL=false` 时本地写操作全部拒绝，
->   只读不受影响。
-> - `ALLOW_POWER`/`ALLOW_LOCAL` 可按终端收紧（关闭电源/本地安装权限）。
-> - 新注册终端默认**未授权**：需在控制台「终端管理」或「密钥与授权」中授权（占用一个
->   授权席位，内置 3 席，许可证可扩容）后才能接收下发任务。
-
-### 5.3 安卓终端（APK）
-
-安卓终端是独立的 ZAT 播放终端：注册上线、心跳遥测、接收服务端 ZAT 推流并经
-**AAudio 比特完美**出声，前台播放服务保活，本地控制台支持暂停 / 停止 / seek / 音量。
-
-**设备要求**
-
-- Android 8.0（API 26）及以上，arm64-v8a 或 armeabi-v7a 设备。
-- 与服务端同一可达网络；服务端地址形如 `http://<服务端IP>:8080`。
-
-**安装三步**
-
-1. 从 Release 下载 `zephyr-terminal-0.4.3.apk`（控制台「添加终端」向导架构选 Android
-   后也给出同款下载链接），在系统设置允许「安装未知应用」后安装。
-2. 启动「Zephyr 终端」，填写服务端地址（`http://<服务端IP>:8080`）、注册令牌（控制台
-   「终端管理 → 添加终端」向导、架构选 **Android** 签发的一次性令牌）与可选别名。
-3. 点「启动」后终端自动注册并上线，出现在服务端控制台「终端管理」列表（架构 android）。
-
-> - 令牌一次性，注册成功后失效；节点密钥持久化在应用私有目录（0600）。
-> - 安卓终端经 AAudio 默认输出出声，无 ALSA 设备名；EXCLUSIVE 不可用时自动回退 SHARED。
-> - 新注册终端默认未授权，需在控制台授权（占一个授权席位）后才能接收播放推送。
-> - APK 由 CI 用 NDK r26 交叉编译 Go c-shared 核心（`libzatagent.so`）+ Gradle 组装；
->   配置 release keystore（`ANDROID_KEYSTORE_*` secrets）后为 release 签名，否则 debug
->   签名（仍可安装）。从源码重建见 §10.2。
-
----
-
-## 6. 首次下发流程（端到端）
-
-以向「客厅音箱」下发 AirPlay 渲染器为例。推荐用服务端控制台「服务下发」工作区操作；
-以下给出等价 REST。
+使用独立音频终端包时解压，进入包含以下文件的目录，核对校验后使用本地 deb：
 
 ```sh
-S=http://<服务端IP>:8080/api/v1
-
-# 0) 授权终端（占一个席位；内置 3 席无需许可证，更多见 4.4）
-curl -s -X POST $S/nodes/<NodeID>/authorize
-
-# 1) 创建应用（目录条目）
-curl -s -X POST $S/apps -H 'Content-Type: application/json' \
-  -d '{"app_id":"shairport-sync","name":"AirPlay","category":"renderer","upstream":"shairport-sync","license":"GPL"}'
-
-# 2) 上传已签名制品（见 4.3，enforce 验签）
-
-# 3) 创建 BOM 期望态（声明要装哪些应用）
-curl -s -X POST $S/boms -H 'Content-Type: application/json' \
-  -d '{"bom_id":"livingroom","role":"renderer","apps":[{"app_id":"shairport-sync","version":"4.3.2"}],"variables":{"airplay_name":"客厅音箱","dac_device":"hw:1,0"}}'
-
-# 4) 校验并发布 BOM（版本号从返回的 version 字段取，首个为 1）
-curl -s -X POST $S/boms/livingroom/versions/1/validate
-curl -s -X POST $S/boms/livingroom/versions/1/publish
-
-# 5) 下发任务（node_id 从终端管理页或 GET /nodes 取）
-curl -s -X POST $S/jobs -H 'Content-Type: application/json' \
-  -d '{"node_id":"<NodeID>","bom_id":"livingroom","bom_version":1,"kind":"provision"}'
-
-# 6) 跟踪任务状态机
-curl -s $S/jobs/<JobID>
+sha256sum -c SHA256SUMS
+sudo bash ./agent-install.sh \
+  --server 'http://<服务端LAN地址>:8080' --token '<一次性令牌>' \
+  --deb ./hifihub-agent_0.50_arm64.deb
 ```
 
-任务依次经过 `precheck → resolve_deps → waiting_idle → downloading → verifying →
-installing → rendering_config → enabling_units → validating → done`。**播放门控**
-（FR-3.10）会在终端正在播放时停在 `waiting_idle`，直到空闲或超时，绝不中断播放。
-失败时按状态机回滚（`rollback → failed_rolledback`）。终端 Agent 的任务轮询（10s）
-会自动领取并执行任务，逐步上报 phase。
+amd64 改用 `hifihub-agent_0.50_amd64.deb`。真实播放需要音频版的 ALSA 后端及其运行库（deb 声明依赖），管理版没有该后端。选择 DAC 后先用短曲验证格式、采样率、音量与实际出声，不能把“在线”当成“播放通过”。
 
-下发前置门控：许可证已激活 + 终端已授权 + （终端开启播放保护时）终端空闲。
+手动安装后需在 `/etc/hifihub/agent.env` 配置服务端 URL、一次性令牌和可选别名，再重启服务。该文件含注册信息，应限制为 root 可读。终端本地控制台以及 root 动作应仅限可信网络，按需要收紧 `HIFIHUB_AGENT_ALLOW_LOCAL`、`HIFIHUB_AGENT_ALLOW_POWER`；优先通过服务端受管理员保护的终端管理入口操作。
 
-**系统更新 / 网络诊断走命令通道**（不占用任务状态机）：
+### 6.3 Android
+
+安装 `Zephyr-HiFi-Kit-terminal-0.50.apk`，仅在信任安装包来源后允许系统安装未知应用。当前目标为 Android API 26+ 的 arm64-v8a / armeabi-v7a；填写服务端可达地址、一次性令牌与可选别名后启动，回到服务端确认在线并授权。
+
+Android 输出使用 AAudio，优先独占、不可用时回退共享；设备及系统可能改变实际音频路径，不能无条件保证比特完美。Android 不使用 ALSA 设备名，也不通过 Linux deb 自动收敛升级。APK 更新需保留兼容签名，不能假定任意重签 APK 可覆盖原应用。
+
+## 7. 公钥、授权与软件下发
+
+生产使用 `HIFIHUB_SIGNATURE_MODE=enforce`。GPG 缺失、公钥不可信、制品缺签名或签名不匹配时，应修正依赖/签名，而不是关闭校验。
+
+- 主密钥保存在离线环境，签名子密钥留在受控签名主机；服务端只导入用于验证的公钥。
+- 在“设置 → 授权信息”导入并核对公钥信任根；上传制品时同时提供 detached 签名。
+- 离线许可证由签发方交付，服务端验证后扩容。默认内置 3 席，超过该数量才需要更大席位授权；管理员登录与许可证授权互不替代。
+- 软件交付需匹配终端操作系统与架构，不能只看 amd64/arm64。不要把 Windows 或 macOS 文件作为 Linux 可安装包。
+- 签名制品/BOM 下发与 APT 源安装是不同路径。APT 源需按实际发行版和来源配置，不能把 APT 安装说成所有包都已在本地仓库做过 detached GPG 验签。
+- 软件安装、系统更新与版本收敛有播放保护/任务门控；实际失败仍应检查状态、日志和回滚结果，不承诺永远不会中断。
+
+常规管理操作建议从已登录控制台完成。调用受保护 REST 时还需会话 Cookie、同源 `Origin` 和合适的 Content-Type；仅复制旧版匿名 curl 请求不再等价于管理操作。
+
+## 8. NAS / 容器
+
+镜像入口：
 
 ```sh
-# 控制台或 REST 触发
-curl -s -X POST $S/nodes/<NodeID>/commands -H 'Content-Type: application/json' \
-  -d '{"type":"os-check"}'                      # 或 os-upgrade / netdiag
-# Agent 每 10s 领取：GET $S/nodes/<NodeID>/commands?status=pending
-# 执行后回报：POST $S/commands/<CmdID>/result
-# 结果查询：
-curl -s $S/nodes/<NodeID>/osupdates             # 可升级包列表 + 是否需重启
-curl -s $S/nodes/<NodeID>/netdiag               # DNS/TCP/mDNS/SSDP/组播探测
+docker pull ghcr.io/eyebright/zephyr-hifi-kit-server:0.50
 ```
 
-`os-upgrade` 同样受播放保护门控（可在终端配置中关闭 `play_protect`，或设置
-`auto_os_update` + 维护窗口 `os_window` 让 Agent 在窗口内自动升级）。
+可参考仓库 `packaging/docker/compose.yml`，核对镜像标签为 `0.50`。关键部署要点：
 
-四个渲染器及其助手已内置配置模板：
+- 持久数据挂到 `/data`，分发集挂到 `/data/dist`；镜像中的服务用户为 `hifihub-server`（UID/GID 1000），宿主目录须授予必要权限，勿对整个宿主目录放宽权限。
+- 真实播放使用音频版终端分发集。服务端镜像包含 Linux libFLAC 解码能力，不意味着挂入的管理版终端 deb 有 ALSA。
+- 宿主预挂载 NAS，再以只读 bind 暴露给容器；在控制台添加容器内本地路径。
+- HTTP 8080 与 ZAT TCP 7800 分别限制到可信网络；不需要公网直连，也不建议 privileged。
+- 容器通过更换镜像并保留 `/data` 升级，`HIFIHUB_UPDATE_SELF=false`、`HIFIHUB_UPDATE_AUTO=false`。终端收敛可单独启用，但先确认分发集与镜像版本、音频能力一致。
 
-| 应用 | 协议 | 助手 | 关键配置 |
+**新管理员初始化边界仍适用。** 将容器端口发布到宿主的 `127.0.0.1`，不必然使容器内收到的连接为 loopback；普通 TLS 反代也不自动满足认证要求。在验证容器内部 loopback 初始化与后续安全登录路径之前，不应把镜像健康检查或端口映射成功算作容器管理完整验收。
+
+## 9. 备份、升级与卸载
+
+### 9.1 音乐数据备份不是整机备份
+
+“设置 → 备份与维护”的音乐数据导出包括源配置的非凭据部分、曲目/稳定身份、封面、播放列表、播放历史与统计。它不包含原始音乐文件、SMB 密码、管理员凭据、终端密钥、运行队列及完整服务端配置，也不能当作包含所有用户状态的迁移镜像。
+
+恢复/清理需管理员确认。恢复前停止所有播放（包括暂停会话）、结束扫描、卸载 SMB，并先备份当前数据；恢复后重新确认路径、凭据和连接，不自动挂载共享。
+
+完整迁移应在停止服务端后备份整个数据目录、独立配置、外置数据路径以及要保留的分发集；音乐文件单独备份。完整数据库可能含 SMB 凭据与节点密钥，备份须按敏感数据保管，不能上传到 Release 或公开仓库。
+
+### 9.2 从 0.4.3 升到 0.50
+
+**必须手动安装一次。** 0.4.3 的自动更新器硬编码旧发布包名，不会因为 0.50 改了资产命名就自动找到新包。
+
+- **Windows**：先停止播放，在前台窗口按 Ctrl+C 并确认服务端进程退出；完整备份后，将新 ZIP 解压到独立目录，替换程序和正确的分发集，保留原数据目录并重新设置 `HIFIHUB_DATA_DIR`。启动后核对版本、登录、源、索引和终端状态。不要让两个进程同时使用同一数据库，也不要用新的空 data 覆盖原 data。
+- **Linux**：`sudo systemctl stop hifihub-server` 后完整备份，解压 0.50 匹配类型的包，运行 `server/install.sh`。安装器保留既有 env，但会复制程序与分发集，须核对自定义路径和音频终端文件。启动后检查日志与管理员登录。
+- **容器**：停止容器并备份数据卷，换用 `ghcr.io/eyebright/zephyr-hifi-kit-server:0.50` 重建，保留原卷与路径，并刷新相应分发集。
+- **终端**：包内部名不变，可用新 deb 手动升级；确认服务端分发集后再使用终端收敛。Android 通过兼容签名 APK 更新。
+
+有问题需回退时保留升级后的数据，优先恢复升级前完整备份和匹配程序，不能假定新数据库可安全配旧二进制。
+
+### 9.3 更新开关
+
+| 环境变量 | 通用代码默认 | Windows 启动脚本 | 说明 |
 |---|---|---|---|
-| `roonbridge` | RAAT | — | 设备/音量在 Roon Core 配置 |
-| `networkaudiod` | NAA | — | 输出由 HQPlayer 服务端指定 |
-| `shairport-sync` | AirPlay | `nqptp`, `avahi-daemon` | `airplay_name` / `dac_device` / `port` |
-| `upmpdcli` | UPnP/DLNA | `mpd` | `room` / `port` / `dac_device` |
+| `HIFIHUB_UPDATE_SELF` | `true` | `false` | 发布检查/服务端自升级开关 |
+| `HIFIHUB_UPDATE_AUTO` | `true` | `false` | 检测更新后自动安装 |
+| `HIFIHUB_UPDATE_FLEET` | `true` | `false` | Linux 终端向当前服务端版本收敛 |
+| `HIFIHUB_UPDATE_INTERVAL` | `10m` | 同通用值 | 轮询间隔 |
+| `HIFIHUB_UPDATE_MAX_PARALLEL` | `2` | 同通用值 | 并行升级上限 |
+| `HIFIHUB_UPDATE_MAX_ATTEMPTS` | `3` | 同通用值 | 失败挂起阈值 |
+| `HIFIHUB_UPDATE_RING_PERCENT` | `20` | 同通用值 | 每轮灰度比例 |
 
----
+`HIFIHUB_UPDATE_FEED` 可指定发布源；默认使用现有项目 Releases。Linux 自升级涉及资产选择、摘要/包内校验、可选发布签名验证、文件替换和重启权限。默认非 root 加固服务并不自动拥有覆盖 `/usr/bin` 和重启服务的权限，不要把默认 `true` 解读为已保证可完成升级。
 
-## 7. 安全不变量（务必遵守）
+收敛策略也可能已持久化在数据库中，迁移后应在控制台核对实际策略与分发文件。Windows 不承诺自更新；按需启用 fleet 时，仍须先检查授权、平台支持、音频包类型、版本和校验清单。播放中、离线、缺包或连续失败的节点不应视作已升级；以回连心跳版本为准。
 
-- **NFR-S2**：生产 `HIFIHUB_SIGNATURE_MODE=enforce`，未签名制品拒绝入库。`dev` 仅限本机
-  首次跑通，**严禁用于生产**。
-- **密钥分工**：主密钥离线；签名子密钥在受控签名主机；服务端只持公钥信任根，永不持私钥。
-  许可证同样离线签发、服务端只验签。
-- **NFR-S5**：终端 Agent 以 root 运行，但 systemd 动作受**单元白名单**限制，电源动作受
-  `ALLOW_POWER` 门控，本地写操作受 `ALLOW_LOCAL` + 节点密钥门控；不可执行白名单外的单元。
-- **唯一下发源（FR-3）**：所有制品只来自服务端；终端不自行从公网拉取应用。`/dl/` 只暴露
-  白名单文件名（agent deb / 安装脚本 / SHA256SUMS），不做目录穿越。
-- **授权门控**：未授权终端不能接收下发任务；席位上限为内置 3 席与许可证席位的较大值。
-- **传输安全**：生产请在服务端前加 TLS 反向代理并配置控制台鉴权；注册令牌一次性、短时效。
-- **审计**：所有管理变更写入审计日志（控制台「审计」页可筛选并导出 CSV/JSON）。
+### 9.4 卸载
 
----
+Linux 服务端使用 0.50 包内 `server/uninstall.sh`，保留配置和数据；终端包仍使用内部名：
 
-## 8. 排障
+```sh
+sudo apt-get remove hifihub-agent
+```
 
-| 现象 | 排查 |
+Windows 停止进程后可移除程序目录，数据目录按需要保留并先备份。卸载程序不等于服务端注销终端；如不再使用该设备，应在控制台处理注销和席位释放。
+
+## 10. 排障与逐步验证
+
+| 现象 | 核查 |
 |---|---|
-| `health` 无响应 | `systemctl status hifihub-server`；`journalctl -u hifihub-server -n 50`；检查 8080 端口/防火墙 |
-| 上传返回 `artifact_rejected` | enforce 模式缺 `.asc` 或验签失败；确认信任根已导入 `GNUPGHOME`、签名用对应子密钥 |
-| `license_rejected` | 许可证签名无法被信任根验证，或 JSON 字段缺失；用离线主/子密钥重签并核对 base64 单行无换行 |
-| 下发被拒 `license_required` / `not_authorized` / `seat_limit` | 先激活许可证（4.4），再授权终端；席位满时注销闲置终端 |
-| `/dl/agent-install.sh` 404 | `HIFIHUB_DIST_DIR` 指向的目录缺文件；重跑 `install.sh` 或手动把 `server/dist/*` 拷入 |
-| 终端不上线 | 检查 `agent.env` 的 `SERVER_URL`/`TOKEN`；令牌是否过期/已用；`journalctl -u hifihub-agent -f` |
-| 命令一直 `pending` | Agent 命令轮询未运行（版本过旧/服务未起）；`systemctl status hifihub-agent`，确认 deb 为 0.4.3 |
-| 任务停在 `waiting_idle` | 终端正在播放（播放门控生效）；等待空闲、关闭该终端播放保护，或调小 `HIFIHUB_IDLE_TIMEOUT` |
-| 终端界面代理 502 | 终端离线或本地 8080 未监听；核对节点 IP 与 `HIFIHUB_AGENT_LISTEN_ADDR`，检查终端防火墙 |
-| 本地控制台写操作 403 | `ALLOW_LOCAL=false` 时本地写操作被禁（设计如此）；改为服务端控制台「终端界面」操作，或开启 `ALLOW_LOCAL`。旧版 Agent 直连写操作需 `X-Node-Secret`，升级 Agent 后局域网可直接操作 |
-| 安装失败 `dpkg -i` | 终端缺依赖；执行器会自动 `apt-get -f install` 修复一次；检查终端 apt 源可达 |
-| 权限/沙箱报错 | 服务端以非 root 运行，确认 `/var/lib/hifihub-server` 属主为 `hifihub-server` |
+| HTTP 无响应 | 进程日志、端口占用、`HIFIHUB_LISTEN`；Windows 用 `Invoke-RestMethod`，Linux 查 systemd/journal |
+| 远程无法初始化/登录 | 初始化仅 localhost；普通 HTTP 拒绝管理；检查第 3 节 TLS/反代与 Origin 限制，不伪造头 |
+| 管理操作 401/403 | 会话失效、未登录、访问不是安全上下文或同源；重启后重新登录 |
+| 登录 429 | 命中登录退避，等待后检查密码，不循环重试 |
+| 启动后像新实例 | 检查 `HIFIHUB_DATA_DIR`、`HIFIHUB_DB_PATH` 是否仍指向原目录，不要重新初始化覆盖旧数据 |
+| `/dl/agent-install.sh` 404 | `HIFIHUB_DIST_DIR` 路径或文件缺失，Windows 应指包内 dist 或明确配置的音频分发集 |
+| FLAC 已入库但无法播放 | 区分格式识别和解码；核查所用构建是否有 Linux libFLAC 后端；外部 ffmpeg 不代表自动回退已实现 |
+| 终端在线但无声 | 管理终端没有 ALSA 后端；核对音频包、授权、ZAT 7800、DAC、格式与音量 |
+| Windows NAS 失败 | 同一登录账户的网络会话、共享权限、用户名/域、凭据冲突；不要批量清除所有共享 |
+| Linux NAS 失败 | cifs-utils、挂载权限和 systemd 沙箱；可改用宿主预挂载目录作为本地源 |
+| 扫描失败 | 查看返回错误，先恢复连接/读权限；失败扫描保留旧索引，不要为“刷新”删除源 |
+| `artifact_rejected` / `license_rejected` | GPG 可执行程序、可信公钥、签名与文件对应关系；保持 enforce |
+| 终端未授权 / 席位不足 | 逐台授权；内置 3 席无需激活额外许可证，超过可用席位才需扩容或释放 |
+| 升级等待/失败 | 播放门控、在途任务、签名/校验、架构、运行权限、dist 类型；0.4.3 跨到 0.50 手动安装 |
 
-资源与日志：服务端 `journalctl -u hifihub-server`；终端 `journalctl -u hifihub-agent`。
-两者内存均有 systemd 硬上限（512M / 120M），异常增长会被限制并重启。
+建议在真实部署上分别记录：健康检查、管理员初始化与锁定/重登录、源复用、增量与完整扫描、归档/恢复、终端注册授权、WAV/FLAC 适用路径、实际出声及备份恢复。一次健康检查或单元测试不能代替这组端到端验证。
 
----
+## 11. 源码构建与测试
 
-## 9. 卸载
-
-服务端（保留配置与数据，可安全重装）：
-
-```sh
-cd zephyr-music-server-0.4.3/server
-sudo ./uninstall.sh
-```
-
-终端：
+使用满足各 `go.mod` 的 Go 工具链（当前声明 `go 1.27.4`）。管理构建使用纯 Go；音频构建需相应 C 工具链。所有示例明确固定 `0.50`：
 
 ```sh
-sudo apt-get remove hifihub-agent          # 停止并禁用服务
-sudo apt-get purge hifihub-agent           # 同时清除 conffile
+# 在仓库根目录：管理发布构建
+VERSION=0.50 sh scripts/build-release.sh
+
+# 单元与前端测试
+go test ./...
+go -C agent test ./...
+node --test internal/web/*.test.cjs
 ```
 
-在服务端控制台注销终端会释放授权席位；注销后 30 天内可在「终端管理」中恢复。
-
----
-
-## 10. 从源码重建（可选）
-
-需要 Go 1.27+（纯 Go，`CGO_ENABLED=0`，无需 dpkg-deb）：
-
-```sh
-sh scripts/build-release.sh                # 产出 release/ bundle + tarball + SHA256SUMS
-VERSION=0.4.3 sh scripts/build-release.sh  # 指定版本号
-```
-
-脚本交叉编译服务端（linux amd64/arm64）与终端（amd64/arm64/armhf），用内置 `debpack`
-工具生成三架构 deb，渲染 `agent-install.sh`（替换 `@VERSION@`），组装 `server/dist/`
-与发布包。两模块单元测试：`go test ./...`（服务端）与 `cd agent && go test ./...`（终端），
-均应全绿。
-
-端到端运行时冒烟测试（需 go / gpg / curl）：
-
-```sh
-sh scripts/smoke-test.sh
-```
-
-它临时生成 GPG 密钥、以 enforce 模式启动服务端，逐项验证：签名制品入库被接受、未签名
-被拒绝（NFR-S2）、下载完整性、一次性令牌注册与复用拒绝、内置授权与许可证扩容席位门控、BOM
-校验/发布、任务状态机与播放门控（`waiting_idle` → 空闲恢复 → `done`）、命令通道往返、
-审计与 `/dl/` 白名单，结束后自动清理。
-
-### 10.1 音频版构建（CGO + libFLAC + ALSA，真实播放）
-
-上面的默认包是**纯 Go 管理版**：服务端只解码 WAV（FLAC 走占位返回错误），终端 Agent
-的 ALSA 播放为占位（`SETUP` 被拒绝），适用于无音频硬件的开发/管理场景。**真实的 ZAT
-音频解决方案**（服务端 libFLAC 解码 → 推流 → 终端 ALSA 出声）需要 **CGO 音频版**，只能
-在 **Linux** 上构建（Windows/macOS 无 CGO 工具链，默认仍走纯 Go 交叉编译）。
-
-构建依赖：`pkg-config libflac-dev libasound2-dev flac`（Debian/Ubuntu）。
-
-本机单架构音频包（在 amd64 / arm64 Linux 主机上）：
+Linux 原生音频构建（发布构建会调用音频构建；以下两种方式二选一，不要在同一输出目录连续重复构建）：
 
 ```sh
 sudo apt-get install -y pkg-config libflac-dev libasound2-dev flac
-AUDIO=1 sh scripts/build-release.sh   # 产出 release/…-audio-<arch>/ bundle + tarball
-# 或仅构建并跑音频测试（ALSA null 回环 + FLAC 往返），产物在 bin/audio/：
-TEST=1 sh scripts/build-audio.sh
+VERSION=0.50 AUDIO=1 TEST=1 sh scripts/build-release.sh
+# 或仅构建音频产物和音频终端包并测试：
+# VERSION=0.50 TEST=1 sh scripts/build-audio.sh
 ```
 
-ARM 交叉音频包（在 x86_64 Linux 上，multiarch；无 ARM runner 时使用）：
+构建脚本拒绝覆盖已有的非空版本输出目录；重建前请先保留并移走旧输出，不要直接删除可能需要的发布产物。前端测试还需安装支持 `node --test` 的 Node.js。
+
+`build-audio-cross.sh` 提供 ARM 交叉构建路径，需自行准备匹配的交叉编译器与目标库；armhf 管理包的存在不表示本次提供了同名 armhf 音频发布包。
+
+Android 构建脚本使用 Linux NDK 工具链布局，需 Android SDK、NDK（脚本指定版本）、JDK 和 Gradle；配置好 `ANDROID_HOME` / `ANDROID_NDK_HOME` 后：
 
 ```sh
-sudo dpkg --add-architecture arm64 && sudo dpkg --add-architecture armhf
-sudo apt-get update
-sudo apt-get install -y gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf \
-    libasound2-dev:arm64 libasound2-dev:armhf libflac-dev:arm64
-sh scripts/build-audio-cross.sh       # 产出 bin/audio-cross/ 的 arm64/armhf 音频 deb
+VERSION=0.50 sh scripts/build-android.sh
 ```
 
-运行库依赖：音频版服务端需 `libflac8`（Ubuntu 24.04+ 为 `libflac12`，安装器会检测并
-提示）；音频版终端 deb 的 `Depends` 已含 `libasound2 | libasound2t64`，`dpkg -i` +
-`apt-get -f install` 会自动补齐。
+签名材料由构建环境安全提供，不写入源码或发布包。Windows/macOS 上是否可调整工具链另行验证，不将脚本当前 Linux 限制宣称为平台永远无法构建。
 
-CI（`.github/workflows/ci.yml` 的 `audio` 任务）在 **amd64 与 arm64 原生 runner** 上编译
-CGO 音频后端并执行真实音频路径验证：ALSA `null` 回环（无需声卡）+ FLAC 解码往返（断言
-PCM 逐比特一致）；打 tag 时把音频 bundle 与音频 deb 追加到 GitHub Release。armhf 音频
-包由 `build-audio-cross.sh` 在备好的主机上产出（GitHub 无 armhf 原生 runner）。
+仓库包含管理员/源生命周期/前端引导测试、ALSA/FLAC 音频测试及冒烟脚本；测试存在不代表本次已执行，更不代表新认证下 Windows 黄金路径已实测。本次文档以 `internal/api/settings_admin.go`、`internal/api/api.go`、`internal/library/`、`internal/decode/`、`internal/mount/`、`internal/web/assets/experience.js`、`agent/internal/player/`、`packaging/server/start.ps1`、`scripts/build-release.sh` 及相关部署脚本中的实际实现为依据。
 
-> 音频版与纯 Go 版的引擎名、配置/数据目录、systemd 单元完全一致，可互相替换，区别仅
-> 在于是否链接 libFLAC/ALSA。部署真实播放请使用音频版 bundle（其 `server/dist/` 内为
-> 音频 deb，终端经 `/dl/` 自助安装即获得播放能力）。
-
-### 10.2 安卓终端构建（NDK c-shared + AAudio + Gradle）
-
-安卓终端 APK 只能在 **Linux** 上构建：用 Android NDK 的 clang 把 Go 核心交叉编译成
-c-shared 库（`libzatagent.so`，链接 AAudio），再由 Gradle 组装 Kotlin 前台服务 / WebView
-外壳。Windows/macOS 无 NDK 工具链，无法本机构建（CI 的 `android` 任务负责产出）。
-
-构建依赖：Go 1.27+、Android NDK r26（`26.3.11579264`）、Android SDK（platform 34 /
-build-tools 34.0.0 / cmake 3.22.1）、JDK 17、Gradle 8.7+。
-
-```sh
-export ANDROID_HOME=/opt/android-sdk
-export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/26.3.11579264"
-# 可选 release 签名（不设则 debug 签名，仍可安装）：
-# export KEYSTORE_FILE=/path/release.keystore KEYSTORE_PASSWORD=… KEY_ALIAS=… KEY_PASSWORD=…
-VERSION=0.4.3 sh scripts/build-android.sh   # 产出 release/zephyr-terminal-0.4.3.apk
-```
-
-脚本对 `arm64-v8a` 与 `armeabi-v7a` 各交叉编译一份 `libzatagent.so` 放入
-`android/app/src/main/jniLibs/<abi>/`，CMake 编译 JNI 桥（`libzatjni.so`）链接它，
-Gradle `assembleRelease` 打包 APK。纯 Go 核心单元测试（无需 NDK）：
-
-```sh
-cd agent && CGO_ENABLED=0 go test ./internal/androidcore/...
-```
-
-CI（`.github/workflows/ci.yml`）：`android` 任务在 ubuntu runner 上 provision SDK/NDK/
-Gradle，构建 APK 并用 NDK `llvm-readelf` 校验两个 ABI 的 `libzatjni.so` 均按 basename
-依赖 `libzatagent.so`、APK 内 native 库齐全；`android-aaudio` 任务在 API 34 x86_64 模拟器
-上交叉编译并运行 player 测试，验证 AAudio `open/write/drain/close`（S16/S24/S32）真实
-出声路径。打 tag 时把 `zephyr-terminal-<version>.apk` 追加到 GitHub Release。
-
----
-
-## 11. 自动更新（服务端自升级 + 终端版本收敛）
-
-v0.4.0 起，服务端周期性检测发布源的最新版本并自动升级自身；终端 Agent 版本跟随
-服务端版本，由服务端轮询逐环下发 `agent-upgrade` 命令自动收敛，无需逐台手动操作。
-控制台「服务下发 → 自动更新」面板提供实时状态与全部操作。
-
-### 11.1 服务端自升级
-
-- 发布源默认为 GitHub Releases（`HIFIHUB_UPDATE_FEED` 可指向内网镜像，JSON 结构与
-  GitHub releases API 一致：`tag_name` + `assets[].{name,browser_download_url,digest,size}`）。
-- 升级管线：下载 bundle → feed 公布的 `sha256:` 摘要校验 → 若发布 `.asc` 则用已导入
-  信任根做 GPG 验签 → 解包后逐文件核对 bundle 内 `SHA256SUMS` → 刷新 `/dl/` 终端分发
-  集 → 原子置换二进制（先写 `.new` 再 rename）→ 重启 systemd 服务。
-- 播放保护（FR-3.10）：任一终端播放中或有任务在途时拒绝升级，置 `waiting_idle`，
-  空闲后自动继续；控制台「升级到 vX」按钮同样受此门禁。
-- `HIFIHUB_UPDATE_AUTO=false` 时只检测不自动安装，可在控制台手动触发。
-
-### 11.2 终端跟随收敛
-
-- 目标版本恒等于服务端当前运行版本；服务端每轮对每台终端判定状态：
-  `converged`（心跳版本已对齐）/ `pending` / `upgrading` / `waiting_idle`（播放中）/
-  `suspended`（连续失败达上限）/ `unsupported`（未授权、架构不在范围或 `/dl/` 缺 deb）/
-  `offline`。
-- 灰度环推进：按 `ring_percent` 分批，整环全部对齐后才进入下一环；`max_parallel`
-  限制同时在途命令数；失败按 60s×次数 退避重试，达 `max_attempts` 挂起，控制台可一键重试。
-- 终端侧执行：下载 deb → SHA256 校验 → `dpkg -i` → 重启 agent 服务；服务端只在
-  心跳报告目标版本后才判定收敛，重启未回连不会被误判完成。
-- 安卓终端经 APK 升级，不在 deb 自动收敛范围（面板标记 `unsupported` 并说明）。
-
-### 11.3 配置项
-
-| 环境变量 | 默认 | 说明 |
-|---|---|---|
-| `HIFIHUB_UPDATE_FEED` | GitHub Releases | 发布源 URL；离线 LAN 指向内网镜像 |
-| `HIFIHUB_UPDATE_SELF` | `true` | 服务端自升级开关 |
-| `HIFIHUB_UPDATE_AUTO` | `true` | 检测到新版本后自动安装 |
-| `HIFIHUB_UPDATE_FLEET` | `true` | 终端收敛开关 |
-| `HIFIHUB_UPDATE_INTERVAL` | `10m` | 轮询周期 |
-| `HIFIHUB_UPDATE_MAX_PARALLEL` | `2` | 同时在途升级命令上限（1–16） |
-| `HIFIHUB_UPDATE_MAX_ATTEMPTS` | `3` | 连续失败挂起阈值（1–10） |
-| `HIFIHUB_UPDATE_RING_PERCENT` | `20` | 每环终端百分比（5–100） |
-| `HIFIHUB_UPDATE_STAGE_DIR` | `<DataDir>/update` | 下载/解包暂存目录 |
-
-策略也可在控制台「自动更新 → 收敛策略」实时修改（持久化到数据库，重启保留）。
-
-### 11.4 REST 接口
-
-```sh
-S=http://127.0.0.1:8080/api/v1
-curl -s $S/update/status                 # 服务端状态 + 收敛策略
-curl -s -X POST $S/update/check          # 立即检测发布源
-curl -s -X POST $S/update/apply          # 立即自升级（播放/任务门禁，409=忙）
-curl -s -X POST $S/update/auto -H 'Content-Type: application/json' -d '{"auto_apply":false}'
-curl -s $S/update/fleet                  # 收敛快照（干跑，不下发）
-curl -s -X POST $S/update/fleet/policy -H 'Content-Type: application/json' \
-  -d '{"enabled":true,"max_parallel":4,"max_attempts":3,"ring_percent":25}'
-curl -s -X POST $S/update/fleet/converge # 强制立即收敛一轮（忽略退避）
-curl -s -X POST $S/update/fleet/<NodeID>/retry   # 重置挂起终端的失败计数
-```
-
----
-
-## 12. NAS 容器部署（威联通 / 群晖 / TrueNAS / Unraid）
-
-服务端提供**音频版容器镜像**（CGO libFLAC 解码 + gnupg enforce 验签），适用于带容器功能的
-NAS：QNAP Container Station、群晖 Container Manager、TrueNAS SCALE、Unraid 及任意 Docker
-主机。镜像不依赖 systemd / apt：进程直接运行，全部状态（数据库 / 制品 / 信任根 / dist）
-落在 `/data` 卷，以非 root 用户 `hifihub-server` 运行，内置 HEALTHCHECK。
-
-### 12.1 获取镜像
-
-```sh
-# 在线拉取（amd64 / arm64 多架构 manifest，NAS 按自身架构自动选）
-docker pull ghcr.io/eyebright/zephyr-music-server:0.4.3
-
-# 离线导入（Release 资产中的 docker save 包；Container Station / Container Manager
-# 的「导入镜像」也可直接选择该 tar.gz）
-docker load -i zephyr-music-server-0.4.3-docker-amd64.tar.gz   # 或 arm64
-# 导入后镜像名为 zephyr-music-server:0.4.3，compose 的 image 改成它即可
-```
-
-### 12.2 准备数据目录与分发集
-
-```sh
-mkdir -p data/dist media
-tar -xzf zephyr-music-server-0.4.3.tar.gz
-cp -r zephyr-music-server-0.4.3/server/dist/* data/dist/
-# 真实播放请改用音频版 bundle 的 server/dist（见 10.1）
-```
-
-信任根二选一：启动后在控制台「密钥与授权」粘贴 armored 公钥导入并设为信任根；或把
-`trust-root.asc` 放进 `data/` 后 `docker exec -it zephyr-server gpg --homedir /data/gnupg --import /data/trust-root.asc`。
-
-### 12.3 启动
-
-用 `packaging/docker/compose.yml`（`docker compose up -d`，或把内容贴进 NAS 容器 UI）：
-端口 **8080**（控制台 / REST / `/dl/`）与 **7800**（ZAT 推流，终端拨入）。
-
-SMB 媒体库：**先在 NAS 宿主机挂载共享**（QNAP HybridMount / 群晖挂载 / fstab cifs），再只读
-bind 进容器 `/mnt/zephyr`（compose 的 `./media`）。容器内直接 CIFS 挂载需 privileged，不推荐。
-
-控制台鉴权警告同 3.3：请在 NAS 反向代理（QNAP Reverse Proxy / 群晖登录门户）做 TLS 终止 +
-鉴权后再暴露 8080。
-
-### 12.4 与 systemd 版的差异
-
-- `HIFIHUB_UPDATE_SELF` / `UPDATE_AUTO` 预置 `false`：容器内无 systemd，**升级 = 拉新镜像 /
-  导入新 tar 后重建容器**；终端收敛（`UPDATE_FLEET`）照常工作，目标版本跟随镜像版本。
-  升级时同步用新 bundle 的 `server/dist` 刷新 `data/dist`。
-- enforce 验签、播放门控、授权席位门控、审计与 systemd 版完全一致。
-- 其余环境变量（`HIFIHUB_*`）均可在 compose / NAS UI 中覆盖，语义同 3.2 与 11.3。
+官网：https://www.zephyr.hk · 联系：services@zephyr.hk · MIT [LICENSE](LICENSE)

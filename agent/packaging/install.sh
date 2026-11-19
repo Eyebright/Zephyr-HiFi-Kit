@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# HiFiHub terminal agent installer (Debian/Ubuntu, systemd).
+# Zephyr HiFi Kit terminal agent installer (Debian/Ubuntu, systemd).
 #
 #   sudo bash install.sh --server https://music.example.com --token <one-time-token>
 #
@@ -23,7 +23,7 @@ DEB=""
 usage() {
   cat <<'EOF'
 Usage: install.sh --server URL --token TOKEN [--bind ADDR] [--deb PATH]
-  --server URL   HiFiHub management server base URL (required)
+  --server URL   Zephyr HiFi Kit management server base URL (required)
   --token TOKEN  one-time registration token (required)
   --bind ADDR    local console bind address (default 0.0.0.0; port 8080)
   --deb PATH     install this local .deb instead of downloading

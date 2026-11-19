@@ -21,7 +21,14 @@ set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$ROOT"
 
-VERSION="${VERSION:-0.4.3}"
+VERSION="${VERSION:-0.50}"
+case "$VERSION" in
+  [0-9]*) ;;
+  *) echo "version must start with a digit" >&2; exit 1 ;;
+esac
+case "$VERSION" in
+  *[!A-Za-z0-9._-]*|*..*) echo "unsafe version: $VERSION" >&2; exit 1 ;;
+esac
 TARGETS="${TARGETS:-arm64 armhf}"
 
 # --- toolchain: prefer the bundled SDK, else fall back to PATH ---
@@ -37,7 +44,24 @@ case "$(uname -s)" in
 esac
 command -v pkg-config >/dev/null 2>&1 || { echo "pkg-config not found" >&2; exit 1; }
 
-OUT="$ROOT/bin/audio-cross"
+OUT="$ROOT/bin/audio-cross/$VERSION"
+require_empty_dir() {
+  [ ! -L "$1" ] || { echo "refusing symlink output: $1" >&2; exit 1; }
+  if [ -e "$1" ]; then
+    [ -d "$1" ] && [ -z "$(find "$1" -mindepth 1 -print -quit)" ] || {
+      echo "refusing nonempty output: $1" >&2; exit 1;
+    }
+  fi
+}
+require_empty_dir "$OUT"
+for target in $TARGETS; do
+  case "$target" in arm64|armhf) ;; *) echo "unknown target: $target" >&2; exit 2 ;; esac
+  terminal="$ROOT/release/Zephyr-HiFi-Kit-terminal-$VERSION-audio-$target"
+  require_empty_dir "$terminal"
+  [ ! -e "$terminal.tar.gz" ] && [ ! -L "$terminal.tar.gz" ] || {
+    echo "refusing existing output: $terminal.tar.gz" >&2; exit 1;
+  }
+done
 mkdir -p "$OUT"
 
 # Build debpack once for the HOST so packaging never inherits the cross GOARCH/CC.
@@ -69,6 +93,17 @@ build_target() {
   ( cd "$ROOT/agent" && go build -trimpath -ldflags "-s -w -X hifihub/agent/internal/config.BuildVersion=$VERSION" -o "$bin" ./cmd/hifihub-agent )
   "$DEBPACK" -audio -bin "$bin" -arch "$arch" -version "$VERSION" \
     -pkgdir "$ROOT/agent/packaging" -out "$OUT/hifihub-agent_${VERSION}_${arch}.deb"
+
+  name="Zephyr-HiFi-Kit-terminal-$VERSION-audio-$arch"
+  terminal="$ROOT/release/$name"
+  mkdir -p "$terminal/agent"
+  cp "$OUT/hifihub-agent_${VERSION}_${arch}.deb" "$terminal/agent/"
+  cp "$OUT/install.sh" "$terminal/agent/install.sh"
+  cp "$OUT/install.sh" "$terminal/agent/agent-install.sh"
+  ( cd "$terminal/agent" && sha256sum hifihub-agent_"$VERSION"_"$arch".deb agent-install.sh > SHA256SUMS )
+  cp "$ROOT/README.md" "$ROOT/README.cn.md" "$ROOT/README.en.md" "$ROOT/INSTALL.md" "$ROOT/LICENSE" "$terminal/"
+  ( cd "$terminal" && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS )
+  ( cd "$ROOT/release" && tar -czf "$terminal.tar.gz" "$name" )
 
   # arm64 also gets the audio server (libFLAC decode); armhf is agent-only.
   if [ "$arch" = arm64 ]; then

@@ -89,7 +89,7 @@ func TestSettingsProfileNewInstanceRestartsAndCompletes(t *testing.T) {
 	if got := profileTestGet(t, a); got != library.InitialSettingsProfile(false) {
 		t.Fatalf("new restart: %+v", got)
 	}
-	w := profileTestCall(a.updateSettingsOnboarding, "PATCH", `{"step":4,"complete":true}`, nil)
+	w := profileTestCall(a.updateSettingsOnboarding, "PATCH", `{"step":3,"complete":true}`, nil)
 	if w.Code != 401 {
 		t.Fatal("advanced before credential creation", w.Code)
 	}
@@ -118,13 +118,13 @@ func TestSettingsProfileNewInstanceRestartsAndCompletes(t *testing.T) {
 		t.Fatal("restart retained a session", w.Code)
 	}
 	cookie = profileTestLogin(t, a)
-	for _, body := range []string{`{"step":3,"complete":false}`, `{"step":1,"complete":false}`, `{"step":4,"complete":true}`, `{"step":2,"complete":false}`, `{"step":4,"complete":true}`} {
+	for _, body := range []string{`{"step":3,"complete":false}`, `{"step":1,"complete":false}`, `{"step":3,"complete":true}`, `{"step":2,"complete":false}`, `{"step":3,"complete":true}`} {
 		if w := profileTestCall(a.updateSettingsOnboarding, "PATCH", body, cookie); w.Code != 200 {
 			t.Fatalf("onboarding progression/revisit: %d %s", w.Code, w.Body.String())
 		}
 	}
 	a, _ = profileTestRestart(t, a, st)
-	if got := profileTestGet(t, a); got.OnboardingStep != 4 || !got.OnboardingComplete || got.Legacy || got.DisplayName != adminTestDisplayName {
+	if got := profileTestGet(t, a); got.OnboardingStep != 3 || !got.OnboardingComplete || got.Legacy || got.DisplayName != adminTestDisplayName {
 		t.Fatalf("completed restart: %+v", got)
 	}
 }
@@ -145,7 +145,7 @@ func TestSettingsProfileLegacyAndPublicGreeting(t *testing.T) {
 		t.Fatalf("legacy profile forced onboarding: %+v", got)
 	}
 	cookie := profileTestLogin(t, a)
-	if w := profileTestCall(a.updateSettingsOnboarding, "PATCH", `{"step":4,"complete":true}`, cookie); w.Code != 400 {
+	if w := profileTestCall(a.updateSettingsOnboarding, "PATCH", `{"step":3,"complete":true}`, cookie); w.Code != 400 {
 		t.Fatal("legacy account advanced with no name", w.Code)
 	}
 	name := `<script>alert('x')</script>`
@@ -222,7 +222,7 @@ func TestSettingsProfileStrictValidation(t *testing.T) {
 			t.Fatalf("invalid profile accepted: %d %s", w.Code, w.Body.String())
 		}
 	}
-	for _, body := range []string{`null`, `{}`, `{"step":2}`, `{"step":2,"step":4,"complete":true}`, `{"Step":2,"complete":false}`, `{"step":2,"complete":null}`, `{"step":null,"complete":false}`, `{"step":0,"complete":false}`, `{"step":5,"complete":false}`, `{"step":1.5,"complete":false}`, `{"step":"2","complete":false}`, `{"step":2,"complete":"false"}`, `{"step":2,"complete":true}`, `{"step":4,"complete":true,"extra":1}`, `{"step":4,"complete":true} {}`} {
+	for _, body := range []string{`null`, `{}`, `{"step":2}`, `{"step":2,"step":4,"complete":true}`, `{"Step":2,"complete":false}`, `{"step":2,"complete":null}`, `{"step":null,"complete":false}`, `{"step":0,"complete":false}`, `{"step":5,"complete":false}`, `{"step":4,"complete":false}`, `{"step":1.5,"complete":false}`, `{"step":"2","complete":false}`, `{"step":2,"complete":"false"}`, `{"step":2,"complete":true}`, `{"step":4,"complete":true,"extra":1}`, `{"step":3,"complete":true} {}`} {
 		if w := profileTestCall(a.updateSettingsOnboarding, "PATCH", body, cookie); w.Code != 400 {
 			t.Fatalf("invalid onboarding accepted: %d %s", w.Code, w.Body.String())
 		}
@@ -330,7 +330,7 @@ func TestSettingsProfileFailureAfterCredentialsCanLoginAndResume(t *testing.T) {
 		t.Fatal("partial setup misclassified as legacy", got)
 	}
 	cookie := profileTestLogin(t, a)
-	if w := profileTestCall(a.updateSettingsOnboarding, "PATCH", `{"step":4,"complete":true}`, cookie); w.Code != 400 {
+	if w := profileTestCall(a.updateSettingsOnboarding, "PATCH", `{"step":3,"complete":true}`, cookie); w.Code != 400 {
 		t.Fatal("partial setup skipped missing name", w.Code)
 	}
 	if w := profileTestCall(a.updateSettingsProfile, "PATCH", `{"display_name":"Recovered"}`, cookie); w.Code != 503 {
@@ -492,7 +492,7 @@ func TestSettingsProfileConcurrentSetupAndUpdates(t *testing.T) {
 			}
 		},
 		func() {
-			if w := profileTestCall(a.updateSettingsOnboarding, "PATCH", `{"step":4,"complete":true}`, cookie); w.Code != 200 {
+			if w := profileTestCall(a.updateSettingsOnboarding, "PATCH", `{"step":3,"complete":true}`, cookie); w.Code != 200 {
 				errs <- w.Body.String()
 			}
 		},
@@ -510,7 +510,7 @@ func TestSettingsProfileConcurrentSetupAndUpdates(t *testing.T) {
 	for err := range errs {
 		t.Error(err)
 	}
-	if p := profileTestGet(t, a); p.DisplayName != "Concurrent" || p.OnboardingStep != 4 || !p.OnboardingComplete || p.Legacy {
+	if p := profileTestGet(t, a); p.DisplayName != "Concurrent" || p.OnboardingStep != 3 || !p.OnboardingComplete || p.Legacy {
 		t.Fatal("concurrent operation lost fields", p)
 	}
 }

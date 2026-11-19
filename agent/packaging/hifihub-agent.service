@@ -1,5 +1,5 @@
 [Unit]
-Description=HiFiHub Terminal Agent (local console + server-managed audio services)
+Description=Zephyr HiFi Kit Terminal (local console + server-managed audio services)
 Documentation=https://github.com/hifihub
 After=network-online.target
 Wants=network-online.target

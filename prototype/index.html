@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Zephyr HiFi Kit · 家庭音乐服务器管控平台</title>
+<title>Zephyr HiFi Kit · 和风HiFi音乐播放套件</title>
 <style>
 /* ============================ design system ============================ */
 :root{
@@ -1056,13 +1056,13 @@ function seed(){
   product:'Zephyr HiFi Kit',edition:'Studio',channel:'stable',
   license_key:'ZMS-7Q4K-9XRT-2MPL-6VBN',
   status:'activated',
-  account:'services@zephyr.hk',domain:'www.zephyr.hk',org:'Zephyr Audio',
+  account:'services@zephyr.hk',domain:'www.zephyr.hk',org:'Zephyr HiFi Kit',
   seats:6,
   issued_at:now()-6e5,activated_at:now()-5.9e5,expires_at:now()+2.6e7,support_until:now()+2.6e7,
   fingerprint:hex(8).toUpperCase().match(/.{1,4}/g).join(' '),
   history:[
    {at:now()-5.9e5,action:'激活',detail:'实例绑定 · Studio 版 · 6 席位'},
-   {at:now()-6e5,action:'签发',detail:'Zephyr 官方签发 · www.zephyr.hk'}
+   {at:now()-6e5,action:'签发',detail:'Zephyr HiFi Kit 官方签发 · www.zephyr.hk'}
   ]
  };
  // ---- OS updates (apt) ----
@@ -2868,7 +2868,7 @@ async function viewKeys(){
  <div class="banner info">${icon('shield',18)}<span><b>授权中心</b> · 服务许可证决定本服务端能否下发；每个终端占用一个<b>授权席位</b>；制品由<b>官方签名信任根</b>验签（NFR-S2）。官方域名 <b>www.zephyr.hk</b> · 官方邮箱 <b>services@zephyr.hk</b></span></div>
 
  <div class="section">
-  <div class="panel-title">${icon('shield',18)} 服务授权 <span class="hint">Zephyr 官方签发 · 绑定本服务端实例</span></div>
+  <div class="panel-title">${icon('shield',18)} 服务授权 <span class="hint">Zephyr HiFi Kit 官方签发 · 绑定本服务端实例</span></div>
   <div class="card lic-card enter">
    <div class="lic-main">
     <div class="lic-seal ${st.cls}">${icon(st.ic,30)}</div>
@@ -2935,7 +2935,7 @@ async function viewKeys(){
 }
 function licActivateForm(){const L=DB.license;
  modal('激活服务许可证',`
-  <div class="hint" style="margin-bottom:12px;display:flex;align-items:center;gap:6px">${icon('info',14)} 输入 Zephyr 官方（www.zephyr.hk）签发的许可证密钥，绑定本服务端实例，激活后获得 ${L.seats} 个终端授权席位。</div>
+  <div class="hint" style="margin-bottom:12px;display:flex;align-items:center;gap:6px">${icon('info',14)} 输入 Zephyr HiFi Kit 官方（www.zephyr.hk）签发的许可证密钥，绑定本服务端实例，激活后获得 ${L.seats} 个终端授权席位。</div>
   <label class="field"><span>许可证密钥</span><input id="lf-key" placeholder="ZMS-XXXX-XXXX-XXXX-XXXX" value="${esc(L.status==='unbound'?'':L.license_key)}"></label>
   <label class="field"><span>授权账户邮箱</span><input id="lf-account" placeholder="services@zephyr.hk" value="${esc(L.account)}"></label>
   <div class="hint">密钥格式：ZMS-XXXX-XXXX-XXXX-XXXX（16 位字母数字）。授权账户用于接收续期与官方通知。</div>
@@ -2954,7 +2954,7 @@ function licUnbind(){if(!guard())return;
  confirmDlg('解绑本实例','解绑后本服务端许可证状态变为<b>未激活</b>，<b>所有终端授权将被撤销</b>，下发任务将被拒绝，直到重新激活。确定解绑吗？',async()=>{await api('POST','/license/unbind',{});toast('已解绑本实例 · 终端授权已全部撤销','ok');renderNav();viewKeys();},true);
 }
 function licCopy(){const L=DB.license;if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(L.license_key).then(()=>toast('许可证密钥已复制','ok'),()=>toast('复制失败，请手动选择','err'));}else{toast('当前环境不支持自动复制，请手动选择密钥','info');}}
-function licExport(){const L=DB.license;const payload={product:L.product,edition:L.edition,license_key:L.license_key,status:L.status,account:L.account,domain:L.domain,org:L.org,seats:L.seats,seats_used:seatsUsed(),issued_at:L.issued_at,expires_at:L.expires_at,support_until:L.support_until,fingerprint:L.fingerprint,issuer:'Zephyr Audio · www.zephyr.hk',exported_at:now()};downloadFile('zephyr-license.lic',JSON.stringify(payload,null,2),'application/json');toast('许可证已导出 zephyr-license.lic','ok');}
+function licExport(){const L=DB.license;const payload={product:L.product,edition:L.edition,license_key:L.license_key,status:L.status,account:L.account,domain:L.domain,org:L.org,seats:L.seats,seats_used:seatsUsed(),issued_at:L.issued_at,expires_at:L.expires_at,support_until:L.support_until,fingerprint:L.fingerprint,issuer:'Zephyr HiFi Kit · www.zephyr.hk',exported_at:now()};downloadFile('zephyr-license.lic',JSON.stringify(payload,null,2),'application/json');toast('许可证已导出 zephyr-license.lic','ok');}
 async function nodeAuthorize(id){if(!guard())return;try{const n=await api('POST','/nodes/'+id+'/authorize',{});toast('已授权终端：'+n.alias+'（占用 1 席位）','ok');renderNav();viewKeys();}catch(e){toast(e.message,'err');}}
 function nodeRevoke(id){if(!guard())return;const n=DB.nodes.find(n=>n.node_id===id);if(!n)return;
  confirmDlg('撤销终端授权','撤销后 <b>'+esc(n.alias)+'</b> 将释放一个授权席位，且<b>无法接收新的服务下发</b>，直到重新授权。确定撤销吗？',async()=>{await api('POST','/nodes/'+id+'/revoke',{});toast('已撤销授权：'+n.alias,'ok');renderNav();viewKeys();},false);

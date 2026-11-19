@@ -9,10 +9,9 @@ const SETTINGS_SECTIONS = [
   ["profile", "管理员与偏好", "user", "管理员称呼、会话安全与首次使用引导"],
   ["authorization", "授权信息", "shield", "许可证、信任根与终端席位"],
   ["folders", "音乐文件夹", "folder", "服务端本地目录与 NAS 音乐源"],
-  ["accounts", "音乐服务账号", "music", "第三方音乐服务接入能力"],
-  ["protocols", "协议说明", "speaker", "协议能力、实现来源与支持边界；真实状态见终端中心"],
   ["packages", "软件包与源", "box", "应用版本、软件包、签名与安装源；安装执行见终端中心"],
-  ["maintenance", "备份与维护", "database", "服务端自升级、音乐数据备份、恢复与操作日志清理"]
+  ["maintenance", "备份与维护", "database", "服务端自升级、音乐数据备份、恢复与操作日志清理"],
+  ["about", "关于我们", "info", "产品介绍、服务端版本、许可与第三方实现来源"]
 ];
 const SETTINGS_LEGACY_MANAGE = new Set([
   "lic-open", "lic-submit", "key-import", "key-import-submit", "key-trust", "node-auth", "node-revoke", "goto-add-node",
@@ -74,7 +73,7 @@ function shellSettings() {
   const section = SETTINGS_SECTIONS.find(x => x[0] === SETTINGS.section) || SETTINGS_SECTIONS[0];
   SETTINGS.section = section[0];
   return `<div id="settings-page" class="settings-page">
-    <header class="settings-heading"><div><span class="settings-eyebrow">ZEPHYR / SETTINGS</span><h1>设置</h1><p>音乐来源、播放能力与服务端管理，集中在这里。</p></div>${settingsButton("settings-refresh", "刷新状态", { icon: "refresh" })}</header>
+    <header class="settings-heading"><div><span class="settings-eyebrow">Zephyr HiFi Kit / 设置</span><h1>设置</h1><p>音乐来源、播放能力与服务端管理，集中在这里。</p></div>${settingsButton("settings-refresh", "刷新状态", { icon: "refresh" })}</header>
     <div class="settings-layout"><div class="settings-main"><section id="settings-admin" class="card settings-admin" aria-label="管理员解锁">${settingsNote("正在检查管理员会话…")}</section>
       <header class="settings-section-heading"><h2>${icon(section[2], 20)}${esc(section[1])}</h2><p>${esc(section[3])}</p></header>
       <div id="settings-section-error" role="status" aria-live="polite"></div>
@@ -92,8 +91,7 @@ function settingsSectionShell() {
     case "profile": return typeof experienceProfileShell === "function" ? experienceProfileShell() : settingsNote("管理员资料界面尚未加载，请刷新页面。", "warn");
     case "authorization": return settingsNote("服务端内置 3 台终端席位，可用许可证扩容。管理员登录与许可证授权相互独立；这里只导入验证用公钥，不生成、上传或导出签发私钥。") + shellKeys();
     case "packages": return settingsNote("这里只维护应用版本、软件包、签名与安装源；安装执行请前往终端中心。当前交付支持 Linux DEB、APT 与受支持的 Linux 归档包，架构相同不代表操作系统兼容：Windows/macOS 文件不能当作 Linux 可安装包。") + `<section class="card mb12"><div class="settings-card-head"><h3>${icon("globe", 17)} 安装源管理</h3>${settingsButton("apt-sources", "安装源管理", { icon: "globe" })}</div><p>可只读浏览 APT 安装源，添加或删除源需解锁管理员。应用名仍打开原版本与入库流程；BOM 高级管理保留在下方，不在这里执行终端安装。</p></section>` + shellCatalog();
-    case "accounts": return settingsAccountsShell();
-    case "protocols": return settingsProtocolsShell();
+    case "about": return settingsAboutShell();
     case "maintenance": return settingsMaintenanceShell();
     default: return settingsFoldersShell();
   }
@@ -225,6 +223,7 @@ async function refreshSettings() {
     if (section === "profile" && typeof refreshExperienceProfile === "function") await refreshExperienceProfile(current);
     else if (section === "authorization") await refreshKeys();
     else if (section === "packages") await refreshCatalog();
+    else if (section === "about") await settingsRefreshAbout(current);
     else if (section === "folders") await settingsRefreshFolders(current);
     else if (section === "maintenance") {
       // Register before awaiting so a late response cannot restart a stopped view poll.
@@ -241,7 +240,7 @@ function settingsFoldersShell() {
   return `<section class="card"><h3>${icon("plus", 16)} 添加音乐源</h3><p>本地指运行音乐服务的主机，不是当前浏览器所在电脑。目录只建立索引，不上传原音频。</p>
     <form data-settings-form="settings-local-add" class="settings-source-add"><fieldset data-settings-admin data-settings-task="local" ${settingsAdmin() ? "" : "disabled"}><label class="field" for="settings-local-path"><span>服务端绝对目录</span><input id="settings-local-path" class="inp mono" placeholder="例如 /srv/music 或 D:\\Music" required></label>${settingsButton("settings-local-add", "添加本地目录", { icon: "plus", admin: true, task: "local", className: "primary" })}</fieldset></form>
     <div class="settings-card-foot"><span>音乐存放在 NAS 或 SMB 共享？</span>${settingsButton("settings-nas-add", "添加 NAS 共享", { icon: "folder", admin: true })}</div><div id="settings-folder-error" role="status" aria-live="polite"></div></section>
-    <section class="card"><div class="settings-card-head"><h3>已配置音乐源</h3><span id="settings-source-count" class="settings-small">正在读取…</span></div><div id="settings-sources">${settingsNote("正在读取音乐源…")}</div><div id="settings-count-note"></div><p class="settings-small">离线或停用不会清理播放历史。扫描按源执行，NAS 连接检测需先挂载。更换实际目录需添加新源并重扫，原音频始终保留在目录中。</p></section>
+    <section class="card"><div class="settings-card-head"><h3>已配置音乐源</h3><span id="settings-source-count" class="settings-small">正在读取…</span></div><div id="settings-sources">${settingsNote("正在读取音乐源…")}</div><div id="settings-count-note"></div><p class="settings-small">索引保存在本服务端：重复添加同一地址会复用已有曲目，默认“更新扫描”只重读新增或变化的文件。停用或移除并保留索引后可重新连接；离线与扫描失败不会清空索引。跨服务端请使用音乐 JSON 备份恢复，原音频始终保留在目录中。</p></section>
     <section id="settings-folder-editor" class="card hidden" aria-label="编辑音乐源"></section>`;
 }
 function settingsMountKind(m) { return m.kind === "local" ? "local" : "smb"; }
@@ -278,20 +277,27 @@ async function settingsRefreshFolders(current) {
 }
 function settingsPaintSources() {
   const el = $("#settings-sources"); if (!el) return;
-  const count = $("#settings-source-count"); if (count) count.textContent = `${SETTINGS.mounts.length} 个音乐源`;
-  if (!SETTINGS.mounts.length) { el.innerHTML = settingsNote("还没有音乐源。先添加本地目录或 NAS 共享，然后扫描曲目。"); return; }
+  const archivedCount = SETTINGS.mounts.filter(m => m.status === "archived").length;
+  const count = $("#settings-source-count"); if (count) count.textContent = `${SETTINGS.mounts.length - archivedCount} 个已配置 · ${archivedCount} 个保留索引`;
+  if (!SETTINGS.mounts.length) { el.innerHTML = settingsNote("还没有音乐源。先添加本地目录或 NAS 共享，然后更新扫描。"); return; }
   el.innerHTML = `<div class="settings-source-list">${SETTINGS.mounts.map(m => {
-    const local = settingsMountKind(m) === "local", mounted = m.status === "mounted";
+    const local = settingsMountKind(m) === "local", mounted = m.status === "mounted", archived = m.status === "archived";
     const task = "mount:" + m.id, scanning = m.status === "scanning", busy = SETTINGS.busy.has(task) || scanning;
     const options = { id: m.id, admin: true, task, blocked: scanning };
-    const status = scanning ? "扫描中" : mounted ? local ? "可用" : "已挂载" : m.status === "unmounted" ? local ? "已停用" : "未挂载" : m.status === "error" ? "连接异常" : m.status || "未知";
+    const status = scanning ? "扫描中" : archived ? "已移除 · 索引保留" : mounted ? local ? "可用" : "已挂载" : m.status === "unmounted" ? local ? "已停用" : "未挂载" : m.status === "error" ? "连接异常" : m.status || "未知";
+    const scan = m.scan_result || {};
+    const lastScan = Number.isFinite(m.last_scan) && m.last_scan > 0 ? new Date(m.last_scan * 1000).toLocaleString() : "尚无记录";
     return `<article class="settings-source"><div class="settings-source-top">${icon(local ? "folder" : "server", 20)}<div class="settings-source-title"><strong>${esc(local ? m.share || settingsMountLabel(m) : settingsMountLabel(m))}</strong><span class="mono">${esc(m.target || "—")}</span></div>${badge(local ? "本地目录" : "NAS / SMB", local ? "info" : "violet")}</div>
       <div class="settings-source-meta">${badge(busy ? "操作进行中" : status, busy ? "info" : mounted ? "ok" : "warn")}<span>${SETTINGS.counts.has(m.id) ? esc(SETTINGS.counts.get(m.id)) + " 首已索引" : "曲目数 —"}</span>${local ? "" : `<span>SMB ${esc(m.version || "3.0")} · ${m.writable ? "可写" : "只读"}</span>`}</div>
+      <p class="settings-small">上次成功扫描：${esc(lastScan)}${m.last_scan > 0 ? ` · 新增 ${esc(scan.added ?? 0)} / 更新 ${esc(scan.updated ?? 0)} / 未变 ${esc(scan.unchanged ?? 0)} / 缺失 ${esc(scan.removed ?? 0)}` : " · 旧索引仍保留，首次更新会补齐文件指纹"}</p>
+      ${archived ? `<p class="settings-small">重新添加同一地址或连接即可复用索引；NAS 凭据已移除，需要认证时请先编辑源。</p>` : ""}
       ${m.detail ? `<p class="settings-source-detail">${esc(m.detail)}</p>` : ""}
-      <div class="settings-source-actions">${settingsButton("settings-mount-action", scanning ? "扫描中…" : "扫描曲目", { ...options, icon: "refresh", legacy: "lib-scan", blocked: scanning || !mounted })}
-        ${settingsButton("settings-mount-action", mounted ? local ? "停用目录" : "卸载共享" : local ? "启用目录" : "挂载共享", { ...options, legacy: mounted ? "lib-unmount" : "lib-mount" })}
+      <div class="settings-source-actions">${settingsButton("settings-mount-action", scanning ? "扫描中…" : "更新扫描", { ...options, icon: "refresh", legacy: "lib-scan", blocked: scanning || !mounted })}
+        ${settingsButton("settings-mount-action", "全量重扫…", { ...options, legacy: "lib-scan-full", blocked: scanning || !mounted })}
+        ${settingsButton("settings-mount-action", archived ? "重新连接" : mounted ? local ? "停用目录" : "卸载共享" : local ? "启用目录" : "挂载共享", { ...options, legacy: mounted ? "lib-unmount" : "lib-mount" })}
         ${settingsButton("settings-mount-test", "连接检测", { ...options, blocked: scanning || (!local && !mounted) })}${settingsButton("settings-mount-edit", "编辑源", { ...options, icon: "edit" })}
-        ${settingsButton("settings-mount-action", "移除音乐源", { ...options, legacy: "lib-delete", className: "danger sm" })}</div><div class="settings-test-result" data-settings-test-result="${esc(m.id)}" role="status"></div></article>`;
+        ${archived ? "" : settingsButton("settings-mount-action", "移除并保留索引…", { ...options, legacy: "lib-archive" })}
+        ${settingsButton("settings-mount-action", "彻底删除索引…", { ...options, legacy: "lib-delete", className: "danger sm" })}</div><div class="settings-test-result" data-settings-test-result="${esc(m.id)}" role="status"></div></article>`;
   }).join("")}</div>`;
   settingsApplyAccess();
 }
@@ -303,13 +309,13 @@ async function settingsLocalAdd() {
   if (!settingsAbsolutePath(path)) { settingsError("settings-folder-error", "请输入服务端绝对目录，如 /srv/music 或 D:\\Music；不要填写浏览器本机的相对路径。"); return; }
   SETTINGS.busy.add("local"); settingsApplyAccess(); settingsError("settings-folder-error", "");
   try {
-    await api("POST", "/mounts", { kind: "local", path });
-    input.value = ""; toast("本地音乐源已添加，请先启用目录再扫描曲目。", "ok"); await refreshSettings();
+    const result = await api("POST", "/mounts", { kind: "local", path });
+    input.value = ""; toast(result?.reused ? "已复用同源索引；启用后只需更新扫描，无需重新建立曲库。" : "本地音乐源已添加，请先启用目录再更新扫描。", "ok"); await refreshSettings();
   } catch (e) { await settingsFailure(e, "settings-folder-error"); }
   finally { SETTINGS.busy.delete("local"); settingsApplyAccess(); }
 }
 async function settingsMountAction(ds) {
-  if (!["lib-scan", "lib-mount", "lib-unmount", "lib-delete"].includes(ds.legacy) || !settingsRequireAdmin()) return;
+  if (!["lib-scan", "lib-scan-full", "lib-mount", "lib-unmount", "lib-archive", "lib-delete"].includes(ds.legacy) || !settingsRequireAdmin()) return;
   const task = "mount:" + ds.id;
   if (SETTINGS.busy.has(task)) return;
   SETTINGS.busy.add(task); settingsPaintSources();
@@ -363,26 +369,35 @@ function settingsCloseEditor() {
   const el = $("#settings-folder-editor"); if (el) { el.innerHTML = ""; el.classList.add("hidden"); }
 }
 
-function settingsAccountsShell() {
-  const services = [
-    ["TIDAL", "官方授权及播放接口尚未接入。"], ["Qobuz", "官方授权及播放接口尚未接入。"],
-    ["Apple Music", "官方授权及播放接口尚未接入；AirPlay 接收不等于账号接入。"],
-    ["QQ 音乐", "官方授权及播放接口尚未接入；不能将 UPnP 冒充 QPlay。"],
-    ["网易云音乐", "官方授权及播放接口尚未接入。"], ["Podcast", "尚未接入后端订阅、节目同步或播放接口。"]
+function settingsAboutShell() {
+  const components = [
+    ["QPlay", "当前尚未提供 QPlay 组件，不包含腾讯官方实现。"],
+    ["MPD", "Music Player Daemon 开源项目，可从项目公开发布或 Linux APT 软件源获取。"],
+    ["AirPlay", "shairport-sync / nqptp 开源项目，可从项目公开发布或支持的软件源获取。"],
+    ["UPnP / OpenHome", "upmpdcli、MPD、gmrender 开源项目，可从项目公开发布或 Linux APT 软件源获取；gmrender 仅用于 UPnP。"],
+    ["HQPlayer NAA", "Signalyst networkaudiod 厂商组件，公开获取渠道为厂商官方发布；非开源，受厂商许可约束。"],
+    ["ZAT", "Zephyr HiFi Kit 自有音频传输实现，随本项目源代码公开，采用 MIT 许可。"]
   ];
-  return settingsNote("本轮提供真实能力清单。以下服务没有可用的账号登录流程，不收集或保存第三方密码；官方接入将独立完成。") + `<div class="settings-capability-grid">${services.map(([name, text]) => `<article class="card settings-capability"><div class="settings-card-head"><h3>${esc(name)}</h3>${badge("尚未接入", "muted")}</div><p>${esc(text)}</p><span class="settings-small">暂无可用授权入口</span></article>`).join("")}</div>`;
+  return `<section class="card"><h3>${icon("music", 17)} Zephyr HiFi Kit</h3><p>和风HiFi音乐播放套件</p><p>让音乐回归聆听，让管理化繁为简。</p><p>面向家庭与小型商用 Hi-Fi 场景的音乐服务与终端推送平台，集中管理本地 / NAS 音乐库、ZAT 音频推流与播放终端。</p>
+      <p>服务端版本：<strong id="settings-about-version" class="mono" role="status" aria-live="polite">未获取</strong></p><p class="settings-small">版本由当前服务端报告；未获取时可点击“刷新状态”重试。</p>
+      <p><a href="https://www.zephyr.hk" target="_blank" rel="noopener noreferrer">官方网站</a> · <a href="https://github.com/Eyebright/Zephyr-HiFi-Kit" target="_blank" rel="noopener noreferrer">源代码仓库</a></p></section>
+    <section class="card" aria-labelledby="settings-component-title"><h3 id="settings-component-title">${icon("speaker", 17)} 组件来源与获取渠道</h3><p>开源项目、厂商公开发布及自有实现的来源如下，未提供的组件另行注明。</p><dl class="settings-component-list">${components.map(([name, source]) => `<div><dt>${esc(name)}</dt><dd>${esc(source)}</dd></div>`).join("")}</dl></section>
+    <section class="card settings-disclaimer" aria-labelledby="settings-disclaimer-title"><h3 id="settings-disclaimer-title">${icon("info", 17)} 免责声明</h3><ul class="settings-disclaimer-list">
+      <li><strong>许可与归属：</strong>本项目采用 <a href="https://github.com/Eyebright/Zephyr-HiFi-Kit/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">MIT 许可</a>，复制或分发时须保留版权声明及许可声明。第三方组件遵循各自许可，项目、产品名、协议名及商标归各自权利人所有。</li>
+      <li><strong>非官方关联：</strong>名称引用仅用于说明来源与兼容性，不表示获得 Apple、腾讯、Signalyst 或其他权利人的官方授权、认证、背书或合作。</li>
+      <li><strong>支持边界：</strong>列出来源不表示任何服务已安装或正在运行，也不保证所有协议能力可用；实际支持取决于组件版本、构建、设备与配置。</li>
+      <li><strong>无担保与责任限制：</strong>在适用法律允许的范围内，软件按“原样”提供，不作任何明示或默示保证；作者及版权持有人不承担因使用软件产生的索赔、损害或其他责任。</li>
+      <li><strong>合法使用：</strong>公开可获取不等于开源或可自由再分发；请遵守组件许可及适用法律，仅使用合法授权的音源与服务，并自行妥善备份数据。</li>
+    </ul><p class="settings-small">Copyright (c) 2026 Zephyr HiFi Kit contributors</p></section>`;
 }
-function settingsProtocolsShell() {
-  const definitions = [
-    ["QPlay", "尚未实现", "QQ 音乐 QPlay 需要专用实现，当前尚未提供；upmpdcli 是 UPnP/OpenHome，不是 QPlay。"],
-    ["MPD", "实现来源", "Music Player Daemon，当前亦作为 upmpdcli 的播放后端；可用版本来自 Linux APT / 终端现有安装，需匹配操作系统与架构。"],
-    ["AirPlay", "构建相关", "由 shairport-sync 提供。AirPlay 2 需要特定构建与匹配的 nqptp；仅凭已安装 shairport-sync 不能认定支持 AirPlay 2。"],
-    ["UPnP / OpenHome", "实现来源", "upmpdcli + MPD 提供 UPnP/DLNA、OpenHome 兼容；gmrender 仅作为 UPnP 来源，不据此声明 OpenHome 或 QPlay。"],
-    ["HQPlayer NAA", "厂商组件", "Signalyst networkaudiod / NAA 厂商组件，输出设备由 HQPlayer 端选择；需匹配终端架构与厂商许可，不代表所有终端均可安装。"],
-    ["ZAT", "自有传输", "Zephyr 自有音频传输，由 Agent 与 ZAT 终端提供；连接与播放状态以终端详情中的真实播放接口为准，未连接不等于未安装。"]
-  ];
-  return `<section class="card"><h3>${icon("speaker", 17)} 协议能力与来源</h3><p>这里只说明协议能力、实现来源与支持边界，不查询终端状态，也不表示任何服务已安装或正在运行。已装服务真实状态、安装执行与配置 / DAC 管理统一在终端中心的终端详情。</p>${settingsButton("tc-goto", "前往终端中心", { icon: "server", className: "primary" })}<p class="settings-small">多个渲染服务可能争用同一音频设备；请在终端详情确认播放状态后再调整 DAC 仲裁，不要在播放中抢占输出。</p></section>
-    <div class="settings-capability-grid">${definitions.map(([name, label, source]) => `<article class="card settings-capability"><div class="settings-card-head"><h3>${esc(name)}</h3>${badge(label, "muted")}</div><p>${esc(source)}</p></article>`).join("")}</div>`;
+async function settingsRefreshAbout(current) {
+  let version = "未获取";
+  try {
+    const metrics = await rootJson("/metrics/server");
+    if (typeof metrics?.version === "string" && metrics.version.trim()) version = metrics.version.trim();
+  } catch (e) { /* Keep the about page readable when server metrics are unavailable. */ }
+  if (!current()) return;
+  const el = $("#settings-about-version"); if (el) el.textContent = version;
 }
 
 function settingsMaintenanceShell() {

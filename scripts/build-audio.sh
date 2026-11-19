@@ -14,7 +14,14 @@ set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$ROOT"
 
-VERSION="${VERSION:-0.4.3}"
+VERSION="${VERSION:-0.50}"
+case "$VERSION" in
+  [0-9]*) ;;
+  *) echo "version must start with a digit" >&2; exit 1 ;;
+esac
+case "$VERSION" in
+  *[!A-Za-z0-9._-]*|*..*) echo "unsafe version: $VERSION" >&2; exit 1 ;;
+esac
 
 # --- toolchain: prefer the bundled SDK, else fall back to PATH ---
 if [ -x "$HOME/sdk/go/bin/go" ]; then
@@ -50,8 +57,26 @@ export CGO_ENABLED=1
 export GO111MODULE=on
 export GOFLAGS=-mod=mod
 
-OUT="$ROOT/bin/audio"
-mkdir -p "$OUT"
+case "$(uname -m)" in
+  x86_64|amd64) ARCH=amd64 ;;
+  aarch64|arm64) ARCH=arm64 ;;
+  armv7l) ARCH=armhf ;;
+  *) echo "unsupported native audio architecture: $(uname -m)" >&2; exit 1 ;;
+esac
+OUT="$ROOT/bin/audio/$VERSION"
+NAME="Zephyr-HiFi-Kit-terminal-$VERSION-audio-$ARCH"
+TERMINAL="$ROOT/release/$NAME"
+TARBALL="$ROOT/release/$NAME.tar.gz"
+for dir in "$OUT" "$TERMINAL"; do
+  [ ! -L "$dir" ] || { echo "refusing symlink output: $dir" >&2; exit 1; }
+  if [ -e "$dir" ]; then
+    [ -d "$dir" ] && [ -z "$(find "$dir" -mindepth 1 -print -quit)" ] || {
+      echo "refusing nonempty output: $dir" >&2; exit 1;
+    }
+  fi
+done
+[ ! -e "$TARBALL" ] && [ ! -L "$TARBALL" ] || { echo "refusing existing output: $TARBALL" >&2; exit 1; }
+mkdir -p "$OUT" "$TERMINAL/agent"
 
 echo "== building audio-enabled server =="
 ( cd "$ROOT" && go build -trimpath -ldflags "-X hifihub/server/internal/metrics.Version=$VERSION" -o "$OUT/hifihub-server" ./cmd/hifihub-server )
@@ -66,21 +91,19 @@ if [ "${TEST:-0}" = "1" ]; then
   ( cd "$ROOT/agent" && go test ./internal/player/... )
 fi
 
-# --- package the native-arch audio agent .deb (CGO ZAT sink, libasound runtime) ---
-case "$(uname -m)" in
-  x86_64|amd64)  ARCH=amd64 ;;
-  aarch64|arm64) ARCH=arm64 ;;
-  armv7l)        ARCH=armhf ;;
-  *)             ARCH="" ;;
-esac
-if [ -n "$ARCH" ]; then
-  echo "== packaging audio agent deb ($ARCH) =="
-  ( cd "$ROOT/agent" && go run ./cmd/debpack -audio \
-      -bin "$OUT/hifihub-agent" -arch "$ARCH" -version "$VERSION" \
-      -pkgdir packaging -out "$OUT/hifihub-agent_${VERSION}_${ARCH}.deb" )
-else
-  echo "note: unrecognized arch '$(uname -m)'; skipping deb packaging" >&2
-fi
+# --- audio terminal bundle (internal deb name remains the /dl/ contract) ---
+echo "== packaging audio agent deb ($ARCH) =="
+( cd "$ROOT/agent" && go run ./cmd/debpack -audio \
+    -bin "$OUT/hifihub-agent" -arch "$ARCH" -version "$VERSION" \
+    -pkgdir packaging -out "$OUT/hifihub-agent_${VERSION}_${ARCH}.deb" )
+cp "$OUT/hifihub-agent_${VERSION}_${ARCH}.deb" "$TERMINAL/agent/"
+cp "$OUT/install.sh" "$TERMINAL/agent/install.sh"
+cp "$OUT/install.sh" "$TERMINAL/agent/agent-install.sh"
+( cd "$TERMINAL/agent" && sha256sum hifihub-agent_"$VERSION"_"$ARCH".deb agent-install.sh > SHA256SUMS )
+cp "$ROOT/README.md" "$ROOT/README.cn.md" "$ROOT/README.en.md" "$ROOT/INSTALL.md" "$ROOT/LICENSE" "$TERMINAL/"
+( cd "$TERMINAL" && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS )
+( cd "$ROOT/release" && tar -czf "$TARBALL" "$NAME" )
+echo "terminal: $TARBALL"
 
 echo "== done =="
 ls -la "$OUT"

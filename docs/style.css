@@ -75,8 +75,8 @@ button{font:inherit;color:inherit}
 .brand:hover{color:inherit}
 .brand-mark{display:flex;filter:drop-shadow(0 3px 12px rgba(246,168,33,.4))}
 .brand-txt{display:flex;flex-direction:column;line-height:1.05}
-.brand-txt b{font-family:var(--disp);font-size:17px;font-weight:700;letter-spacing:.13em;background:linear-gradient(94deg,var(--gold),var(--amber) 60%,var(--warm-3));-webkit-background-clip:text;background-clip:text;color:transparent}
-.brand-txt i{font-style:normal;font-size:8.5px;letter-spacing:.3em;color:var(--faint);font-family:var(--mono)}
+.brand-txt b{font-family:var(--disp);font-size:17px;font-weight:700;letter-spacing:.01em;background:linear-gradient(94deg,var(--gold),var(--amber) 60%,var(--warm-3));-webkit-background-clip:text;background-clip:text;color:transparent}
+.brand-txt i{font-style:normal;font-size:10px;letter-spacing:.06em;color:var(--faint);font-family:var(--mono);margin-top:4px}
 .links{display:flex;align-items:center;gap:2px;margin-left:14px}
 .links a{position:relative;padding:8px 12px;border-radius:9px;font-size:13.5px;color:var(--muted);font-weight:500;transition:color .18s,background .18s}
 .links a:hover{color:var(--text);background:rgba(255,255,255,.045)}
@@ -437,7 +437,7 @@ select:focus{border-color:var(--amber);outline:none}
 .dl-ico{width:36px;height:36px;flex:none;border-radius:10px;display:flex;align-items:center;justify-content:center;border:1px solid rgba(52,211,235,.26);background:rgba(52,211,235,.08)}
 .dl-ico svg{width:19px;height:19px;fill:none;stroke:var(--cyan);stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 .dl-txt{flex:1;min-width:0}
-.dl-txt b{display:block;font-size:12.5px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono);font-weight:500}
+.dl-txt b{display:block;font-size:12.5px;color:var(--text);overflow-wrap:anywhere;font-family:var(--mono);font-weight:500}
 .dl-txt i{display:block;font-style:normal;font-size:11px;color:var(--faint);margin-top:2px}
 .dl-go{flex:none;font-family:var(--mono);font-size:11px;color:var(--gold);padding:4px 10px;border:1px solid rgba(246,168,33,.28);border-radius:14px}
 .dl-note{margin-top:16px;padding-top:15px;border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
@@ -574,7 +574,13 @@ select:focus{border-color:var(--amber);outline:none}
 @media (max-width:520px){
   body{font-size:14.5px}
   .nav-in{padding:0 13px}
-  .brand-txt i{display:none}
+  .nav .brand-txt b{font-size:14px}
+  .nav .brand-txt i{font-size:8px}
+  .nav .brand{gap:7px}
+  .nav-act{gap:6px}
+  .nav-act .btn.sm{padding:8px;font-size:11px}
+  .nav-act .btn.sm svg{display:none}
+  .nav .snd.pending span:last-child{display:none}
   .hero-cta .btn{flex:1;min-width:132px}
   .hero-chips{gap:8px}
   .hero-chips li{padding:7px 12px;font-size:11px}

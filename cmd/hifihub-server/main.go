@@ -1,4 +1,4 @@
-// Command hifihub-server is the HiFiHub management backend (FR-1..FR-9).
+// Command hifihub-server is the Zephyr HiFi Kit management backend (FR-1..FR-9).
 // This increment delivers the distribution core: catalog, artifact repository,
 // BOM gates, node registry and the provision state machine with the play gate.
 package main

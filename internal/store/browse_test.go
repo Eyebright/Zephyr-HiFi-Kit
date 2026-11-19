@@ -48,6 +48,24 @@ func TestBrowseAdditiveMigrationPreservesFrozenHistory(t *testing.T) {
 		if err := s.DB.QueryRow(`SELECT kind FROM mounts WHERE id='m'`).Scan(&kind); err != nil || kind != "smb" {
 			t.Fatalf("legacy source kind: %q %v", kind, err)
 		}
+		var mtimeNS, lastScan int64
+		var status, result, title string
+		if err := s.DB.QueryRow(`SELECT t.mtime_ns,m.last_scan,m.status,m.scan_result,t.title FROM tracks t JOIN mounts m ON m.id=t.mount_id WHERE t.id='t'`).Scan(&mtimeNS, &lastScan, &status, &result, &title); err != nil {
+			t.Fatal(err)
+		}
+		if title != "Changed title" {
+			t.Fatal("scan migration changed track metadata")
+		}
+		if i == 0 {
+			if mtimeNS != 0 || lastScan != 0 || status != "unmounted" || result != "{}" {
+				t.Fatal("legacy scan defaults incorrect")
+			}
+			if _, err := s.DB.Exec(`UPDATE tracks SET mtime_ns=123 WHERE id='t'; UPDATE mounts SET last_scan=42,status='archived',scan_result='{"count":1}' WHERE id='m'`); err != nil {
+				t.Fatal(err)
+			}
+		} else if mtimeNS != 123 || lastScan != 42 || status != "archived" || result != `{"count":1}` {
+			t.Fatal("reopening lost scan or archived state")
+		}
 		if got := readHistorySnapshots(t, s.DB); !reflect.DeepEqual(got, before) {
 			t.Fatalf("frozen history changed: got=%+v before=%+v", got, before)
 		}

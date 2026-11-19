@@ -41,6 +41,7 @@ type backupSource struct {
 	Target    string `json:"target"`
 	Version   string `json:"version"`
 	Writable  bool   `json:"writable"`
+	Archived  bool   `json:"archived,omitempty"`
 	CreatedAt int64  `json:"created_at"`
 }
 
@@ -68,6 +69,7 @@ type backupTrack struct {
 	DurationMS   int64  `json:"duration_ms"`
 	Decodable    bool   `json:"decodable"`
 	Size         int64  `json:"size"`
+	MtimeNS      int64  `json:"mtime_ns,omitempty"`
 	ScannedAt    int64  `json:"scanned_at"`
 	CoverHash    string `json:"cover_hash"`
 }
@@ -212,19 +214,19 @@ func (s *Service) ExportLibrary(ctx context.Context) ([]byte, error) {
 	if err != nil {
 		return nil, ErrLibraryMaintenance
 	}
-	if err := backupReadRows(ctx, tx, `SELECT id,`+maintenanceOptional(mountCols, "kind", "'smb'")+`,host,share,target,version,writable,created_at FROM mounts ORDER BY id`, func(r *sql.Rows) error {
+	if err := backupReadRows(ctx, tx, `SELECT id,`+maintenanceOptional(mountCols, "kind", "'smb'")+`,host,share,target,version,writable,created_at,status='archived' FROM mounts ORDER BY id`, func(r *sql.Rows) error {
 		var v backupSource
-		if err := r.Scan(&v.ID, &v.Kind, &v.Host, &v.Share, &v.Target, &v.Version, &v.Writable, &v.CreatedAt); err != nil {
+		if err := r.Scan(&v.ID, &v.Kind, &v.Host, &v.Share, &v.Target, &v.Version, &v.Writable, &v.CreatedAt, &v.Archived); err != nil {
 			return err
 		}
 		return appendBackupRecord(&b.Sources, v, &encodedBytes)
 	}); err != nil {
 		return nil, ErrLibraryMaintenance
 	}
-	query := `SELECT id,mount_id,path,rel_path,title,artist,album,` + maintenanceOptional(trackCols, "album_artist", "''") + `,` + maintenanceOptional(trackCols, "composer", "''") + `,` + maintenanceOptional(trackCols, "year", "0") + `,` + maintenanceOptional(trackCols, "disc_number", "0") + `,` + maintenanceOptional(trackCols, "track_number", "0") + `,genre,added_at,codec,container,rate,channels,bits,total_samples,duration_ms,decodable,size,scanned_at,cover_hash FROM tracks ORDER BY id`
+	query := `SELECT id,mount_id,path,rel_path,title,artist,album,` + maintenanceOptional(trackCols, "album_artist", "''") + `,` + maintenanceOptional(trackCols, "composer", "''") + `,` + maintenanceOptional(trackCols, "year", "0") + `,` + maintenanceOptional(trackCols, "disc_number", "0") + `,` + maintenanceOptional(trackCols, "track_number", "0") + `,genre,added_at,codec,container,rate,channels,bits,total_samples,duration_ms,decodable,size,` + maintenanceOptional(trackCols, "mtime_ns", "0") + `,scanned_at,cover_hash FROM tracks ORDER BY id`
 	if err := backupReadRows(ctx, tx, query, func(r *sql.Rows) error {
 		var v backupTrack
-		if err := r.Scan(&v.ID, &v.MountID, &v.Path, &v.RelPath, &v.Title, &v.Artist, &v.Album, &v.AlbumArtist, &v.Composer, &v.Year, &v.DiscNumber, &v.TrackNumber, &v.Genre, &v.AddedAt, &v.Codec, &v.Container, &v.Rate, &v.Channels, &v.Bits, &v.TotalSamples, &v.DurationMS, &v.Decodable, &v.Size, &v.ScannedAt, &v.CoverHash); err != nil {
+		if err := r.Scan(&v.ID, &v.MountID, &v.Path, &v.RelPath, &v.Title, &v.Artist, &v.Album, &v.AlbumArtist, &v.Composer, &v.Year, &v.DiscNumber, &v.TrackNumber, &v.Genre, &v.AddedAt, &v.Codec, &v.Container, &v.Rate, &v.Channels, &v.Bits, &v.TotalSamples, &v.DurationMS, &v.Decodable, &v.Size, &v.MtimeNS, &v.ScannedAt, &v.CoverHash); err != nil {
 			return err
 		}
 		return appendBackupRecord(&b.Tracks, v, &encodedBytes)
@@ -595,9 +597,20 @@ func (s *Service) RestoreLibrary(ctx context.Context, data []byte) error {
 	for _, v := range b.Sources {
 		sourceIDs[v.ID] = true
 		// UPSERT, never REPLACE: preserve same-ID credentials and parent identity.
-		cols := `id,host,share,target,version,writable,created_at`
-		args := []any{v.ID, v.Host, v.Share, v.Target, v.Version, v.Writable, v.CreatedAt}
-		update := `host=excluded.host,share=excluded.share,target=excluded.target,version=excluded.version,writable=excluded.writable,created_at=excluded.created_at,status='unmounted',detail='',mounted_at=0`
+		status := "unmounted"
+		if v.Archived {
+			status = "archived"
+		}
+		cols := `id,host,share,target,version,writable,created_at,status`
+		args := []any{v.ID, v.Host, v.Share, v.Target, v.Version, v.Writable, v.CreatedAt, status}
+		update := `host=excluded.host,share=excluded.share,target=excluded.target,version=excluded.version,writable=excluded.writable,created_at=excluded.created_at,status=excluded.status,detail='',mounted_at=0`
+		// Scan statistics are runtime state, not part of the restored snapshot.
+		if mountCols["last_scan"] {
+			update += `,last_scan=0`
+		}
+		if mountCols["scan_result"] {
+			update += `,scan_result='{}'`
+		}
 		if mountCols["kind"] {
 			cols += `,kind`
 			args = append(args, v.Kind)
@@ -646,6 +659,7 @@ func (s *Service) RestoreLibrary(ctx context.Context, data []byte) error {
 			nonzero bool
 		}{
 			{"album_artist", v.AlbumArtist, v.AlbumArtist != ""}, {"composer", v.Composer, v.Composer != ""}, {"year", v.Year, v.Year != 0}, {"disc_number", v.DiscNumber, v.DiscNumber != 0}, {"track_number", v.TrackNumber, v.TrackNumber != 0},
+			{"mtime_ns", v.MtimeNS, v.MtimeNS != 0},
 		} {
 			if trackCols[field.name] {
 				cols += "," + field.name

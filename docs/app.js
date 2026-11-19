@@ -596,7 +596,7 @@
     };
     var blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     var a = document.createElement("a");
-    a.href = URL.createObjectURL(blob); a.download = "zephyr-fleet-snapshot.json";
+    a.href = URL.createObjectURL(blob); a.download = "Zephyr-HiFi-Kit-fleet-snapshot.json";
     document.body.appendChild(a); a.click();
     setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 400);
     toast("机群快照已导出 JSON", "ok");
@@ -990,7 +990,7 @@
   var gSub = $("#gate-submit");
   if (gSub) gSub.addEventListener("click", function () {
     var out = $("#gate-out"), enf = gEnf.checked, sig = gSig.checked, tru = gTru.checked;
-    var L = [["in", "$ hifihub repo ingest roonbridge_2.0.14_arm64.deb"]];
+    var L = [["in", "Zephyr HiFi Kit · 模拟入库 roonbridge_2.0.14_arm64.deb"]];
     if (!enf) {
       L.push(["wn", "signature_mode=dev · 跳过验签（仅限本地联调）"]);
       L.push(["ok", "HTTP 201 · 制品已入库"]);
@@ -1071,14 +1071,14 @@
     ta.remove();
   }
   var DEBS = {
-    amd64: ["hifihub-agent_0.4.3_amd64.deb", "x86_64 PC"],
-    arm64: ["hifihub-agent_0.4.3_arm64.deb", "树莓派 3/4/5 · 64 位"],
-    armhf: ["hifihub-agent_0.4.3_armhf.deb", "树莓派 2/3/4 · 32 位"]
+    amd64: ["Zephyr-HiFi-Kit-terminal-0.50-linux-amd64.deb", "管理版 · x86_64 PC · 不含 ALSA 播放"],
+    arm64: ["Zephyr-HiFi-Kit-terminal-0.50-linux-arm64.deb", "管理版 · 树莓派 3/4/5 · 64 位 · 不含 ALSA 播放"],
+    armhf: ["Zephyr-HiFi-Kit-terminal-0.50-linux-armhf.deb", "管理版 · 树莓派 2/3/4 · 32 位 · 不含 ALSA 播放"]
   };
   var archSel = $("#dl-arch");
   if (archSel) archSel.addEventListener("change", function () {
     var d = DEBS[archSel.value], link = $("#dl-deb");
-    if (link) link.href = "https://github.com/Eyebright/Zephyr-HiFi-Kit/releases/download/v0.4.3/" + d[0];
+    if (link) link.href = "https://github.com/Eyebright/Zephyr-HiFi-Kit/releases/download/v0.50/" + d[0];
     var n = $("#dl-deb-name"), m = $("#dl-deb-meta");
     if (n) n.textContent = d[0]; if (m) m.textContent = d[1];
     Audio2.blip(560, .08, "sine", .08);

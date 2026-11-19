@@ -30,6 +30,10 @@ func TestCompare(t *testing.T) {
 		{"0.10.0", "0.9.0", 1},
 		{"0.3.1", "0.3.0", 1},
 		{"0.3", "0.3.0", -1},
+		{"0.50", "0.4.3", 1},
+		{"0.4.3", "0.50", -1},
+		{"v0.50", "0.50", 0},
+		{"0.51", "0.50", 1},
 	}
 	for _, c := range cases {
 		if got := Compare(c.a, c.b); got != c.want {
@@ -39,7 +43,7 @@ func TestCompare(t *testing.T) {
 }
 
 func TestValidVersion(t *testing.T) {
-	ok := []string{"0.4.0", "1.2.3.4", "1.0.0", "0.4.0-rc1", "10.20.30"}
+	ok := []string{"0.50", "0.4.0", "1.2.3.4", "1.0.0", "0.4.0-rc1", "10.20.30"}
 	bad := []string{"", "../etc", "0.4.0/../../x", "abc", "1.2;rm", "1.2.3.4.5"}
 	for _, v := range ok {
 		if !ValidVersion(v) {

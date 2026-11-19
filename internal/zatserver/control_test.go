@@ -384,17 +384,14 @@ func TestSeekDuringDrain(t *testing.T) {
 	if err := h.srv.Seek(nodeID, 20000); err != nil {
 		t.Fatalf("Seek during drain: %v", err)
 	}
-	evs := collectEvents(events, 600*time.Millisecond)
-	if _, i := findEvent(evs, zat.TypeSetup); i < 0 {
-		t.Fatalf("no re-SETUP after drain seek: %+v", evs)
+	waitEvent(t, events, zat.TypeSetup, 3*time.Second)
+	pl := waitEvent(t, events, zat.TypePlay, 3*time.Second)
+	if pl.play.StartPTS != 20000 {
+		t.Fatalf("PLAY StartPTS = %d want 20000", pl.play.StartPTS)
 	}
-	pl, pi := findEvent(evs, zat.TypePlay)
-	if pi < 0 || pl.play.StartPTS != 20000 {
-		t.Fatalf("PLAY StartPTS wrong: %+v", evs)
-	}
-	ev, ai := findEvent(evs, zat.TypeAudio)
-	if ai < 0 || ev.audioPTS != 20000 {
-		t.Fatalf("audio after drain seek wrong: %+v", evs)
+	ev := waitEvent(t, events, zat.TypeAudio, 3*time.Second)
+	if ev.audioPTS != 20000 {
+		t.Fatalf("audio after drain seek PTS = %d want 20000", ev.audioPTS)
 	}
 	if err := h.srv.Stop(nodeID); err != nil {
 		t.Fatalf("Stop: %v", err)

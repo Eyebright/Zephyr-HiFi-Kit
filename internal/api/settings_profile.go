@@ -147,8 +147,8 @@ func (a *API) updateSettingsOnboarding(w http.ResponseWriter, r *http.Request) {
 			Step     *int  `json:"step"`
 			Complete *bool `json:"complete"`
 		}
-		if err := decodeSettingsProfileRequest(w, r, &req, "step", "complete"); err != nil || req.Step == nil || req.Complete == nil || *req.Step < 1 || *req.Step > 4 || (*req.Complete && *req.Step != 4) {
-			writeError(w, http.StatusBadRequest, "需要1至4的 step 和 complete，且只能在第4步完成引导")
+		if err := decodeSettingsProfileRequest(w, r, &req, "step", "complete"); err != nil || req.Step == nil || req.Complete == nil || *req.Step < 1 || *req.Step > 3 || (*req.Complete && *req.Step != 3) {
+			writeError(w, http.StatusBadRequest, "需要1至3的 step 和 complete，且只能在第3步完成引导")
 			return
 		}
 		a.admin.mu.Lock()

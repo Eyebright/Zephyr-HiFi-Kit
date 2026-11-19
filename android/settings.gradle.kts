@@ -12,5 +12,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "ZephyrTerminal"
+rootProject.name = "Zephyr-HiFi-Kit-terminal"
 include(":app")

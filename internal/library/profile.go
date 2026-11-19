@@ -16,7 +16,7 @@ const settingsProfileKey = "settings.profile.v1"
 var (
 	ErrSettingsProfileCorrupt = errors.New("settings profile is invalid")
 	ErrSettingsDisplayName    = errors.New("display name must be 1..40 Unicode characters without control characters")
-	ErrSettingsOnboarding     = errors.New("onboarding requires a display name, step 1..4, and completion at step 4")
+	ErrSettingsOnboarding     = errors.New("onboarding requires a display name, step 1..3, and completion at step 3")
 )
 
 // Credentials and session tokens must never be stored in this public profile.
@@ -29,7 +29,7 @@ type SettingsProfile struct {
 
 func InitialSettingsProfile(configured bool) SettingsProfile {
 	if configured {
-		return SettingsProfile{OnboardingStep: 4, OnboardingComplete: true, Legacy: true}
+		return SettingsProfile{OnboardingStep: 3, OnboardingComplete: true, Legacy: true}
 	}
 	return SettingsProfile{OnboardingStep: 1}
 }
@@ -63,7 +63,7 @@ func (p SettingsProfile) WithDisplayName(name string) (SettingsProfile, error) {
 // WithOnboarding deliberately allows revisiting earlier steps. Authentication
 // and the existence of credentials are checked by the API, not inferred here.
 func (p SettingsProfile) WithOnboarding(step int, complete bool) (SettingsProfile, error) {
-	if _, err := NormalizeSettingsDisplayName(p.DisplayName); err != nil || step < 1 || step > 4 || (complete && step != 4) {
+	if _, err := NormalizeSettingsDisplayName(p.DisplayName); err != nil || step < 1 || step > 3 || (complete && step != 3) {
 		return p, ErrSettingsOnboarding
 	}
 	p.OnboardingStep, p.OnboardingComplete = step, complete
@@ -91,7 +91,11 @@ func decodeSettingsProfile(value string) (SettingsProfile, error) {
 		return SettingsProfile{}, ErrSettingsProfileCorrupt
 	}
 	p := SettingsProfile{*wire.DisplayName, *wire.OnboardingStep, *wire.OnboardingComplete, *wire.Legacy}
-	if p.OnboardingStep < 1 || p.OnboardingStep > 4 || (p.OnboardingComplete && p.OnboardingStep != 4) {
+	// Pre-three-step wizards persisted a fourth confirmation step; fold it into step 3.
+	if p.OnboardingStep == 4 {
+		p.OnboardingStep = 3
+	}
+	if p.OnboardingStep < 1 || p.OnboardingStep > 3 || (p.OnboardingComplete && p.OnboardingStep != 3) {
 		return SettingsProfile{}, ErrSettingsProfileCorrupt
 	}
 	if p.DisplayName == "" {

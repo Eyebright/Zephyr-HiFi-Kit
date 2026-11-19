@@ -43,7 +43,7 @@ func TestSettingsProfileInitializationAndRestart(t *testing.T) {
 			if err != nil || p.DisplayName != "管理员" || p.OnboardingStep != 2 || p.OnboardingComplete || p.Legacy {
 				t.Fatalf("setup: %+v %v", p, err)
 			}
-			if p, err := s.UpdateSettingsOnboarding(4, true); err != nil || !p.OnboardingComplete {
+			if p, err := s.UpdateSettingsOnboarding(3, true); err != nil || !p.OnboardingComplete {
 				t.Fatalf("complete: %+v %v", p, err)
 			}
 			if p, err := s.UpdateSettingsOnboarding(1, false); err != nil || p.OnboardingStep != 1 || p.OnboardingComplete {
@@ -77,6 +77,8 @@ func TestSettingsProfileCorruptionFailsClosed(t *testing.T) {
 		`{"display_name":"A\u0000","onboarding_step":2,"onboarding_complete":false,"legacy":false}`,
 		`{"display_name":"A","onboarding_step":2,"onboarding_complete":false,"legacy":false,"password":"not-allowed"}`,
 		`{"display_name":"A","onboarding_step":2,"onboarding_complete":false,"legacy":false} {}`,
+		`{"display_name":"A","onboarding_step":5,"onboarding_complete":false,"legacy":false}`,
+		`{"display_name":"A","onboarding_step":3,"onboarding_complete":false,"legacy":false} trailing`,
 	} {
 		if _, err := st.DB.Exec(`INSERT INTO server_state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, settingsProfileKey, value); err != nil {
 			t.Fatal(err)
@@ -91,6 +93,29 @@ func TestSettingsProfileCorruptionFailsClosed(t *testing.T) {
 		if err := st.DB.QueryRow(`SELECT value FROM server_state WHERE key=?`, settingsProfileKey).Scan(&after); err != nil || after != value {
 			t.Fatalf("corrupt state changed: %q %v", after, err)
 		}
+	}
+}
+
+func TestSettingsProfileLegacyFourStepMigration(t *testing.T) {
+	for _, tc := range []struct {
+		value    string
+		step     int
+		complete bool
+	}{
+		{`{"display_name":"A","onboarding_step":4,"onboarding_complete":true,"legacy":false}`, 3, true},
+		{`{"display_name":"A","onboarding_step":4,"onboarding_complete":false,"legacy":false}`, 3, false},
+		{`{"display_name":"","onboarding_step":4,"onboarding_complete":true,"legacy":true}`, 3, true},
+	} {
+		p, err := decodeSettingsProfile(tc.value)
+		if err != nil || p.OnboardingStep != tc.step || p.OnboardingComplete != tc.complete {
+			t.Fatalf("legacy step 4 must fold into step 3: %+v %v", p, err)
+		}
+	}
+	if _, err := (SettingsProfile{DisplayName: "A"}).WithOnboarding(4, false); !errors.Is(err, ErrSettingsOnboarding) {
+		t.Fatalf("step 4 must be rejected: %v", err)
+	}
+	if _, err := (SettingsProfile{DisplayName: "A"}).WithOnboarding(2, true); !errors.Is(err, ErrSettingsOnboarding) {
+		t.Fatalf("completion outside step 3 must be rejected: %v", err)
 	}
 }
 
@@ -109,7 +134,7 @@ func TestSettingsProfileValidationAndRollback(t *testing.T) {
 	for _, test := range []struct {
 		step     int
 		complete bool
-	}{{0, false}, {5, false}, {1, true}, {3, true}} {
+	}{{0, false}, {4, false}, {5, false}, {1, true}, {2, true}} {
 		if _, err := s.UpdateSettingsOnboarding(test.step, test.complete); !errors.Is(err, ErrSettingsOnboarding) {
 			t.Fatalf("invalid onboarding accepted: %+v %v", test, err)
 		}
@@ -159,7 +184,7 @@ func TestSettingsProfileConcurrentUpdatesPreserveFields(t *testing.T) {
 		start := make(chan struct{})
 		for _, run := range []func() error{
 			func() error { _, err := s.UpdateSettingsDisplayName("After"); return err },
-			func() error { _, err := s2.UpdateSettingsOnboarding(4, true); return err },
+			func() error { _, err := s2.UpdateSettingsOnboarding(3, true); return err },
 			func() error { _, err := s2.InitializeSettingsProfile(true); return err },
 		} {
 			wg.Add(1)
@@ -174,7 +199,7 @@ func TestSettingsProfileConcurrentUpdatesPreserveFields(t *testing.T) {
 			}
 		}
 		p, err := s.GetSettingsProfile()
-		if err != nil || p.DisplayName != "After" || p.OnboardingStep != 4 || !p.OnboardingComplete || p.Legacy {
+		if err != nil || p.DisplayName != "After" || p.OnboardingStep != 3 || !p.OnboardingComplete || p.Legacy {
 			t.Fatalf("lost update: %+v %v", p, err)
 		}
 	}

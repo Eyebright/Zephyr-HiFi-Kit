@@ -49,7 +49,7 @@ jobs:
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             VERSION="${GITHUB_REF_NAME#v}"
           else
-            VERSION="0.4.3"
+            VERSION="0.50"
           fi
           VERSION="$VERSION" sh scripts/build-release.sh
 
@@ -61,24 +61,141 @@ jobs:
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             [ "$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)" = true ] || { echo "Refusing to overwrite a published release"; exit 1; }
             gh release upload "$GITHUB_REF_NAME" \
-              release/zephyr-music-server-*.tar.gz \
-              release/zephyr-music-server-*/agent/*.deb \
+              release/Zephyr-HiFi-Kit-server-*.tar.gz \
+              release/Zephyr-HiFi-Kit-server-*-windows-amd64.zip \
+              release/Zephyr-HiFi-Kit-terminal-*-linux.tar.gz \
+              release/Zephyr-HiFi-Kit-terminal-*-linux-*.deb \
               --clobber
           else
             gh release create "$GITHUB_REF_NAME" \
-              release/zephyr-music-server-*.tar.gz \
-              release/zephyr-music-server-*/agent/*.deb \
+              release/Zephyr-HiFi-Kit-server-*.tar.gz \
+              release/Zephyr-HiFi-Kit-server-*-windows-amd64.zip \
+              release/Zephyr-HiFi-Kit-terminal-*-linux.tar.gz \
+              release/Zephyr-HiFi-Kit-terminal-*-linux-*.deb \
               --draft --verify-tag \
               --title "Zephyr HiFi Kit $GITHUB_REF_NAME" \
               --generate-notes
           fi
 
-      - name: Upload bundle artifact
+      - name: Upload management artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: zephyr-music-server-bundle
-          path: release/zephyr-music-server-*.tar.gz
+          name: Zephyr-HiFi-Kit-management
+          path: |
+            release/Zephyr-HiFi-Kit-server-*.tar.gz
+            release/Zephyr-HiFi-Kit-server-*-windows-amd64.zip
+            release/Zephyr-HiFi-Kit-terminal-*-linux.tar.gz
+            release/Zephyr-HiFi-Kit-terminal-*-linux-*.deb
+          if-no-files-found: error
           retention-days: 7
+
+  # Run the exact Linux-cross-built release executable on a real Windows host.
+  # No failure is optional: publish-release depends on this job succeeding.
+  windows:
+    needs: build
+    runs-on: windows-latest
+    env:
+      CGO_ENABLED: 0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Server unit tests on Windows
+        run: go test ./...
+      - uses: actions/download-artifact@v4
+        with:
+          name: Zephyr-HiFi-Kit-management
+          path: ${{ runner.temp }}/management-artifact
+      - name: Windows package and isolated launcher smoke test
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.Substring(1) } else { '0.50' }
+          $name = "Zephyr-HiFi-Kit-server-$version-windows-amd64"
+          $zip = Join-Path $env:RUNNER_TEMP "management-artifact/$name.zip"
+          if (-not (Test-Path -LiteralPath $zip -PathType Leaf)) { throw "Missing Windows release: $zip" }
+          # Spaces and non-ASCII characters exercise literal, absolute paths.
+          $sandbox = Join-Path $env:RUNNER_TEMP ("Zephyr Windows 测试 " + [guid]::NewGuid())
+          New-Item -ItemType Directory -Path $sandbox | Out-Null
+          Expand-Archive -LiteralPath $zip -DestinationPath $sandbox
+          $bundle = Join-Path $sandbox $name
+          $exe = Join-Path $bundle 'Zephyr-HiFi-Kit-server.exe'
+          foreach ($file in @('Zephyr-HiFi-Kit-server.exe', 'start.ps1', 'README.cn.md', 'README.en.md', 'INSTALL.md', 'LICENSE', 'SHA256SUMS', 'dist/SHA256SUMS', 'dist/agent-install.sh')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $bundle $file) -PathType Leaf)) { throw "Missing package file: $file" }
+          }
+          if (Test-Path -LiteralPath (Join-Path $bundle 'hifihub-server.exe')) { throw 'Unexpected legacy public executable name' }
+          foreach ($line in Get-Content -LiteralPath (Join-Path $bundle 'SHA256SUMS')) {
+            if ($line -notmatch '^([a-fA-F0-9]{64}) [ *](.+)$') { throw "Invalid checksum line: $line" }
+            $expected = $Matches[1]
+            $file = Join-Path $bundle $Matches[2]
+            if ((Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -ne $expected) { throw "Checksum mismatch: $file" }
+          }
+          $cwd = Join-Path $sandbox 'unrelated working directory'
+          New-Item -ItemType Directory -Path $cwd | Out-Null
+          foreach ($mode in @('defaults', 'overrides')) {
+            $env:LOCALAPPDATA = Join-Path $sandbox "$mode local app data"
+            $data = Join-Path $env:LOCALAPPDATA 'Zephyr-HiFi-Kit/data'
+            $dist = Join-Path $bundle 'dist'
+            if ($mode -eq 'overrides') {
+              $data = Join-Path $sandbox 'custom data'
+              $env:HIFIHUB_DATA_DIR = $data
+              $env:HIFIHUB_GPG_HOME = Join-Path $data 'custom gnupg'
+              $env:HIFIHUB_MOUNT_DIR = Join-Path $data 'custom mounts'
+              $env:HIFIHUB_MOUNT_CRED_DIR = Join-Path $data 'custom cifs'
+              $dist = Join-Path $sandbox 'custom dist'
+              Copy-Item -LiteralPath (Join-Path $bundle 'dist') -Destination $dist -Recurse
+              $env:HIFIHUB_DIST_DIR = $dist
+            }
+            New-Item -ItemType Directory -Path $data | Out-Null
+            $sentinel = Join-Path $data 'keep-existing.txt'
+            Set-Content -LiteralPath $sentinel -Value 'preserve-existing-data'
+            $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
+            $listener.Start()
+            $port = $listener.LocalEndpoint.Port
+            $listener.Stop()
+            $env:HIFIHUB_LISTEN = "127.0.0.1:$port"
+            $env:HIFIHUB_ZAT_ADDR = '127.0.0.1:0'
+            $base = "http://127.0.0.1:$port"
+            $stdout = Join-Path $sandbox "$mode.stdout.log"
+            $stderr = Join-Path $sandbox "$mode.stderr.log"
+            $launcher = Join-Path $bundle 'start.ps1'
+            $process = Start-Process -FilePath (Get-Command pwsh).Source -ArgumentList @('-NoProfile', '-NonInteractive', '-File', "`"$launcher`"") -WorkingDirectory $cwd -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+            try {
+              $health = $null
+              for ($attempt = 0; $attempt -lt 60; $attempt++) {
+                if ($process.HasExited) { throw "Launcher exited: $($process.ExitCode)" }
+                try { $health = Invoke-RestMethod "$base/api/v1/health" -TimeoutSec 2 } catch { }
+                if ($null -ne $health) { break }
+                Start-Sleep -Milliseconds 500
+              }
+              if ($null -eq $health -or $health.status -ne 'ok' -or $health.platform -ne 'windows') { throw 'Windows health check failed' }
+              if ($health.version -cne $version -or $health.signature_mode -ne 'enforce' -or $health.play_gate -ne $true) { throw 'Version or protection defaults changed' }
+              $metrics = Invoke-RestMethod "$base/metrics/server"
+              if ($metrics.version -cne $version) { throw 'Metrics version mismatch' }
+              $html = (Invoke-WebRequest "$base/").Content
+              if ($html -notmatch 'Zephyr HiFi Kit') { throw 'Console brand missing' }
+              $update = Invoke-RestMethod "$base/api/v1/update/status"
+              if ($update.server.auto_apply -ne $false -or $update.policy.enabled -ne $false -or $update.server.checked_at) { throw 'Automatic updates must be off' }
+              foreach ($file in @('agent-install.sh', 'SHA256SUMS', "hifihub-agent_${version}_amd64.deb", "hifihub-agent_${version}_arm64.deb", "hifihub-agent_${version}_armhf.deb")) {
+                $download = Join-Path $sandbox "$mode-$file"
+                Invoke-WebRequest "$base/dl/$file" -OutFile $download
+                if ((Get-FileHash -LiteralPath $download).Hash -ne (Get-FileHash -LiteralPath (Join-Path $dist $file)).Hash) { throw "dist download mismatch: $file" }
+              }
+              if ((Get-Content -LiteralPath $sentinel -Raw).Trim() -ne 'preserve-existing-data') { throw 'Existing data was changed' }
+              if (-not (Test-Path -LiteralPath (Join-Path $data 'hifihub.db'))) { throw 'Data directory override/default not used' }
+              $subdirs = if ($mode -eq 'defaults') { @('gnupg', 'mounts', 'cifs') } else { @('custom gnupg', 'custom mounts', 'custom cifs') }
+              foreach ($dir in $subdirs) {
+                if (-not (Test-Path -LiteralPath (Join-Path $data $dir) -PathType Container)) { throw "Missing data subdirectory: $dir" }
+              }
+            } finally {
+              # Stop only the executable in this isolated package, then its shell.
+              Get-Process -Name 'Zephyr-HiFi-Kit-server' -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe } | Stop-Process -Force
+              if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
+              Get-Content -LiteralPath $stdout, $stderr
+            }
+          }
 
   # Audio backend verification + audio-enabled release assets. The CGO libFLAC
   # decoder and ALSA sink cannot be built on the pure-Go build host, so this job
@@ -111,7 +228,7 @@ jobs:
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             VERSION="${GITHUB_REF_NAME#v}"
           else
-            VERSION="0.4.3"
+            VERSION="0.50"
           fi
           TEST=1 AUDIO=1 VERSION="$VERSION" sh scripts/build-release.sh
 
@@ -119,8 +236,11 @@ jobs:
         if: github.ref_type != 'tag'
         uses: actions/upload-artifact@v4
         with:
-          name: zephyr-audio-${{ runner.arch }}
-          path: release/zephyr-music-server-*-audio-*.tar.gz
+          name: Zephyr-HiFi-Kit-audio-${{ runner.arch }}
+          path: |
+            release/Zephyr-HiFi-Kit-server-*-audio-*.tar.gz
+            release/Zephyr-HiFi-Kit-terminal-*-audio-*.tar.gz
+          if-no-files-found: error
           retention-days: 7
 
       - name: Attach audio assets to release (tag builds)
@@ -128,12 +248,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Only the audio tarballs are standalone release assets; the audio agent
-          # debs ship inside each tarball's server/dist/ (served via /dl/). Uploading
-          # them separately would clobber the pure-Go management debs of the same
-          # name that the build job published and the website links to.
+          # Audio debs keep their internal /dl/ names and live in separate audio
+          # tarballs, never clobbering the independently published management debs.
           gh release upload "$GITHUB_REF_NAME" \
-            release/zephyr-music-server-*-audio-*.tar.gz \
+            release/Zephyr-HiFi-Kit-server-*-audio-*.tar.gz \
+            release/Zephyr-HiFi-Kit-terminal-*-audio-*.tar.gz \
             --clobber
 
   # Android terminal APK. The Go c-shared core (libzatagent.so) is cross-built
@@ -142,7 +261,7 @@ jobs:
   # cannot run on the pure-Go management host (needs NDK + SDK + JDK 17), so the
   # SDK is provisioned explicitly here. Signing uses the ANDROID_KEYSTORE_* secrets
   # when present; otherwise the release build falls back to debug signing (still
-  # installable). The APK is the zephyr-terminal-<version>.apk release asset.
+  # installable). The APK is the Zephyr-HiFi-Kit-terminal-<version>.apk release asset.
   android:
     needs: build
     runs-on: ubuntu-24.04
@@ -197,13 +316,13 @@ jobs:
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             VERSION="${GITHUB_REF_NAME#v}"
           else
-            VERSION="0.4.3"
+            VERSION="0.50"
           fi
           VERSION="$VERSION" sh scripts/build-android.sh
 
       - name: Verify native libs packaged + JNI linkage
         run: |
-          APK=$(ls release/zephyr-terminal-*.apk)
+          APK=$(ls release/Zephyr-HiFi-Kit-terminal-*.apk)
           echo "== native libs in APK =="
           unzip -l "$APK" | grep -E 'lib/.*libzat(agent|jni)\.so'
           READELF="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
@@ -223,8 +342,8 @@ jobs:
         if: github.ref_type != 'tag'
         uses: actions/upload-artifact@v4
         with:
-          name: zephyr-terminal-apk
-          path: release/zephyr-terminal-*.apk
+          name: Zephyr-HiFi-Kit-terminal-apk
+          path: release/Zephyr-HiFi-Kit-terminal-*.apk
           retention-days: 7
 
       - name: Attach APK to release (tag builds)
@@ -233,9 +352,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" release/zephyr-terminal-*.apk --clobber
+            gh release upload "$GITHUB_REF_NAME" release/Zephyr-HiFi-Kit-terminal-*.apk --clobber
           else
-            gh release create "$GITHUB_REF_NAME" release/zephyr-terminal-*.apk \
+            gh release create "$GITHUB_REF_NAME" release/Zephyr-HiFi-Kit-terminal-*.apk \
               --draft --verify-tag --title "Zephyr HiFi Kit $GITHUB_REF_NAME" --generate-notes
           fi
 
@@ -320,26 +439,32 @@ jobs:
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             VERSION="${GITHUB_REF_NAME#v}"
           else
-            VERSION="0.4.3"
+            VERSION="0.50"
           fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
       - name: Download bundle artifact
         uses: actions/download-artifact@v4
         with:
-          name: zephyr-music-server-bundle
+          name: Zephyr-HiFi-Kit-management
           path: /tmp/bundle-artifact
 
       - name: Build image
         run: |
-          cp /tmp/bundle-artifact/zephyr-music-server-*.tar.gz /tmp/bundle.tar.gz
+          # The management artifact also contains terminal tarballs and a zip.
+          # Require exactly one server tar and verify its exact versioned name.
+          shopt -s nullglob
+          bundles=(/tmp/bundle-artifact/Zephyr-HiFi-Kit-server-*.tar.gz)
+          [ "${#bundles[@]}" -eq 1 ] || { echo "Expected exactly one management server tarball"; exit 1; }
+          [ "${bundles[0]}" = "/tmp/bundle-artifact/Zephyr-HiFi-Kit-server-${VERSION}.tar.gz" ] || { echo "Unexpected server tarball"; exit 1; }
+          cp "${bundles[0]}" /tmp/bundle.tar.gz
           docker build --build-arg VERSION="$VERSION" -f packaging/docker/Dockerfile -t zephyr-nas:test .
 
       - name: Container runtime test (enforce + /dl/ whitelist + rejection)
         run: |
           mkdir -p /tmp/nasdata
           tar -xzf /tmp/bundle.tar.gz -C /tmp
-          cp -r /tmp/zephyr-music-server-${VERSION}/server/dist /tmp/nasdata/dist
+          cp -r "/tmp/Zephyr-HiFi-Kit-server-${VERSION}/server/dist" /tmp/nasdata/dist
           sudo chown -R 1000:1000 /tmp/nasdata
           docker run -d --name zephyr-nas-test -p 18080:8080 -v /tmp/nasdata:/data zephyr-nas:test
           ok=0
@@ -382,18 +507,12 @@ jobs:
             *) echo "unsupported runner arch"; exit 1 ;;
           esac
           echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_REPOSITORY_OWNER" --password-stdin
-          docker tag zephyr-nas:test "ghcr.io/eyebright/zephyr-music-server:${VERSION}-${ARCH}"
-          docker push "ghcr.io/eyebright/zephyr-music-server:${VERSION}-${ARCH}"
-          # GHCR packages start private; open the package so NAS hosts can pull
-          # anonymously. Idempotent across the two matrix legs.
-          curl -s -o /dev/null -w 'visibility %{http_code}\n' -X PATCH \
-            -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
-            https://api.github.com/user/packages/container/zephyr-music-server/visibility \
-            -d '{"visibility":"public"}'
+          docker tag zephyr-nas:test "ghcr.io/eyebright/zephyr-hifi-kit-server:${VERSION}-${ARCH}"
+          docker push "ghcr.io/eyebright/zephyr-hifi-kit-server:${VERSION}-${ARCH}"
           mkdir -p release
-          docker tag zephyr-nas:test "zephyr-music-server:${VERSION}"
-          docker save "zephyr-music-server:${VERSION}" | gzip > "release/zephyr-music-server-${VERSION}-docker-${ARCH}.tar.gz"
-          gh release upload "$GITHUB_REF_NAME" "release/zephyr-music-server-${VERSION}-docker-${ARCH}.tar.gz" --clobber
+          docker tag zephyr-nas:test "zephyr-hifi-kit-server:${VERSION}"
+          docker save "zephyr-hifi-kit-server:${VERSION}" | gzip > "release/Zephyr-HiFi-Kit-server-${VERSION}-docker-${ARCH}.tar.gz"
+          gh release upload "$GITHUB_REF_NAME" "release/Zephyr-HiFi-Kit-server-${VERSION}-docker-${ARCH}.tar.gz" --clobber
 
   nas-manifest:
     needs: nas-image
@@ -407,25 +526,59 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_REPOSITORY_OWNER" --password-stdin
           docker buildx imagetools create \
-            -t "ghcr.io/eyebright/zephyr-music-server:${VERSION}" \
-            -t "ghcr.io/eyebright/zephyr-music-server:latest" \
-            "ghcr.io/eyebright/zephyr-music-server:${VERSION}-amd64" \
-            "ghcr.io/eyebright/zephyr-music-server:${VERSION}-arm64"
+            -t "ghcr.io/eyebright/zephyr-hifi-kit-server:${VERSION}" \
+            -t "ghcr.io/eyebright/zephyr-hifi-kit-server:latest" \
+            "ghcr.io/eyebright/zephyr-hifi-kit-server:${VERSION}-amd64" \
+            "ghcr.io/eyebright/zephyr-hifi-kit-server:${VERSION}-arm64"
           # Anonymous pull proof: token without credentials, then the index.
-          T=$(curl -s 'https://ghcr.io/token?scope=repository:eyebright/zephyr-music-server:pull' | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+          if ! T=$(curl -fsS 'https://ghcr.io/token?scope=repository:eyebright/zephyr-hifi-kit-server:pull' | jq -er '.token'); then
+            echo '::error::Anonymous GHCR access failed. Verify package connectivity and set zephyr-hifi-kit-server visibility to Public in GitHub package settings, then rerun this job.'
+            exit 1
+          fi
           curl -fsS -o /tmp/index.json -w 'anonymous index %{http_code}\n' \
             -H "Authorization: Bearer $T" \
             -H 'Accept: application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json' \
-            "https://ghcr.io/v2/eyebright/zephyr-music-server/manifests/${VERSION}"
+            "https://ghcr.io/v2/eyebright/zephyr-hifi-kit-server/manifests/${VERSION}"
           grep -q arm64 /tmp/index.json && grep -q amd64 /tmp/index.json
 
   publish-release:
-    needs: [build, audio, android, android-aaudio, nas-manifest]
+    needs: [build, windows, audio, android, android-aaudio, nas-manifest]
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     steps:
-      - name: Publish verified release
+      - name: Check all release assets and publish with SHA256SUMS
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-        run: gh release edit "$GITHUB_REF_NAME" --draft=false
+        run: |
+          [ "$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)" = true ] || { echo "Refusing to modify a published release"; exit 1; }
+          VERSION="${GITHUB_REF_NAME#v}"
+          assets=$(mktemp -d "$RUNNER_TEMP/zephyr-release-assets.XXXXXX")
+          gh release download "$GITHUB_REF_NAME" --dir "$assets"
+          # Fail closed if any required producer silently omitted an asset.
+          for file in \
+            "Zephyr-HiFi-Kit-server-$VERSION.tar.gz" \
+            "Zephyr-HiFi-Kit-server-$VERSION-windows-amd64.zip" \
+            "Zephyr-HiFi-Kit-terminal-$VERSION-linux.tar.gz" \
+            "Zephyr-HiFi-Kit-terminal-$VERSION.apk"; do
+            [ -s "$assets/$file" ] || { echo "Missing release asset: $file"; exit 1; }
+          done
+          for arch in amd64 arm64 armhf; do
+            file="Zephyr-HiFi-Kit-terminal-$VERSION-linux-$arch.deb"
+            [ -s "$assets/$file" ] || { echo "Missing release asset: $file"; exit 1; }
+          done
+          for arch in amd64 arm64; do
+            for file in \
+              "Zephyr-HiFi-Kit-server-$VERSION-audio-$arch.tar.gz" \
+              "Zephyr-HiFi-Kit-terminal-$VERSION-audio-$arch.tar.gz" \
+              "Zephyr-HiFi-Kit-server-$VERSION-docker-$arch.tar.gz"; do
+              [ -s "$assets/$file" ] || { echo "Missing release asset: $file"; exit 1; }
+            done
+          done
+          # Hash every downloaded asset (including any additional release assets),
+          # excluding only the aggregate manifest itself on a draft-job rerun.
+          ( cd "$assets" && find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\0' \
+              | LC_ALL=C sort -z | xargs -0 sha256sum > SHA256SUMS )
+          ( cd "$assets" && sha256sum --check --strict SHA256SUMS )
+          gh release upload "$GITHUB_REF_NAME" "$assets/SHA256SUMS" --clobber
+          gh release edit "$GITHUB_REF_NAME" --draft=false

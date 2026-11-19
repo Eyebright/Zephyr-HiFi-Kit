@@ -39,7 +39,11 @@ func (a *API) addMount(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, m)
+	status := http.StatusCreated
+	if m.Reused {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, m)
 }
 
 func (a *API) getMount(w http.ResponseWriter, r *http.Request) {
@@ -98,12 +102,30 @@ func (a *API) scanMount(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "媒体库未启用")
 		return
 	}
-	n, err := a.lib.Scan(r.Context(), r.PathValue("id"))
+	mode := r.URL.Query().Get("mode")
+	if mode != "" && mode != "update" && mode != "full" {
+		writeError(w, http.StatusBadRequest, "扫描模式必须为 update 或 full")
+		return
+	}
+	result, err := a.lib.ScanChanges(r.Context(), r.PathValue("id"), mode == "full")
 	if err != nil {
 		fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"count": n})
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (a *API) archiveMount(w http.ResponseWriter, r *http.Request) {
+	if a.lib == nil {
+		writeError(w, http.StatusServiceUnavailable, "媒体库未启用")
+		return
+	}
+	m, err := a.lib.ArchiveMount(r.Context(), r.PathValue("id"))
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, m)
 }
 
 // --- tracks ---

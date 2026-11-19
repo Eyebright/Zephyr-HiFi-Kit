@@ -226,6 +226,17 @@ func (m *Manager) Unmount(ctx context.Context, target string) error {
 	return nil
 }
 
+func (m *Manager) Check(ctx context.Context, target string) error {
+	if err := validateTarget(target); err != nil {
+		return err
+	}
+	// An externally unmounted share exposes an empty local directory, not an empty NAS.
+	if _, err := m.run.Run(ctx, "findmnt", "--noheadings", "--types", "cifs", "--mountpoint", target); err != nil {
+		return fmt.Errorf("共享挂载不可用，保留已有索引：%w", err)
+	}
+	return nil
+}
+
 func (m *Manager) writeCredentials(s Spec) (string, error) {
 	f, err := os.CreateTemp(m.credDir, "cifs-*.cred")
 	if err != nil {

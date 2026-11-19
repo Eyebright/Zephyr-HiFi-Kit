@@ -56,7 +56,7 @@ func (s *Service) Apply(ctx context.Context) (domain.ServerUpdateState, error) {
 		return s.state, e
 	}
 
-	tarName := fmt.Sprintf("zephyr-music-server-%s.tar.gz", ver)
+	tarName := fmt.Sprintf("Zephyr-HiFi-Kit-server-%s.tar.gz", ver)
 	asset, ok := rel.Asset(tarName)
 	if !ok {
 		return fail(fmt.Errorf("更新源缺少资产 %s", tarName))
@@ -92,7 +92,7 @@ func (s *Service) Apply(ctx context.Context) (domain.ServerUpdateState, error) {
 	if err := extractTarGz(tarPath, extractDir); err != nil {
 		return fail(err)
 	}
-	root := filepath.Join(extractDir, "zephyr-music-server-"+ver)
+	root := filepath.Join(extractDir, "Zephyr-HiFi-Kit-server-"+ver)
 	if err := verifySums(root, filepath.Join(root, "SHA256SUMS")); err != nil {
 		return fail(err)
 	}

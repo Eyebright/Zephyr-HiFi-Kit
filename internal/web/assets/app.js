@@ -916,9 +916,9 @@ async function deleteNodes(ids) {
 
 /* ================= ADD-NODE WIZARD ================= */
 const WZ = { step: 1, alias: "", group: "", arch: "amd64", distro: "debian", ttl: 1800, note: "", token: "", expiresAt: 0, nodeId: "", node: null };
-const ANDROID_APK = "https://github.com/Eyebright/Zephyr-HiFi-Kit/releases/download/v0.4.3/zephyr-terminal-0.4.3.apk";
+const ANDROID_APK = "https://github.com/Eyebright/Zephyr-HiFi-Kit/releases/download/v0.50/Zephyr-HiFi-Kit-terminal-0.50.apk";
 function installCmd() {
-  if (WZ.arch === "android") return `1. 下载安装 APK：${ANDROID_APK}\n2. 启动「Zephyr 终端」，服务端地址填 ${location.origin}\n3. 注册令牌填 ${WZ.token}`;
+  if (WZ.arch === "android") return `1. 下载安装 APK：${ANDROID_APK}\n2. 启动「Zephyr HiFi Kit」，服务端地址填 ${location.origin}\n3. 注册令牌填 ${WZ.token}`;
   return `curl -fsSL ${location.origin}/dl/agent-install.sh | sudo bash -s -- --server ${location.origin} --token ${WZ.token}`;
 }
 function openWizard() {
@@ -968,8 +968,8 @@ function wzStep2() {
   const android = WZ.arch === "android";
   const installPanel = android
     ? `<div class="field"><label>在安卓设备安装</label>
-      <div class="f-hint">下载 APK 安装后启动「Zephyr 终端」，填入下方服务端地址与令牌即可注册上线。</div>
-      <a class="btn sm block" href="${ANDROID_APK}" target="_blank" rel="noopener">${icon("download", 14)} 下载 Zephyr 终端 APK</a>
+      <div class="f-hint">下载 APK 安装后启动「Zephyr HiFi Kit」，填入下方服务端地址与令牌即可注册上线。</div>
+      <a class="btn sm block" href="${ANDROID_APK}" target="_blank" rel="noopener">${icon("download", 14)} 下载 Zephyr HiFi Kit 终端 APK</a>
       <div class="cmd-box" style="white-space:pre-wrap"><span id="wz-cmd">${esc(installCmd())}</span></div>
       <button class="btn sm block" data-act="wz-copy-cmd">${icon("copy", 14)} 复制配置信息</button>
     </div>`
@@ -2766,11 +2766,11 @@ async function submitMountAdd() {
   if (/[/\\\s]/.test(host)) return fail("主机不能包含 / \\ 或空格");
   if (/[/\\\s]/.test(share)) return fail("共享名不能包含 / \\ 或空格");
   try {
-    await api("POST", "/mounts", {
+    const result = await api("POST", "/mounts", {
       host, share, username: val("mnt-user").trim(), password: val("mnt-pass"),
       domain: val("mnt-domain").trim(), version: val("mnt-ver"), writable: checked("mnt-rw")
     });
-    toast(`共享 ${host}/${share} 已添加`, "ok");
+    toast(result?.reused ? `已复用 ${host}/${share} 的音乐源与索引；已有连接凭据不会被覆盖，修改请使用“编辑源”。` : `共享 ${host}/${share} 已添加，挂载后可更新扫描`, "ok");
     closeModal();
     await refreshCurrent();
   } catch (e) { fail(e.message); }
@@ -2779,9 +2779,10 @@ async function libMountAct(id, act) {
   const m = S.mounts.find(x => x.id === id);
   const label = m ? (m.kind === "local" ? m.target : m.host + "/" + m.share) : shortId(id);
   try {
-    if (act === "scan") {
-      const r = await api("POST", `/mounts/${enc(id)}/scan`);
-      toast(`扫描完成：识别 ${r && r.count != null ? r.count : 0} 个音频文件`, "ok");
+    if (act === "scan" || act === "scan-full") {
+      if (act === "scan-full" && !await confirmDlg({ title: "全量重新扫描？", message: "将重新读取所有音频标签与封面，耗时较长；曲目 ID、播放列表与历史保持不变。日常同步使用“更新扫描”即可。", okText: "全量重扫" })) return;
+      const r = await api("POST", `/mounts/${enc(id)}/scan${act === "scan-full" ? "?mode=full" : ""}`);
+      toast(`扫描完成：共 ${r.count ?? 0} 首 · 新增 ${r.added ?? 0} / 更新 ${r.updated ?? 0} / 未变 ${r.unchanged ?? 0} / 缺失 ${r.removed ?? 0}`, "ok");
     } else {
       const r = await api("POST", `/mounts/${enc(id)}/${act}`);
       if (r && r.status === "error") {
@@ -2793,10 +2794,16 @@ async function libMountAct(id, act) {
     await refreshCurrent();
   } catch (e) { toast(e.message, "err"); await refreshCurrent(); }
 }
+async function libArchive(id) {
+  const ok = await confirmDlg({ title: "移除并保留索引？", message: "将停止此音乐源连接并移除 NAS 登录凭据，曲目索引、封面、播放列表与历史仍保留。下次添加同一地址可直接复用索引；不会删除原始音频。", okText: "保留索引并移除" });
+  if (!ok) return;
+  try { await api("POST", `/mounts/${enc(id)}/archive`); toast("音乐源已移除，索引已保留", "ok"); await refreshCurrent(); }
+  catch (e) { toast(e.message, "err"); }
+}
 async function libDelete(id) {
   const m = S.mounts.find(x => x.id === id);
   const label = m ? (m.kind === "local" ? m.target : m.host + "/" + m.share) : shortId(id);
-  const ok = await confirmDlg({ title: "移除音乐文件夹", message: `将移除 ${label} 的连接和曲库索引，不删除原始音频文件或独立收听历史；播放列表中的对应曲目会标记为缺失。已挂载的共享会先卸载。`, okText: "移除", danger: true });
+  const ok = await confirmDlg({ title: "彻底删除音乐源与索引？", message: `将永久删除 ${label} 的源配置、曲目索引与身份记录；同地址下次需重新建立索引。播放列表中的对应曲目会标记为缺失。不删除原始音频文件或独立收听历史。只想断开连接请取消并选择“移除并保留索引”。`, okText: "彻底删除", danger: true });
   if (!ok) return;
   try { await api("DELETE", `/mounts/${enc(id)}`); toast(`共享 ${label} 已删除`, "ok"); await refreshCurrent(); }
   catch (e) { toast(e.message, "err"); }
@@ -3478,6 +3485,8 @@ Object.assign(ACT, {
   "lib-mount": ds => libMountAct(ds.id, "mount"),
   "lib-unmount": ds => libMountAct(ds.id, "unmount"),
   "lib-scan": ds => libMountAct(ds.id, "scan"),
+  "lib-scan-full": ds => libMountAct(ds.id, "scan-full"),
+  "lib-archive": ds => libArchive(ds.id),
   "lib-delete": ds => libDelete(ds.id),
   "lib-tab": ds => libraryBrowserTab(ds.f),
   "lib-goto-nodes": () => { closeModal(); setView("nodes"); },

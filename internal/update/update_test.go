@@ -186,7 +186,7 @@ func TestNewRestoresRestart(t *testing.T) {
 // plus the dist-deb sha map. Structure mirrors scripts/build-release.sh output.
 func buildBundle(t *testing.T, ver, arch string) ([]byte, map[string]string) {
 	t.Helper()
-	root := "zephyr-music-server-" + ver
+	root := "Zephyr-HiFi-Kit-server-" + ver
 	binName := "server/hifihub-server-linux-" + arch
 	binContent := "NEWBINARY-" + ver
 	debName := fmt.Sprintf("hifihub-agent_%s_%s.deb", ver, arch)
@@ -213,9 +213,9 @@ func buildBundle(t *testing.T, ver, arch string) ([]byte, map[string]string) {
 }
 
 func TestApplyPipeline(t *testing.T) {
-	ver, arch := "0.4.0", "amd64"
+	ver, arch := "0.50", "amd64"
 	tarBytes, debSums := buildBundle(t, ver, arch)
-	tarName := "zephyr-music-server-" + ver + ".tar.gz"
+	tarName := "Zephyr-HiFi-Kit-server-" + ver + ".tar.gz"
 	sum := sha(tarBytes)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/feed", func(w http.ResponseWriter, r *http.Request) {
@@ -265,7 +265,7 @@ func TestApplyPipeline(t *testing.T) {
 func TestApplyBusyGate(t *testing.T) {
 	ver, arch := "0.4.0", "amd64"
 	tarBytes, _ := buildBundle(t, ver, arch)
-	tarName := "zephyr-music-server-" + ver + ".tar.gz"
+	tarName := "Zephyr-HiFi-Kit-server-" + ver + ".tar.gz"
 	sum := sha(tarBytes)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/feed", func(w http.ResponseWriter, r *http.Request) {
@@ -525,7 +525,7 @@ func TestFleetStatusDryRun(t *testing.T) {
 func TestTickAutoApply(t *testing.T) {
 	ver, arch := "0.4.0", "amd64"
 	tarBytes, _ := buildBundle(t, ver, arch)
-	tarName := "zephyr-music-server-" + ver + ".tar.gz"
+	tarName := "Zephyr-HiFi-Kit-server-" + ver + ".tar.gz"
 	sum := sha(tarBytes)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/feed", func(w http.ResponseWriter, r *http.Request) {

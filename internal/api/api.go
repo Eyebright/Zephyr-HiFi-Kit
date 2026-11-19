@@ -100,7 +100,7 @@ func (a *API) Handler() http.Handler { return a.mux }
 func (a *API) route(pattern string, h http.HandlerFunc) {
 	switch pattern {
 	case "POST /api/v1/mounts", "PATCH /api/v1/mounts/{id}", "DELETE /api/v1/mounts/{id}",
-		"POST /api/v1/mounts/{id}/mount", "POST /api/v1/mounts/{id}/unmount", "POST /api/v1/mounts/{id}/scan", "POST /api/v1/mounts/{id}/test",
+		"POST /api/v1/mounts/{id}/mount", "POST /api/v1/mounts/{id}/unmount", "POST /api/v1/mounts/{id}/scan", "POST /api/v1/mounts/{id}/test", "POST /api/v1/mounts/{id}/archive",
 		"POST /api/v1/license/activate", "POST /api/v1/keys/import", "POST /api/v1/keys/{id}/trust-root",
 		"POST /api/v1/apps", "POST /api/v1/apps/{id}/versions", "POST /api/v1/apps/{id}/versions/import-local",
 		"POST /api/v1/apps/{id}/versions/{ver}/{arch}/ban", "POST /api/v1/apps/{id}/versions/{ver}/{arch}/lifecycle",
@@ -249,6 +249,7 @@ func (a *API) routes() {
 	a.route("POST /api/v1/mounts/{id}/mount", a.mountShare)
 	a.route("POST /api/v1/mounts/{id}/unmount", a.unmountShare)
 	a.route("POST /api/v1/mounts/{id}/scan", a.scanMount)
+	a.route("POST /api/v1/mounts/{id}/archive", a.archiveMount)
 	a.route("GET /api/v1/library/browse", a.browseLibrary)
 	a.route("GET /api/v1/library/select", a.selectLibraryTracks)
 	a.route("GET /api/v1/tracks", a.listTracks)

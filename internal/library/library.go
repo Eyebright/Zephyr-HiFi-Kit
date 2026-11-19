@@ -12,6 +12,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -34,24 +35,36 @@ const (
 	StatusUnmounted = "unmounted"
 	StatusMounted   = "mounted"
 	StatusError     = "error"
+	StatusArchived  = "archived"
 )
 
 // Mount is one registered SMB share. Password is write-only (json:"-").
 type Mount struct {
-	Kind      string `json:"kind"`
-	ID        string `json:"id"`
-	Host      string `json:"host"`
-	Share     string `json:"share"`
-	Target    string `json:"target"`
-	Username  string `json:"username"`
-	Password  string `json:"-"`
-	Domain    string `json:"domain"`
-	Version   string `json:"version"`
-	Writable  bool   `json:"writable"`
-	Status    string `json:"status"`
-	Detail    string `json:"detail"`
-	CreatedAt int64  `json:"created_at"`
-	MountedAt int64  `json:"mounted_at"`
+	Kind       string     `json:"kind"`
+	ID         string     `json:"id"`
+	Host       string     `json:"host"`
+	Share      string     `json:"share"`
+	Target     string     `json:"target"`
+	Username   string     `json:"username"`
+	Password   string     `json:"-"`
+	Domain     string     `json:"domain"`
+	Version    string     `json:"version"`
+	Writable   bool       `json:"writable"`
+	Status     string     `json:"status"`
+	Detail     string     `json:"detail"`
+	CreatedAt  int64      `json:"created_at"`
+	MountedAt  int64      `json:"mounted_at"`
+	LastScan   int64      `json:"last_scan"`
+	ScanResult ScanResult `json:"scan_result"`
+	Reused     bool       `json:"reused,omitempty"`
+}
+
+type ScanResult struct {
+	Count     int `json:"count"`
+	Added     int `json:"added"`
+	Updated   int `json:"updated"`
+	Unchanged int `json:"unchanged"`
+	Removed   int `json:"removed"`
 }
 
 // AddMountRequest is the client-supplied share configuration.
@@ -92,6 +105,7 @@ type Track struct {
 	DurationMS   int    `json:"duration_ms"`
 	Decodable    bool   `json:"decodable"`
 	Size         int64  `json:"size"`
+	MtimeNS      int64  `json:"mtime_ns"`
 	ScannedAt    int64  `json:"scanned_at"`
 	CoverHash    string `json:"cover_hash"`
 }
@@ -132,6 +146,28 @@ func (s *Service) AddMount(req AddMountRequest) (Mount, error) {
 	if err != nil {
 		return Mount{}, err
 	}
+	existing, err := s.ListMounts()
+	if err != nil {
+		return Mount{}, err
+	}
+	for _, old := range existing {
+		if !sameSource(old, m) {
+			continue
+		}
+		if old.Status == StatusArchived {
+			_, err = s.db.Exec(`UPDATE mounts SET status=?,detail='',username=?,password=?,domain=?,version=?,writable=? WHERE id=?`,
+				StatusUnmounted, m.Username, m.Password, m.Domain, m.Version, boolInt(m.Writable), old.ID)
+			if err != nil {
+				return Mount{}, err
+			}
+			old, err = s.GetMount(old.ID)
+			if err != nil {
+				return Mount{}, err
+			}
+		}
+		old.Reused = true
+		return old, nil
+	}
 	_, err = s.db.Exec(`INSERT INTO mounts
 		(id,host,share,target,username,password,domain,version,writable,status,detail,created_at,mounted_at,kind)
 		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
@@ -143,14 +179,19 @@ func (s *Service) AddMount(req AddMountRequest) (Mount, error) {
 	return s.GetMount(id)
 }
 
-const mountCols = `id,host,share,target,username,password,domain,version,writable,status,detail,created_at,mounted_at,kind`
+const mountCols = `id,host,share,target,username,password,domain,version,writable,status,detail,created_at,mounted_at,kind,last_scan,scan_result`
 
 func scanMount(row interface{ Scan(...any) error }) (Mount, error) {
 	var m Mount
 	var writable int
+	var result string
 	err := row.Scan(&m.ID, &m.Host, &m.Share, &m.Target, &m.Username, &m.Password, &m.Domain,
-		&m.Version, &writable, &m.Status, &m.Detail, &m.CreatedAt, &m.MountedAt, &m.Kind)
+		&m.Version, &writable, &m.Status, &m.Detail, &m.CreatedAt, &m.MountedAt, &m.Kind, &m.LastScan, &result)
+	if err != nil {
+		return m, err
+	}
 	m.Writable = writable == 1
+	err = json.Unmarshal([]byte(result), &m.ScanResult)
 	return m, err
 }
 
@@ -183,7 +224,25 @@ func (s *Service) ListMounts() ([]Mount, error) {
 	return out, rows.Err()
 }
 
-// DeleteMount unmounts (best effort) and removes the share and its tracks.
+func (s *Service) ArchiveMount(ctx context.Context, id string) (Mount, error) {
+	s.sourceMu.Lock()
+	defer s.sourceMu.Unlock()
+	m, err := s.GetMount(id)
+	if err != nil {
+		return Mount{}, err
+	}
+	if m.Kind != "local" && m.Status == StatusMounted {
+		if err := s.mounts.Unmount(ctx, m.Target); err != nil {
+			return Mount{}, err
+		}
+	}
+	_, err = s.db.ExecContext(ctx, `UPDATE mounts SET status=?,detail='',mounted_at=0,username='',password='',domain='' WHERE id=?`, StatusArchived, id)
+	if err != nil {
+		return Mount{}, err
+	}
+	return s.GetMount(id)
+}
+
 func (s *Service) DeleteMount(ctx context.Context, id string) error {
 	s.sourceMu.Lock()
 	defer s.sourceMu.Unlock()
@@ -192,14 +251,26 @@ func (s *Service) DeleteMount(ctx context.Context, id string) error {
 		return err
 	}
 	if m.Kind != "local" && m.Status == StatusMounted {
-		_ = s.mounts.Unmount(ctx, m.Target)
+		if err := s.mounts.Unmount(ctx, m.Target); err != nil {
+			return err
+		}
 	}
-	if _, err := s.db.Exec(`DELETE FROM tracks WHERE mount_id=?`, id); err != nil {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM tracks WHERE mount_id=?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM mounts WHERE id=?`, id); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
 		return err
 	}
 	s.pruneCovers()
-	_, err = s.db.Exec(`DELETE FROM mounts WHERE id=?`, id)
-	return err
+	return nil
 }
 
 // Mount performs the kernel CIFS mount and records the outcome.
@@ -271,33 +342,53 @@ var audioExts = map[string]bool{
 	".dff": true, ".aiff": true, ".aif": true, ".wma": true, ".alac": true,
 }
 
-// Scan preserves identity and first-added time by relative path across rescans.
 func (s *Service) Scan(ctx context.Context, id string) (int, error) {
+	result, err := s.ScanChanges(ctx, id, false)
+	return result.Count, err
+}
+
+func (s *Service) ScanChanges(ctx context.Context, id string, full bool) (ScanResult, error) {
 	s.sourceMu.Lock()
 	defer s.sourceMu.Unlock()
+	result := ScanResult{}
 	if err := ctx.Err(); err != nil {
-		return 0, err
+		return ScanResult{}, err
 	}
 	m, err := s.GetMount(id)
 	if err != nil {
-		return 0, err
+		return ScanResult{}, err
 	}
 	if m.Status != StatusMounted {
-		return 0, ErrNotMounted
+		return ScanResult{}, ErrNotMounted
 	}
-	// Resolve the root once; never follow symlinks/junctions below it.
+	if m.Kind != "local" {
+		if err := s.mounts.Check(ctx, m.Target); err != nil {
+			return ScanResult{}, err
+		}
+	}
 	root, err := localDirectory(m.Target)
 	if err != nil {
-		return 0, err
+		return ScanResult{}, err
 	}
-	// Merge live rows with identities retained for missing/cleaned tracks.
-	// Release rows before cover writes on the store's single connection.
+	rootInfo, err := os.Stat(root)
+	if err != nil {
+		return ScanResult{}, err
+	}
 	byPath, err := s.scanIdentities(ctx, id)
 	if err != nil {
-		return 0, err
+		return ScanResult{}, err
+	}
+	previous, err := s.ListTracks(id)
+	if err != nil {
+		return ScanResult{}, err
+	}
+	remaining := make(map[string]Track, len(previous))
+	for _, t := range previous {
+		remaining[t.RelPath] = t
 	}
 	now := time.Now().Unix()
-	tracks := []Track{}
+	changed := []Track{}
+	seen := map[string]fs.FileInfo{}
 	err = filepath.WalkDir(root, func(p string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -318,92 +409,140 @@ func (s *Service) Scan(ctx context.Context, id string) (int, error) {
 			}
 			return nil
 		}
-		if d.IsDir() {
-			return nil
-		}
-		if !d.Type().IsRegular() {
-			return nil
-		}
-		if !audioExts[strings.ToLower(filepath.Ext(d.Name()))] {
+		if d.IsDir() || !d.Type().IsRegular() || !audioExts[strings.ToLower(filepath.Ext(d.Name()))] {
 			return nil
 		}
 		info, err := d.Info()
 		if err != nil {
 			return err
 		}
-		pr, err := media.ProbeFile(p)
-		if err != nil {
-			return fmt.Errorf("probe %s: %w", p, err)
-		}
 		rel, err := filepath.Rel(root, p)
 		if err != nil {
 			return err
 		}
 		rel = filepath.ToSlash(rel)
+		oldTrack, live := remaining[rel]
+		delete(remaining, rel)
+		seen[p] = info
+		result.Count++
+		if !full && live && oldTrack.MtimeNS != 0 && oldTrack.MtimeNS == info.ModTime().UnixNano() && oldTrack.Size == info.Size() {
+			result.Unchanged++
+			return nil
+		}
+		pr, err := media.ProbeFile(p)
+		if err != nil {
+			return fmt.Errorf("probe %s: %w", p, err)
+		}
+		tags, err := media.ReadTags(p)
+		var pathErr *os.PathError
+		if errors.As(err, &pathErr) {
+			return err
+		}
 		old, exists := byPath[rel]
 		trackID, addedAt := old.ID, old.AddedAt
 		if !exists {
 			trackID, addedAt = "trk-"+uuid.NewString(), now
 		}
 		title := strings.TrimSuffix(d.Name(), filepath.Ext(d.Name()))
-		artist, album := "", ""
-		tags, _ := media.ReadTags(p)
 		if tags.Title != "" {
 			title = tags.Title
 		}
-		if tags.Artist != "" {
-			artist = tags.Artist
-		}
-		if tags.Album != "" {
-			album = tags.Album
-		}
-		tracks = append(tracks, Track{
+		changed = append(changed, Track{
 			ID: trackID, MountID: id, Path: p, RelPath: rel, AddedAt: addedAt,
-			Title: title, Artist: artist, Album: album, Genre: tags.Genre,
+			Title: title, Artist: tags.Artist, Album: tags.Album, Genre: tags.Genre,
 			AlbumArtist: tags.AlbumArtist, Composer: tags.Composer, Year: tags.Year,
 			DiscNumber: tags.DiscNumber, TrackNumber: tags.TrackNumber,
 			Codec: pr.Codec, Container: pr.Container, Rate: pr.Rate, Channels: pr.Channels,
 			Bits: pr.Bits, TotalSamples: pr.TotalSamples, DurationMS: pr.DurationMS,
-			Decodable: pr.Decodable, Size: info.Size(), ScannedAt: now,
-			CoverHash: s.storeCover(p, pr, now),
+			Decodable: pr.Decodable, Size: info.Size(), MtimeNS: info.ModTime().UnixNano(), ScannedAt: now,
 		})
+		if live {
+			result.Updated++
+		} else {
+			result.Added++
+		}
 		return nil
 	})
 	if err != nil {
-		return 0, err
+		return ScanResult{}, err
 	}
+	result.Removed = len(remaining)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return 0, err
+		return ScanResult{}, err
 	}
 	defer tx.Rollback()
 	if err := rememberTrackIdentities(ctx, tx, id); err != nil {
-		return 0, err
+		return ScanResult{}, err
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM tracks WHERE mount_id=?`, id); err != nil {
-		return 0, err
+	for _, t := range remaining {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM tracks WHERE id=?`, t.ID); err != nil {
+			return ScanResult{}, err
+		}
 	}
-	for _, t := range tracks {
+	for _, t := range changed {
+		t.CoverHash, err = storeCover(ctx, tx, t.Path, t.Container, now)
+		if err != nil {
+			return ScanResult{}, err
+		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO tracks
 			(id,mount_id,path,rel_path,title,artist,album,codec,container,rate,channels,bits,
 			 total_samples,duration_ms,decodable,size,scanned_at,cover_hash,added_at,genre,
-			 album_artist,composer,year,disc_number,track_number)
-			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			 album_artist,composer,year,disc_number,track_number,mtime_ns)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+			ON CONFLICT(id) DO UPDATE SET path=excluded.path,title=excluded.title,artist=excluded.artist,
+			album=excluded.album,codec=excluded.codec,container=excluded.container,rate=excluded.rate,
+			channels=excluded.channels,bits=excluded.bits,total_samples=excluded.total_samples,
+			duration_ms=excluded.duration_ms,decodable=excluded.decodable,size=excluded.size,
+			scanned_at=excluded.scanned_at,cover_hash=excluded.cover_hash,genre=excluded.genre,
+			album_artist=excluded.album_artist,composer=excluded.composer,year=excluded.year,
+			disc_number=excluded.disc_number,track_number=excluded.track_number,mtime_ns=excluded.mtime_ns`,
 			t.ID, t.MountID, t.Path, t.RelPath, t.Title, t.Artist, t.Album, t.Codec, t.Container,
 			t.Rate, t.Channels, t.Bits, t.TotalSamples, t.DurationMS, boolInt(t.Decodable), t.Size,
 			t.ScannedAt, t.CoverHash, t.AddedAt, t.Genre, t.AlbumArtist, t.Composer,
-			t.Year, t.DiscNumber, t.TrackNumber); err != nil {
-			return 0, err
+			t.Year, t.DiscNumber, t.TrackNumber, t.MtimeNS); err != nil {
+			return ScanResult{}, err
+		}
+	}
+	if m.Kind != "local" {
+		if err := s.mounts.Check(ctx, m.Target); err != nil {
+			return ScanResult{}, err
+		}
+	}
+	finalRoot, err := os.Stat(root)
+	if err != nil {
+		return ScanResult{}, err
+	}
+	if !os.SameFile(rootInfo, finalRoot) {
+		return ScanResult{}, fmt.Errorf("扫描期间源目录发生变化，保留已有索引")
+	}
+	for p, before := range seen {
+		if err := ctx.Err(); err != nil {
+			return ScanResult{}, err
+		}
+		after, err := os.Lstat(p)
+		if err != nil {
+			return ScanResult{}, err
+		}
+		if !after.Mode().IsRegular() || !os.SameFile(before, after) || before.Size() != after.Size() || !before.ModTime().Equal(after.ModTime()) {
+			return ScanResult{}, fmt.Errorf("扫描期间文件发生变化，保留已有索引：%s", p)
 		}
 	}
 	if err := rememberTrackIdentities(ctx, tx, id); err != nil {
-		return 0, err
+		return ScanResult{}, err
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		return ScanResult{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE mounts SET last_scan=?,scan_result=? WHERE id=?`, time.Now().Unix(), string(encoded), id); err != nil {
+		return ScanResult{}, err
 	}
 	if err := tx.Commit(); err != nil {
-		return 0, err
+		return ScanResult{}, err
 	}
 	s.pruneCovers()
-	return len(tracks), nil
+	return result, nil
 }
 
 // Live catalog rows take precedence (including legacy added_at=0). Missing rows
@@ -442,23 +581,27 @@ func rememberTrackIdentities(ctx context.Context, tx *sql.Tx, mountID string) er
 	return err
 }
 
-// storeCover extracts embedded FLAC art and caches it content-addressed. Cover
-// failures never fail a scan: the track simply keeps its placeholder art.
-func (s *Service) storeCover(p string, pr media.ProbeResult, now int64) string {
-	if pr.Container != "flac" {
-		return ""
+func storeCover(ctx context.Context, tx *sql.Tx, p, container string, now int64) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if container != "flac" {
+		return "", nil
 	}
 	c, err := media.ReadFLACCover(p)
-	if err != nil || len(c.Data) == 0 {
-		return ""
+	if err != nil {
+		if errors.Is(err, media.ErrNoCover) {
+			return "", nil
+		}
+		return "", err
 	}
 	sum := sha256.Sum256(c.Data)
 	hash := hex.EncodeToString(sum[:])
-	if _, err := s.db.Exec(`INSERT OR IGNORE INTO covers (hash,mime,data,created_at) VALUES(?,?,?,?)`,
+	if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO covers (hash,mime,data,created_at) VALUES(?,?,?,?)`,
 		hash, c.MIME, c.Data, now); err != nil {
-		return ""
+		return "", err
 	}
-	return hash
+	return hash, nil
 }
 
 // pruneCovers drops cached art only when neither tracks nor history reference it.
@@ -482,7 +625,7 @@ func (s *Service) GetCover(hash string) (string, []byte, error) {
 
 const trackCols = `id,mount_id,path,rel_path,title,artist,album,codec,container,rate,channels,bits,
 	total_samples,duration_ms,decodable,size,scanned_at,cover_hash,added_at,genre,
-	album_artist,composer,year,disc_number,track_number`
+	album_artist,composer,year,disc_number,track_number,mtime_ns`
 
 func scanTrack(row interface{ Scan(...any) error }) (Track, error) {
 	var t Track
@@ -490,7 +633,7 @@ func scanTrack(row interface{ Scan(...any) error }) (Track, error) {
 	err := row.Scan(&t.ID, &t.MountID, &t.Path, &t.RelPath, &t.Title, &t.Artist, &t.Album,
 		&t.Codec, &t.Container, &t.Rate, &t.Channels, &t.Bits, &t.TotalSamples, &t.DurationMS,
 		&decodable, &t.Size, &t.ScannedAt, &t.CoverHash, &t.AddedAt, &t.Genre,
-		&t.AlbumArtist, &t.Composer, &t.Year, &t.DiscNumber, &t.TrackNumber)
+		&t.AlbumArtist, &t.Composer, &t.Year, &t.DiscNumber, &t.TrackNumber, &t.MtimeNS)
 	t.Decodable = decodable == 1
 	return t, err
 }

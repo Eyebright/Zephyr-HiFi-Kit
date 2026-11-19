@@ -21,10 +21,14 @@ import (
 type fakeRunner struct {
 	calls []string
 	err   error
+	onRun func(context.Context, string, ...string) (string, error)
 }
 
-func (f *fakeRunner) Run(_ context.Context, name string, args ...string) (string, error) {
+func (f *fakeRunner) Run(ctx context.Context, name string, args ...string) (string, error) {
 	f.calls = append(f.calls, name+" "+strings.Join(args, " "))
+	if f.onRun != nil {
+		return f.onRun(ctx, name, args...)
+	}
 	return "", f.err
 }
 
@@ -70,19 +74,58 @@ func TestAddMountValidatesAndComputesTarget(t *testing.T) {
 	}
 }
 
-func TestAddMountWindowsDedupe(t *testing.T) {
-	if runtime.GOOS != "windows" {
-		t.Skip("windows UNC targets only")
+func TestAddMountReusesSameSourceAcrossPlatforms(t *testing.T) {
+	run := &fakeRunner{}
+	s, _ := newService(t, run, t.TempDir())
+	first, err := s.AddMount(AddMountRequest{Host: "NAS.local", Share: "music", Username: "original", Password: "synthetic-original"})
+	if err != nil || first.Reused {
+		t.Fatalf("new source: %+v %v", first, err)
 	}
-	s, _ := newService(t, &fakeRunner{}, "/mnt/zephyr")
-	if _, err := s.AddMount(AddMountRequest{Host: "nas", Share: "music"}); err != nil {
-		t.Fatal(err)
+	for _, host := range []string{"nas.local", "NAS.LOCAL", " NaS.Local "} {
+		got, err := s.AddMount(AddMountRequest{Host: host, Share: "music", Username: "replacement", Password: "synthetic-replacement"})
+		if err != nil || !got.Reused {
+			t.Fatalf("reuse %q: %+v %v", host, got, err)
+		}
+		got.Reused = false
+		if got != first {
+			t.Fatalf("duplicate changed existing configuration: before=%+v after=%+v", first, got)
+		}
 	}
-	if _, err := s.AddMount(AddMountRequest{Host: "nas", Share: "music"}); err == nil {
-		t.Fatal("expected duplicate UNC share rejection")
+	for _, req := range []AddMountRequest{
+		{Host: "nas.local", Share: "Music"},
+		{Host: "nas.local", Share: "other"},
+		{Host: "other.local", Share: "music"},
+	} {
+		got, err := s.AddMount(req)
+		if err != nil || got.Reused || got.ID == first.ID {
+			t.Fatalf("distinct source must get a new ID: %+v %v", got, err)
+		}
 	}
-	if _, err := s.AddMount(AddMountRequest{Host: "nas", Share: "other"}); err != nil {
-		t.Fatalf("different share must be allowed: %v", err)
+	mounts, err := s.ListMounts()
+	if err != nil || len(mounts) != 4 || len(run.calls) != 0 {
+		t.Fatalf("registration must not mount or create duplicate rows: mounts=%+v calls=%v err=%v", mounts, run.calls, err)
+	}
+}
+
+func TestSameSourceCaseRules(t *testing.T) {
+	root := t.TempDir()
+	for _, test := range []struct {
+		name string
+		a, b Mount
+		want bool
+	}{
+		{"DNS host folds case", Mount{Kind: "smb", Host: "NAS.local", Share: "music"}, Mount{Kind: "smb", Host: "nas.LOCAL", Share: "music"}, true},
+		{"share preserves case", Mount{Kind: "smb", Host: "nas", Share: "Music"}, Mount{Kind: "smb", Host: "nas", Share: "music"}, false},
+		{"local display label is not identity", Mount{Kind: "local", Target: root, Share: "old"}, Mount{Kind: "local", Target: root, Share: "new"}, true},
+		{"local path preserves case on every OS", Mount{Kind: "local", Target: filepath.Join(root, "Music")}, Mount{Kind: "local", Target: filepath.Join(root, "music")}, false},
+		{"different local path", Mount{Kind: "local", Target: filepath.Join(root, "one")}, Mount{Kind: "local", Target: filepath.Join(root, "two")}, false},
+		{"kind is part of identity", Mount{Kind: "local", Target: root}, Mount{Kind: "smb", Target: root}, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := sameSource(test.a, test.b); got != test.want {
+				t.Fatalf("sameSource = %v, want %v", got, test.want)
+			}
+		})
 	}
 }
 
@@ -493,8 +536,12 @@ func TestScanPreservesIdentityAndFirstAddedTime(t *testing.T) {
 		default:
 			t.Fatalf("unexpected path: %+v", tr)
 		}
-		if tr.ScannedAt < start || tr.ScannedAt > end {
-			t.Fatalf("scan time must refresh independently: %+v", tr)
+		if tr.RelPath == "legacy.wav" {
+			if tr.ScannedAt != 1 {
+				t.Fatalf("unchanged track must retain its metadata scan time: %+v", tr)
+			}
+		} else if tr.ScannedAt < start || tr.ScannedAt > end {
+			t.Fatalf("changed track scan time must refresh independently: %+v", tr)
 		}
 	}
 	if newTrack.ID == "" {
@@ -546,20 +593,23 @@ func TestScanPreservesIdentityAndFirstAddedTime(t *testing.T) {
 }
 
 func TestScanFailurePreservesCatalog(t *testing.T) {
-	for _, mode := range []string{"missing root", "canceled", "insert failure"} {
+	for _, mode := range []string{"missing root", "canceled", "probe permission failure", "insert failure", "statistics failure"} {
 		t.Run(mode, func(t *testing.T) {
-			s, st := newService(t, &fakeRunner{}, "/mnt/zephyr")
+			s, st := newService(t, &fakeRunner{}, t.TempDir())
 			target := t.TempDir()
-			m := insertMounted(t, s, target)
+			m := addMountedLocalSource(t, s, target)
 			buildWAV(t, filepath.Join(target, "a.wav"))
 			buildWAV(t, filepath.Join(target, "b.wav"))
-			if _, err := s.Scan(context.Background(), m.ID); err != nil {
+			assertScanChanges(t, s, m.ID, false, ScanResult{Count: 2, Added: 2})
+			// Make attempted writes observable even when two scans share a second.
+			if _, err := st.DB.Exec(`UPDATE mounts SET last_scan=1 WHERE id=?`, m.ID); err != nil {
 				t.Fatal(err)
 			}
-			before, err := s.ListTracks(m.ID)
-			if err != nil {
+			if err := os.Remove(filepath.Join(target, "a.wav")); err != nil {
 				t.Fatal(err)
 			}
+			addWAVTags(t, filepath.Join(target, "b.wav"), [2]string{"INAM", "Changed"})
+			buildWAV(t, filepath.Join(target, "c.wav"))
 			ctx := context.Background()
 			switch mode {
 			case "missing root":
@@ -570,20 +620,266 @@ func TestScanFailurePreservesCatalog(t *testing.T) {
 				var cancel context.CancelFunc
 				ctx, cancel = context.WithCancel(ctx)
 				cancel()
+			case "probe permission failure":
+				p := filepath.Join(target, "b.wav")
+				if err := os.Chmod(p, 0); err != nil {
+					t.Skipf("cannot deny file reads: %v", err)
+				}
+				t.Cleanup(func() { _ = os.Chmod(p, 0o600) })
+				if f, err := os.Open(p); err == nil {
+					f.Close()
+					t.Skip("host permits reads despite chmod (Windows or privileged user)")
+				}
 			case "insert failure":
 				if _, err := st.DB.Exec(`CREATE TRIGGER fail_rescan BEFORE INSERT ON tracks
 					WHEN NEW.rel_path='b.wav' BEGIN SELECT RAISE(ABORT, 'test insertion failure'); END`); err != nil {
 					t.Fatal(err)
 				}
+			case "statistics failure":
+				if _, err := st.DB.Exec(`CREATE TRIGGER fail_scan_statistics BEFORE UPDATE OF last_scan ON mounts
+					BEGIN SELECT RAISE(ABORT, 'test statistics failure'); END`); err != nil {
+					t.Fatal(err)
+				}
 			}
-			if n, err := s.Scan(ctx, m.ID); err == nil || n != 0 {
-				t.Fatalf("expected failed scan: %d, %v", n, err)
+			before := snapshotSourceCatalog(t, s, m.ID)
+			result, err := s.ScanChanges(ctx, m.ID, false)
+			if err == nil || result != (ScanResult{}) {
+				t.Fatalf("expected failed scan with no partial result: %+v, %v", result, err)
 			}
-			after, err := s.ListTracks(m.ID)
-			if err != nil || !reflect.DeepEqual(before, after) {
-				t.Fatalf("failed scan changed catalog:\nbefore=%+v\nafter=%+v\nerr=%v", before, after, err)
+			if mode == "canceled" && !errors.Is(err, context.Canceled) {
+				t.Fatalf("cancellation error lost: %v", err)
 			}
+			assertSourceCatalogUnchanged(t, s, m.ID, before)
 		})
+	}
+}
+
+// Include cached covers and historical identities, not only visible track rows.
+// Every query is against newService's disposable test database.
+type sourceCatalogSnapshot struct {
+	Mount      Mount
+	Tracks     []Track
+	Identities map[string]backupTrackIdentity
+	Covers     map[string]string
+}
+
+func snapshotSourceCatalog(t *testing.T, s *Service, id string) sourceCatalogSnapshot {
+	t.Helper()
+	var out sourceCatalogSnapshot
+	var err error
+	out.Mount, err = s.GetMount(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out.Tracks, err = s.ListTracks(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out.Identities = make(map[string]backupTrackIdentity)
+	rows, err := s.db.Query(`SELECT id,mount_id,rel_path,added_at FROM track_identities WHERE mount_id=?`, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var v backupTrackIdentity
+		if err := rows.Scan(&v.ID, &v.MountID, &v.RelPath, &v.AddedAt); err != nil {
+			rows.Close()
+			t.Fatal(err)
+		}
+		out.Identities[v.RelPath] = v
+	}
+	rowErr := rows.Err()
+	rows.Close()
+	if rowErr != nil {
+		t.Fatal(rowErr)
+	}
+	rows, err = s.db.Query(`SELECT hash,mime,data,created_at FROM covers`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	out.Covers = make(map[string]string)
+	for rows.Next() {
+		var hash, mime string
+		var data []byte
+		var createdAt int64
+		if err := rows.Scan(&hash, &mime, &data, &createdAt); err != nil {
+			t.Fatal(err)
+		}
+		encoded, err := json.Marshal([]any{mime, data, createdAt})
+		if err != nil {
+			t.Fatal(err)
+		}
+		out.Covers[hash] = string(encoded)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+func assertSourceCatalogUnchanged(t *testing.T, s *Service, id string, before sourceCatalogSnapshot) {
+	t.Helper()
+	after := snapshotSourceCatalog(t, s, id)
+	if before.Mount != after.Mount {
+		t.Error("failed operation changed mount state or last successful scan statistics")
+	}
+	if !reflect.DeepEqual(before.Tracks, after.Tracks) {
+		t.Error("failed operation changed track rows")
+	}
+	if !reflect.DeepEqual(before.Identities, after.Identities) {
+		t.Error("failed operation changed historical track identities")
+	}
+	if !reflect.DeepEqual(before.Covers, after.Covers) {
+		t.Errorf("failed operation changed cover cache: %d rows before, %d rows after", len(before.Covers), len(after.Covers))
+	}
+}
+
+func TestSMBScanCheckFailurePreservesCatalog(t *testing.T) {
+	for _, mode := range []string{"disconnected before scan", "disconnected after scan", "canceled after scan", "file removed after scan"} {
+		t.Run(mode, func(t *testing.T) {
+			run := &fakeRunner{}
+			s, st := newService(t, run, t.TempDir())
+			target := t.TempDir()
+			m := insertMounted(t, s, target)
+			p := filepath.Join(target, "song.wav")
+			buildWAV(t, p)
+			assertScanChanges(t, s, m.ID, false, ScanResult{Count: 1, Added: 1})
+			wantCall := "findmnt --noheadings --types cifs --mountpoint " + target
+			if !reflect.DeepEqual(run.calls, []string{wantCall, wantCall}) {
+				t.Fatalf("SMB scans must check before and after walking: %v", run.calls)
+			}
+			if _, err := st.DB.Exec(`UPDATE mounts SET last_scan=1 WHERE id=?`, m.ID); err != nil {
+				t.Fatal(err)
+			}
+			before := snapshotSourceCatalog(t, s, m.ID)
+			if mode == "disconnected before scan" {
+				// An externally unmounted share looks like an empty local directory.
+				if err := os.Remove(p); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				addWAVTags(t, p, [2]string{"INAM", "Modified before failure"})
+				buildWAV(t, filepath.Join(target, "new.wav"))
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			disconnected := errors.New("synthetic disconnected share")
+			checks := 0
+			run.onRun = func(_ context.Context, name string, args ...string) (string, error) {
+				if name+" "+strings.Join(args, " ") != wantCall {
+					t.Fatalf("unexpected SMB scan command: %s %v", name, args)
+				}
+				checks++
+				if mode == "disconnected before scan" || (mode == "disconnected after scan" && checks == 2) {
+					return "", disconnected
+				}
+				if checks == 2 {
+					switch mode {
+					case "canceled after scan":
+						cancel()
+					case "file removed after scan":
+						if err := os.Remove(p); err != nil {
+							t.Fatal(err)
+						}
+					}
+				}
+				return "", nil
+			}
+			result, err := s.ScanChanges(ctx, m.ID, false)
+			if err == nil || result != (ScanResult{}) {
+				t.Fatalf("failed scan returned partial success: %+v %v", result, err)
+			}
+			wantChecks := 2
+			if mode == "disconnected before scan" {
+				wantChecks = 1
+			}
+			if checks != wantChecks {
+				t.Fatalf("check calls = %d, want %d", checks, wantChecks)
+			}
+			if strings.HasPrefix(mode, "disconnected") && !errors.Is(err, disconnected) {
+				t.Fatalf("connection error lost: %v", err)
+			}
+			if mode == "canceled after scan" && !errors.Is(err, context.Canceled) {
+				t.Fatalf("cancellation error lost: %v", err)
+			}
+			assertSourceCatalogUnchanged(t, s, m.ID, before)
+		})
+	}
+}
+
+func TestFailedScanDoesNotWriteNewCovers(t *testing.T) {
+	for _, mode := range []string{"connection failure", "canceled", "cover write failure", "transaction failure"} {
+		t.Run(mode, func(t *testing.T) {
+			run := &fakeRunner{}
+			s, st := newService(t, run, t.TempDir())
+			target := t.TempDir()
+			m := insertMounted(t, s, target)
+			buildWAV(t, filepath.Join(target, "known.wav"))
+			assertScanChanges(t, s, m.ID, false, ScanResult{Count: 1, Added: 1})
+			before := snapshotSourceCatalog(t, s, m.ID)
+			buildFLACCover(t, filepath.Join(target, "new-cover.flac"), maintenancePNG(t, 93))
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			checks := 0
+			run.onRun = func(_ context.Context, name string, _ ...string) (string, error) {
+				if name != "findmnt" {
+					t.Fatalf("unexpected scan command: %s", name)
+				}
+				checks++
+				if checks == 2 {
+					switch mode {
+					case "connection failure":
+						return "", errors.New("synthetic disconnect after cover read")
+					case "canceled":
+						cancel()
+					}
+				}
+				return "", nil
+			}
+			if mode == "cover write failure" {
+				if _, err := st.DB.Exec(`CREATE TRIGGER fail_cover_insert BEFORE INSERT ON covers
+					BEGIN SELECT RAISE(ABORT, 'synthetic cover write failure'); END`); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if mode == "transaction failure" {
+				if _, err := st.DB.Exec(`CREATE TRIGGER fail_scan_cover BEFORE UPDATE OF last_scan ON mounts
+					BEGIN SELECT RAISE(ABORT, 'synthetic commit failure'); END`); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if result, err := s.ScanChanges(ctx, m.ID, false); err == nil || result != (ScanResult{}) {
+				t.Fatalf("expected failed scan: %+v %v", result, err)
+			}
+			assertSourceCatalogUnchanged(t, s, m.ID, before)
+		})
+	}
+}
+
+func TestArchiveUnmountFailurePreservesCatalog(t *testing.T) {
+	run := &fakeRunner{}
+	s, st := newService(t, run, t.TempDir())
+	target := t.TempDir()
+	m := insertMounted(t, s, target)
+	p := filepath.Join(target, "song.wav")
+	buildWAV(t, p)
+	assertScanChanges(t, s, m.ID, false, ScanResult{Count: 1, Added: 1})
+	if _, err := st.DB.Exec(`UPDATE mounts SET username='synthetic-user',password='synthetic-password',domain='synthetic-domain',last_scan=1 WHERE id=?`, m.ID); err != nil {
+		t.Fatal(err)
+	}
+	before := snapshotSourceCatalog(t, s, m.ID)
+	run.calls = nil
+	run.err = errors.New("synthetic unmount failure")
+	if _, err := s.ArchiveMount(context.Background(), m.ID); !errors.Is(err, run.err) {
+		t.Fatalf("archive swallowed unmount failure: %v", err)
+	}
+	if !reflect.DeepEqual(run.calls, []string{"umount " + target}) {
+		t.Fatalf("wrong archive command: %v", run.calls)
+	}
+	assertSourceCatalogUnchanged(t, s, m.ID, before)
+	if _, err := os.Stat(p); err != nil {
+		t.Fatalf("failed archive removed the original file: %v", err)
 	}
 }
 

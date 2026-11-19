@@ -17,7 +17,16 @@ set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$ROOT"
 
-VERSION="${VERSION:-0.4.3}"
+VERSION="${VERSION:-0.50}"
+case "$VERSION" in
+  [0-9]*) ;;
+  *) echo "version must start with a digit" >&2; exit 1 ;;
+esac
+case "$VERSION" in
+  *[!A-Za-z0-9._-]*|*..*) echo "unsafe version: $VERSION" >&2; exit 1 ;;
+esac
+DEST="$ROOT/release/Zephyr-HiFi-Kit-terminal-$VERSION.apk"
+[ ! -e "$DEST" ] && [ ! -L "$DEST" ] || { echo "refusing existing output: $DEST" >&2; exit 1; }
 ABIS="${ABIS:-arm64-v8a armeabi-v7a}"
 
 if [ -x "$HOME/sdk/go/bin/go" ]; then
@@ -73,6 +82,18 @@ keyPassword=$KEY_PASSWORD
 EOF
 fi
 
+# Include the bilingual release instructions in the APK's assets, without
+# touching the Android runtime/version configuration maintained separately.
+DOCS="$ROOT/android/app/src/main/assets/release-docs/$VERSION"
+[ ! -L "$DOCS" ] || { echo "refusing symlink output: $DOCS" >&2; exit 1; }
+if [ -e "$DOCS" ]; then
+  [ -d "$DOCS" ] && [ -z "$(find "$DOCS" -mindepth 1 -print -quit)" ] || {
+    echo "refusing nonempty output: $DOCS" >&2; exit 1;
+  }
+fi
+mkdir -p "$DOCS"
+cp "$ROOT/README.md" "$ROOT/README.cn.md" "$ROOT/README.en.md" "$ROOT/INSTALL.md" "$ROOT/LICENSE" "$DOCS/"
+
 echo "== assembling APK (Gradle) =="
 command -v gradle >/dev/null 2>&1 || { echo "gradle not found on PATH" >&2; exit 1; }
 ( cd "$ROOT/android" && gradle --no-daemon "-PzephyrVersion=$VERSION" assembleRelease )
@@ -80,7 +101,6 @@ command -v gradle >/dev/null 2>&1 || { echo "gradle not found on PATH" >&2; exit
 APK="$ROOT/android/app/build/outputs/apk/release/app-release.apk"
 [ -f "$APK" ] || { echo "!! APK not produced at $APK" >&2; exit 1; }
 mkdir -p "$ROOT/release"
-DEST="$ROOT/release/zephyr-terminal-$VERSION.apk"
 cp "$APK" "$DEST"
 echo "== done: $DEST =="
 ls -la "$DEST"

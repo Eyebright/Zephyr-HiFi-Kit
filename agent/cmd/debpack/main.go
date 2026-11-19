@@ -104,14 +104,14 @@ func buildDeb(agentBin, unit, env, postinst, prerm, installSh []byte, version, a
 	}
 
 	depends := "systemd, apt, dpkg, alsa-utils"
-	shortDesc := "HiFiHub terminal agent and local web console"
+	shortDesc := "Zephyr HiFi Kit terminal agent and local web console"
 	longDesc := ` Local console to install, enable, disable and uninstall server-provided
  audio services (RoonBridge, NAA, AirPlay, UPnP/DLNA), monitor terminal
  performance, and reboot or shutdown. Applications are distributed solely
- by the HiFiHub management server.`
+ by the Zephyr HiFi Kit management server.`
 	if audio {
 		depends += ", libasound2 | libasound2t64"
-		shortDesc = "HiFiHub terminal agent with ZAT audio playback"
+		shortDesc = "Zephyr HiFi Kit terminal agent with ZAT audio playback"
 		longDesc = ` Terminal agent with the ZAT audio sink: receives PCM pushed by the
  music server and renders it bit-perfect through ALSA, plus the local web
  console for service management, terminal monitoring and power control.
@@ -121,7 +121,7 @@ func buildDeb(agentBin, unit, env, postinst, prerm, installSh []byte, version, a
 	control := fmt.Sprintf(`Package: hifihub-agent
 Version: %s
 Architecture: %s
-Maintainer: HiFiHub <hifihub@localhost>
+Maintainer: Zephyr HiFi Kit <services@zephyr.hk>
 Depends: %s
 Section: sound
 Priority: optional
