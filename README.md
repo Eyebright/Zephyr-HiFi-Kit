@@ -11,6 +11,7 @@ A music playback and management kit for local libraries and network terminals, w
 - [简体中文 README](README.cn.md)
 - [English README](README.en.md)
 - [安装与部署 / Installation guide](INSTALL.md) — 含 Windows 服务端配置 / includes Windows server setup
+- [版本更新记录 / Changelog](CHANGELOG.md)
 
 [项目仓库 / Repository](https://github.com/Eyebright/Zephyr-HiFi-Kit) · [官网 / Website](https://www.zephyr.hk) · services@zephyr.hk
 

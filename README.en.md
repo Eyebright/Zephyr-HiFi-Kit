@@ -2,7 +2,7 @@
 
 **和风HiFi音乐播放套件 · Version 0.54 · Release tag `v0.54`**
 
-[Language selection](README.md) · [简体中文](README.cn.md) · [Installation guide](INSTALL.md)
+[Language selection](README.md) · [简体中文](README.cn.md) · [Installation guide](INSTALL.md) · [Changelog](CHANGELOG.md)
 
 Zephyr HiFi Kit connects music files, a searchable library and network playback terminals. The server reads local directories or NAS shares, provides an embedded web console, manages playback queues and streams audio through ZAT (Zephyr Audio Transport). It also provides terminal enrollment, software delivery, licensing and maintenance.
 

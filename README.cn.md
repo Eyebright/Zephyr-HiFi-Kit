@@ -2,7 +2,7 @@
 
 **版本 0.54 · 发布标签 `v0.54`**
 
-[语言入口](README.md) · [English](README.en.md) · [安装与部署](INSTALL.md)
+[语言入口](README.md) · [English](README.en.md) · [安装与部署](INSTALL.md) · [版本更新](CHANGELOG.md)
 
 Zephyr HiFi Kit 把音乐文件、曲库和播放终端连接起来：服务端读取本地目录或 NAS 共享，通过内嵌 Web 控制台浏览音乐、管理播放队列，再经 ZAT（Zephyr Audio Transport）向终端推送音频。同时保留终端注册、软件下发、授权与维护功能。
 
