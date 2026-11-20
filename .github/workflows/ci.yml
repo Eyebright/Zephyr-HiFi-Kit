@@ -588,5 +588,5 @@ jobs:
           ( cd "$assets" && find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\0' \
               | LC_ALL=C sort -z | xargs -0 sha256sum > SHA256SUMS )
           ( cd "$assets" && sha256sum --check --strict SHA256SUMS )
-          gh release upload "$GITHUB_REF_NAME" "$assets/SHA256SUMS" --clobber
+          gh release upload "$GITHUB_REF_NAME" "$assets/SHA256SUMS" "$assets/$legacy.tar.gz" --clobber
           gh release edit "$GITHUB_REF_NAME" --draft=false
