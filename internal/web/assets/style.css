@@ -598,6 +598,10 @@ select.inp option { background: var(--card); color: var(--text); }
   background: linear-gradient(135deg, hsl(var(--h) 55% 24% / .6), hsl(calc(var(--h) + 45) 50% 15% / .55));
 }
 img.cover { object-fit: cover; background: none; }
+img.cover.lb-art, img.cover.big {
+  object-fit: contain;
+  background: radial-gradient(circle at 50% 42%, rgba(255,255,255,.05), rgba(5,7,10,.55) 72%);
+}
 .cover.thumb { width: 52px; height: 52px; }
 .cover.big { width: 180px; height: 180px; border-radius: var(--r-md); }
 .al-cover img.al-img {

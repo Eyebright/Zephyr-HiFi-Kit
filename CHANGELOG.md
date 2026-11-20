@@ -3,6 +3,16 @@
 和风HiFi音乐播放套件。最新版本在前，版本号与 Git 标签、GitHub Releases 一致。
 Newest first; version numbers match Git tags and GitHub Releases.
 
+## 0.57 — 2026-11-20
+
+**中文**
+- 修复：音乐库专辑列表使用的 `img.cover.lb-art` 仍会裁切图片；现与专辑网格一致改为完整显示。
+- 说明：0.57 是 0.56 的封面显示修复版，其余 0.56 内容不变。
+
+**English**
+- Fix: album-list covers (`img.cover.lb-art`) still cropped; they now display in full like the album grid.
+- 0.57 is a cover-display bugfix on top of 0.56.
+
 ## 0.56 — 2026-11-20
 
 **中文**
