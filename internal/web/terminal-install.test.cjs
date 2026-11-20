@@ -8,7 +8,7 @@ const vm = require("node:vm");
 const source = fs.readFileSync(path.join(__dirname, "assets", "terminal-install.js"), "utf8");
 const clone = value => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
 const noSources = "没有适用于该终端发行版的第三方 APT 源（发行版自带软件包无需额外源）";
-const error = (message, status) => Object.assign(new Error(message), { status });
+const error = (message, status, code) => Object.assign(new Error(message), { status, code });
 function deferred() {
   let resolve, reject;
   const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
@@ -63,7 +63,7 @@ function harness() {
         throw error("未模拟的读取 " + url, 404);
       }
       if (method === "POST") {
-        if (h.noSources && url.endsWith("/apt-sources/apply")) throw error(noSources, 400);
+        if (h.noSources && url.endsWith("/apt-sources/apply")) throw error(noSources, 400, "apt_sources_empty");
         if (url === "/jobs" || /\/nodes\/[^/]+\/(commands|apt-sources\/apply)$/.test(url)) return { id: "task-" + h.calls.length, status: "pending" };
       }
       throw new Error("禁止未声明的 API：" + method + " " + url);
@@ -84,6 +84,7 @@ function harness() {
   };
   sandbox.window = sandbox;
   vm.createContext(sandbox);
+  for (const file of ["i18n.js", "i18n-features.js", "i18n-errors.js"]) vm.runInContext(fs.readFileSync(path.join(__dirname, "assets", file), "utf8"), sandbox);
   vm.runInContext(source, sandbox, { filename: "terminal-install.js" });
   h.context = sandbox;
   h.open = ids => sandbox.openTerminalInstall(ids);
@@ -273,11 +274,22 @@ test("APT posts sources then packages per node; only the precise no-extra-source
     assert.deepEqual(h.posts()[1].body, { type: "apt-install", params: { packages: ["mpd"] } });
     assert.match(h.body(), /提交成功，等待终端执行/);
   });
-  for (const failure of [error("其他错误：无需额外源？", 400), error(noSources, 403), error("源请求超时", undefined)]) await t.test(failure.message + failure.status, async () => {
+  for (const failure of [error("其他错误：无需额外源？", 400), error(noSources, 400), error(noSources, 403, "apt_sources_empty"), error("源请求超时", undefined)]) await t.test(failure.message + failure.status, async () => {
     const h = harness(); h.intercept = (method, url) => { if (method === "POST" && url.endsWith("/apt-sources/apply")) throw failure; };
     await ready(h); await h.action("submit"); await h.action("submit");
     assert.equal(h.posts().length, 1); assert.match(h.body(), /不会自动重试/);
   });
+});
+
+test("APT no-source handling uses the stable code in every UI language", async () => {
+  for (const locale of ["zh-CN", "zh-TW", "en"]) {
+    const h = harness();
+    vm.runInContext(`I18n.setPreference(${JSON.stringify(locale)})`, h.context);
+    h.intercept = (method, url) => { if (method === "POST" && url.endsWith("/apt-sources/apply")) throw error("No external APT sources", 400, "apt_sources_empty"); };
+    await ready(h); await h.action("submit");
+    assert.equal(h.posts().length, 2, locale);
+    assert.equal(h.posts()[1].body.type, "apt-install");
+  }
 });
 
 test("per-terminal errors preserve preceding tasks, continue confirmed targets and never retry", async () => {

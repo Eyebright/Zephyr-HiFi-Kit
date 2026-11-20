@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#080a0e">
-<meta name="description" content="Zephyr HiFi Kit（和风HiFi音乐播放套件）运维控制台 — 主页、音乐库、终端中心、设置与操作日志">
-<title>Zephyr HiFi Kit · 运维控制台</title>
+<meta name="description" data-i18n-content="core.description" content="Zephyr HiFi Kit（和风HiFi音乐播放套件）运维控制台 — 主页、音乐库、终端中心、设置与操作日志">
+<title data-i18n="core.title">Zephyr HiFi Kit · 运维控制台</title>
 <link rel="stylesheet" href="/style.css">
 <link rel="stylesheet" href="/library-browser.css">
 <link rel="stylesheet" href="/settings.css">
@@ -20,16 +20,16 @@
 <div class="bg-grain" aria-hidden="true"></div>
 
 <div id="app">
-  <button type="button" id="nav-backdrop" data-act="xp-nav-close" aria-label="关闭导航" tabindex="-1" hidden></button>
-  <aside id="sidebar" aria-label="主导航">
-    <button type="button" id="mobile-nav-close" class="icon-btn" data-act="xp-nav-close" aria-label="关闭导航"><svg class="ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  <button type="button" id="nav-backdrop" data-act="xp-nav-close" aria-label="关闭导航" data-i18n-aria-label="core.closeNavigation" tabindex="-1" hidden></button>
+  <aside id="sidebar" aria-label="主导航" data-i18n-aria-label="core.navigation">
+    <button type="button" id="mobile-nav-close" class="icon-btn" data-act="xp-nav-close" aria-label="关闭导航" data-i18n-aria-label="core.closeNavigation"><svg class="ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     <div class="brand">
       <div class="brand-mark" aria-hidden="true">
         <svg width="36" height="36" viewBox="0 0 34 34"><defs><linearGradient id="brandg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f6a821"/><stop offset="1" stop-color="#ffd479"/></linearGradient></defs><rect x="1" y="1" width="32" height="32" rx="9" fill="url(#brandg)"/><path d="M10 12h14l-14 10h14" stroke="#080a0e" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </div>
       <div class="brand-text">
         <div class="brand-name">Zephyr HiFi Kit</div>
-        <div class="brand-sub">和风HiFi音乐播放套件</div>
+        <div class="brand-sub" data-i18n="core.brand">和风HiFi音乐播放套件</div>
       </div>
       <div class="eq" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
     </div>
@@ -37,7 +37,7 @@
       <span id="brand-ver" class="ver-chip mono">v—</span>
       <span id="health-line" class="health-line">正在连接服务器…</span>
     </div>
-    <nav id="nav" class="nav" aria-label="主导航"></nav>
+    <nav id="nav" class="nav" aria-label="主导航" data-i18n-aria-label="core.navigation"></nav>
     <div class="side-foot">
       <div class="lbl">Zephyr HiFi Kit</div>
       <a href="mailto:services@zephyr.hk">services@zephyr.hk</a>
@@ -47,15 +47,15 @@
 
   <div class="main">
     <header class="topbar">
-      <button type="button" id="mobile-nav-toggle" class="icon-btn" data-act="xp-nav-toggle" aria-label="打开主导航" aria-controls="sidebar" aria-expanded="false"><svg class="ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+      <button type="button" id="mobile-nav-toggle" class="icon-btn" data-act="xp-nav-toggle" aria-label="打开主导航" data-i18n-aria-label="core.openNavigation" aria-controls="sidebar" aria-expanded="false"><svg class="ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
       <div class="search-box">
         <svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-        <input id="global-search" type="search" placeholder="搜索当前视图…（按 / 聚焦）" autocomplete="off" spellcheck="false" aria-label="全局搜索">
+        <input id="global-search" type="search" placeholder="搜索当前视图…（按 / 聚焦）" data-i18n-placeholder="core.searchPlaceholder" autocomplete="off" spellcheck="false" aria-label="全局搜索" data-i18n-aria-label="core.search">
       </div>
       <div class="top-right">
-        <div id="conn" class="conn ok" title="服务器连接状态"><span class="sdot live"></span><span id="conn-text">已连接</span></div>
+        <div id="conn" class="conn ok" title="服务器连接状态" data-i18n-title="core.connection"><span class="sdot live"></span><span id="conn-text">已连接</span></div>
         <button type="button" id="xp-account" class="btn ghost sm" data-act="settings-open" data-section="profile" aria-label="管理员与偏好"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0116 0v2"/></svg><span id="xp-account-label" class="xp-account-label">管理员</span></button>
-        <button class="icon-btn bell" data-act="bell" title="告警中心" aria-label="告警中心">
+        <button class="icon-btn bell" data-act="bell" title="告警中心" data-i18n-title="core.alerts" aria-label="告警中心" data-i18n-aria-label="core.alerts">
           <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 01-3.4 0"/></svg>
           <span id="bell-count" class="bell-count hidden">0</span>
         </button>
@@ -71,6 +71,11 @@
 <div id="modal-root"></div>
 <div id="confirm-root"></div>
 <div id="toast-root" class="toast-root" aria-live="assertive"></div>
+<script src="/i18n.js"></script>
+<script src="/i18n-app.js"></script>
+<script src="/i18n-settings.js"></script>
+<script src="/i18n-features.js"></script>
+<script src="/i18n-errors.js"></script>
 <script src="/app.js"></script>
 <script src="/library-browser.js"></script>
 <script src="/settings.js"></script>

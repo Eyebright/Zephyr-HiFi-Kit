@@ -127,6 +127,7 @@ func (a *API) routes() {
 	a.route("POST /api/v1/settings/logout", a.logoutSettingsAdmin)
 	a.route("GET /api/v1/settings/profile", a.getSettingsProfile)
 	a.route("PATCH /api/v1/settings/profile", a.updateSettingsProfile)
+	a.registerSettingsLanguageRoutes()
 	a.route("PATCH /api/v1/settings/onboarding", a.updateSettingsOnboarding)
 	a.route("GET /api/v1/settings/maintenance", a.settingsMaintenance)
 	a.route("POST /api/v1/settings/backup", a.exportSettingsBackup)
@@ -316,31 +317,179 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 }
 
 type apiError struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-	Detail  string `json:"detail,omitempty"`
-	TraceID string `json:"trace_id"`
+	Code          string         `json:"code"`
+	Message       string         `json:"message"`
+	Error         *string        `json:"error,omitempty"`
+	Detail        string         `json:"detail,omitempty"`
+	TraceID       string         `json:"trace_id"`
+	MessageCode   string         `json:"message_code"`
+	MessageParams map[string]any `json:"message_params,omitempty"`
 }
 
+func newAPIError(code, message, detail string) apiError {
+	return apiError{Code: code, Message: message, Detail: detail, TraceID: uuid.NewString(), MessageCode: "errors." + code}
+}
+
+// The original diagnostic strings and legacy codes are never translated.
 func writeErr(w http.ResponseWriter, status int, code, message, detail string) {
-	writeJSON(w, status, apiError{Code: code, Message: message, Detail: detail, TraceID: uuid.NewString()})
+	writeJSON(w, status, newAPIError(code, message, detail))
 }
 
-// fail maps service errors to HTTP responses.
-func fail(w http.ResponseWriter, err error) {
+// fail preserves the legacy status/code contract while giving known service
+// errors a more specific localized summary, including wrapped sentinel errors.
+func fail(w http.ResponseWriter, err error, fallback ...string) {
+	status, code := http.StatusBadRequest, "bad_request"
 	switch {
 	case errors.Is(err, catalog.ErrNotFound):
-		writeErr(w, http.StatusNotFound, "not_found", err.Error(), "")
+		status, code = http.StatusNotFound, "not_found"
 	case errors.Is(err, license.ErrInactive), errors.Is(err, task.ErrNodeUnauthorized):
-		writeErr(w, http.StatusConflict, "license_required", err.Error(), "")
+		status, code = http.StatusConflict, "license_required"
+	}
+	body := newAPIError(code, err.Error(), "")
+	if len(fallback) > 0 && fallback[0] != "" {
+		code = fallback[0]
+	}
+	body.MessageCode = "errors." + serviceErrorCode(err, code)
+	var input *inputError
+	if errors.As(err, &input) {
+		body.MessageParams = input.params
+	}
+	writeJSON(w, status, body)
+}
+
+// writeError keeps the management API's original error field and adds the
+// standard envelope. Callers with product-owned text use writeErrorCode;
+// callers holding an error use writeServiceError before losing its identity.
+func writeError(w http.ResponseWriter, status int, msg string) {
+	writeErrorCode(w, status, statusErrorCode(status), msg)
+}
+
+func writeErrorCode(w http.ResponseWriter, status int, code, msg string, params ...map[string]any) {
+	if code == "" {
+		code = statusErrorCode(status)
+	}
+	body := newAPIError(code, msg, "")
+	body.Error = &body.Message
+	if len(params) > 0 {
+		body.MessageParams = params[0]
+	}
+	writeJSON(w, status, body)
+}
+
+func writeServiceError(w http.ResponseWriter, status int, err error, fallback ...string) {
+	code := statusErrorCode(status)
+	if len(fallback) > 0 && fallback[0] != "" {
+		code = fallback[0]
+	}
+	var params map[string]any
+	var input *inputError
+	if errors.As(err, &input) {
+		params = input.params
+	}
+	writeErrorCode(w, status, serviceErrorCode(err, code), err.Error(), params)
+}
+
+func statusErrorCode(status int) string {
+	switch status {
+	case http.StatusBadRequest:
+		return "bad_request"
+	case http.StatusUnauthorized:
+		return "unauthorized"
+	case http.StatusForbidden:
+		return "forbidden"
+	case http.StatusNotFound:
+		return "not_found"
+	case http.StatusMethodNotAllowed:
+		return "method_not_allowed"
+	case http.StatusRequestTimeout:
+		return "request_timeout"
+	case http.StatusConflict:
+		return "conflict"
+	case http.StatusRequestEntityTooLarge:
+		return "request_too_large"
+	case http.StatusUnsupportedMediaType:
+		return "unsupported_media_type"
+	case http.StatusUnprocessableEntity:
+		return "unprocessable_entity"
+	case http.StatusTooManyRequests:
+		return "too_many_requests"
+	case http.StatusBadGateway:
+		return "bad_gateway"
+	case http.StatusServiceUnavailable:
+		return "service_unavailable"
+	case http.StatusGatewayTimeout:
+		return "gateway_timeout"
 	default:
-		writeErr(w, http.StatusBadRequest, "bad_request", err.Error(), "")
+		return "internal_error"
 	}
 }
 
-// writeError emits the compact {error: message} shape used by management APIs.
-func writeError(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, map[string]string{"error": msg})
+// inputError carries authored validation metadata without changing its legacy
+// diagnostic string. Parameter values remain data, never HTML or translation keys.
+type inputError struct {
+	code, diagnostic string
+	params           map[string]any
+}
+
+func (e *inputError) Error() string { return e.diagnostic }
+
+func invalidInput(code, diagnostic string, params ...map[string]any) error {
+	err := &inputError{code: code, diagnostic: diagnostic}
+	if len(params) > 0 {
+		err.params = params[0]
+	}
+	return err
+}
+
+// Classify by error identity only, never by matching translated sentences or
+// user-supplied text. Unknown errors retain an operation/status-level summary.
+func serviceErrorCode(err error, fallback string) string {
+	var input *inputError
+	if errors.As(err, &input) {
+		return input.code
+	}
+	switch {
+	case errors.Is(err, catalog.ErrNotFound):
+		return "not_found"
+	case errors.Is(err, license.ErrInactive):
+		return "license_required"
+	case errors.Is(err, task.ErrNodeUnauthorized):
+		return "node_unauthorized"
+	case errors.Is(err, node.ErrPlaying):
+		return "node_playing"
+	case errors.Is(err, commands.ErrPlaying):
+		return "upgrade_playing"
+	case errors.Is(err, commands.ErrPlayingInstall):
+		return "install_playing"
+	case errors.Is(err, update.ErrBusy):
+		return "update_busy"
+	case errors.Is(err, rollouts.ErrRingBusy):
+		return "rollout_ring_busy"
+	case errors.Is(err, zatserver.ErrNotConnected):
+		return "zat_not_connected"
+	case errors.Is(err, zatserver.ErrUnknownDevice):
+		return "unknown_audio_device"
+	case errors.Is(err, zatserver.ErrNoSession):
+		return "no_playback_session"
+	case errors.Is(err, zatserver.ErrQueueEmpty):
+		return "queue_empty"
+	case errors.Is(err, zatserver.ErrQueueEnd):
+		return "queue_end"
+	case errors.Is(err, zatserver.ErrQueueIndex):
+		return "queue_index_invalid"
+	case errors.Is(err, library.ErrNotMounted):
+		return "source_not_mounted"
+	case errors.Is(err, library.ErrLibraryBusy):
+		return "library_busy"
+	case errors.Is(err, library.ErrInvalidLibraryBackup):
+		return "backup_invalid"
+	case errors.Is(err, library.ErrInvalidLibraryCleanup):
+		return "cleanup_invalid"
+	case errors.Is(err, library.ErrLibraryMaintenance):
+		return "maintenance_failed"
+	default:
+		return fallback
+	}
 }
 
 // clientIP extracts the remote host without the port.

@@ -96,7 +96,12 @@ func (a *API) publishBom(w http.ResponseWriter, r *http.Request) {
 	}
 	rep, err := a.boms.Publish(r.PathValue("id"), ver, r.URL.Query().Get("arch"))
 	if err != nil {
-		writeJSON(w, http.StatusConflict, map[string]any{"error": err.Error(), "report": rep})
+		body := newAPIError(serviceErrorCode(err, "bom_publish_failed"), err.Error(), "")
+		body.Error = &body.Message
+		writeJSON(w, http.StatusConflict, struct {
+			apiError
+			Report any `json:"report"`
+		}{body, rep})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"published": true, "report": rep})
@@ -108,12 +113,12 @@ func (a *API) importBom(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	raw, err := io.ReadAll(r.Body)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "读取请求体失败")
+		writeErrorCode(w, http.StatusBadRequest, "request_body_unreadable", "读取请求体失败")
 		return
 	}
 	var b domain.Bom
 	if err := json.Unmarshal(raw, &b); err != nil {
-		writeError(w, http.StatusBadRequest, "请求体不是合法 JSON")
+		writeErrorCode(w, http.StatusBadRequest, "bad_json", "请求体不是合法 JSON")
 		return
 	}
 	if b.BomID == "" {
@@ -125,12 +130,12 @@ func (a *API) importBom(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if b.BomID == "" {
-		writeError(w, http.StatusBadRequest, "bom_id 不能为空")
+		writeErrorCode(w, http.StatusBadRequest, "bom_id_required", "bom_id 不能为空")
 		return
 	}
 	b, err = a.boms.Import(b)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeServiceError(w, http.StatusBadRequest, err, "bom_import_failed")
 		return
 	}
 	writeJSON(w, http.StatusCreated, b)
@@ -140,12 +145,12 @@ func (a *API) importBom(w http.ResponseWriter, r *http.Request) {
 func (a *API) exportBom(w http.ResponseWriter, r *http.Request) {
 	ver, err := strconv.Atoi(r.PathValue("ver"))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "version 必须是整数")
+		writeErrorCode(w, http.StatusBadRequest, "bad_version", "version 必须是整数")
 		return
 	}
 	b, err := a.boms.Get(r.PathValue("id"), ver)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "BOM 版本不存在")
+		writeErrorCode(w, http.StatusNotFound, "bom_version_not_found", "BOM 版本不存在")
 		return
 	}
 	w.Header().Set("Content-Disposition",
@@ -159,20 +164,20 @@ func (a *API) rollbackBom(w http.ResponseWriter, r *http.Request) {
 		Version int `json:"version"`
 	}
 	if err := decode(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "请求体不是合法 JSON")
+		writeErrorCode(w, http.StatusBadRequest, "bad_json", "请求体不是合法 JSON")
 		return
 	}
 	if body.Version <= 0 {
-		writeError(w, http.StatusBadRequest, "version 必须为正整数")
+		writeErrorCode(w, http.StatusBadRequest, "positive_integer_required", "version 必须为正整数", map[string]any{"field": "version"})
 		return
 	}
 	b, err := a.boms.Rollback(r.PathValue("id"), body.Version)
 	if err != nil {
 		if errors.Is(err, catalog.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "BOM 版本不存在")
+			writeErrorCode(w, http.StatusNotFound, "bom_version_not_found", "BOM 版本不存在")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServiceError(w, http.StatusInternalServerError, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, b)

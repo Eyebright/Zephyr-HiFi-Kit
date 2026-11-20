@@ -30,7 +30,7 @@ func TestServesIndex(t *testing.T) {
 		t.Fatalf("index shell missing expected markers")
 	}
 	previous := -1
-	for _, script := range []string{"app.js", "library-browser.js", "settings.js", "experience.js", "favorites.js", "terminal-center.js", "terminal-install.js"} {
+	for _, script := range []string{"i18n.js", "i18n-app.js", "i18n-settings.js", "i18n-features.js", "i18n-errors.js", "app.js", "library-browser.js", "settings.js", "experience.js", "favorites.js", "terminal-center.js", "terminal-install.js"} {
 		marker := `<script src="/` + script + `"></script>`
 		at := strings.Index(body, marker)
 		if at <= previous || strings.Count(body, marker) != 1 {
@@ -62,7 +62,7 @@ func TestIndexHasGlobalPlayerBarRoot(t *testing.T) {
 
 func TestServesAssets(t *testing.T) {
 	h := Handler()
-	for _, p := range []string{"/style.css", "/app.js", "/library-browser.js", "/library-browser.css", "/settings.js", "/settings.css", "/experience.js", "/experience.css", "/favorites.js", "/favorites.css", "/terminal-center.js", "/terminal-center.css", "/terminal-install.js"} {
+	for _, p := range []string{"/i18n.js", "/i18n-app.js", "/i18n-settings.js", "/i18n-features.js", "/i18n-errors.js", "/style.css", "/app.js", "/library-browser.js", "/library-browser.css", "/settings.js", "/settings.css", "/experience.js", "/experience.css", "/favorites.js", "/favorites.css", "/terminal-center.js", "/terminal-center.css", "/terminal-install.js"} {
 		rec := get(t, h, p)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("%s status = %d, want 200", p, rec.Code)
@@ -83,6 +83,15 @@ func TestServesAssets(t *testing.T) {
 	js := get(t, h, "/app.js")
 	if !strings.Contains(js.Body.String(), "/api/v1") {
 		t.Fatalf("app.js missing real API wiring")
+	}
+}
+
+func TestConsoleResourcesRevalidateAfterUpgrade(t *testing.T) {
+	h := Handler()
+	for _, path := range []string{"/", "/app.js", "/i18n.js", "/i18n-app.js", "/some/deep/link"} {
+		if got := get(t, h, path).Header().Get("Cache-Control"); got != "no-cache" {
+			t.Fatalf("%s cache-control = %q", path, got)
+		}
 	}
 }
 

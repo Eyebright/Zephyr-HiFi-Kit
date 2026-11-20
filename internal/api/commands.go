@@ -16,20 +16,20 @@ func (a *API) createCommand(w http.ResponseWriter, r *http.Request) {
 		Params domain.CommandParams `json:"params"`
 	}
 	if err := decode(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "请求体不是合法 JSON")
+		writeErrorCode(w, http.StatusBadRequest, "bad_json", "请求体不是合法 JSON")
 		return
 	}
 	c, err := a.cmds.Create(r.PathValue("id"), body.Type, body.Params)
 	if err != nil {
 		if errors.Is(err, catalog.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "终端不存在")
+			writeErrorCode(w, http.StatusNotFound, "node_not_found", "终端不存在")
 			return
 		}
 		if commands.IsPlaying(err) {
-			writeError(w, http.StatusConflict, err.Error())
+			writeServiceError(w, http.StatusConflict, err)
 			return
 		}
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeServiceError(w, http.StatusBadRequest, err, "command_invalid")
 		return
 	}
 	writeJSON(w, http.StatusCreated, c)
@@ -38,7 +38,7 @@ func (a *API) createCommand(w http.ResponseWriter, r *http.Request) {
 func (a *API) listCommands(w http.ResponseWriter, r *http.Request) {
 	cs, err := a.cmds.List(r.PathValue("id"), r.URL.Query().Get("status"))
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServiceError(w, http.StatusInternalServerError, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, cs)
@@ -51,18 +51,18 @@ func (a *API) commandResult(w http.ResponseWriter, r *http.Request) {
 		Data   json.RawMessage `json:"data"`
 	}
 	if err := decode(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "请求体不是合法 JSON")
+		writeErrorCode(w, http.StatusBadRequest, "bad_json", "请求体不是合法 JSON")
 		return
 	}
 	c, err := a.cmds.Result(r.PathValue("id"), body.Status, body.Log, body.Data)
 	if err != nil {
 		switch {
 		case errors.Is(err, catalog.ErrNotFound):
-			writeError(w, http.StatusNotFound, "命令不存在")
+			writeErrorCode(w, http.StatusNotFound, "command_not_found", "命令不存在")
 		case c.Status == "done":
-			writeError(w, http.StatusConflict, err.Error())
+			writeServiceError(w, http.StatusConflict, err, "command_result_conflict")
 		default:
-			writeError(w, http.StatusBadRequest, err.Error())
+			writeServiceError(w, http.StatusBadRequest, err, "command_invalid")
 		}
 		return
 	}
@@ -72,7 +72,7 @@ func (a *API) commandResult(w http.ResponseWriter, r *http.Request) {
 func (a *API) nodeOSUpdates(w http.ResponseWriter, r *http.Request) {
 	st, err := a.cmds.OSUpdates(r.PathValue("id"))
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServiceError(w, http.StatusInternalServerError, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, st)
@@ -81,7 +81,7 @@ func (a *API) nodeOSUpdates(w http.ResponseWriter, r *http.Request) {
 func (a *API) nodeNetDiag(w http.ResponseWriter, r *http.Request) {
 	st, err := a.cmds.NetDiag(r.PathValue("id"))
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServiceError(w, http.StatusInternalServerError, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, st)

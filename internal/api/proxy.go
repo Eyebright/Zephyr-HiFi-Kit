@@ -30,12 +30,12 @@ func (a *API) localAPIProxy(w http.ResponseWriter, r *http.Request) {
 func (a *API) proxyToNode(w http.ResponseWriter, r *http.Request, keepPrefix bool) {
 	n, err := a.nodes.Get(r.PathValue("id"))
 	if err != nil || n.IP == "" || n.Status != domain.NodeOnline {
-		writeError(w, http.StatusBadGateway, "终端不在线或不存在，无法连接终端控制台")
+		writeErrorCode(w, http.StatusBadGateway, "node_console_unavailable", "终端不在线或不存在，无法连接终端控制台")
 		return
 	}
 	target, err := url.Parse("http://" + net.JoinHostPort(n.IP, "8080"))
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "终端地址无效")
+		writeErrorCode(w, http.StatusBadGateway, "node_address_invalid", "终端地址无效")
 		return
 	}
 	path := "/" + r.PathValue("rest")
@@ -60,7 +60,7 @@ func (a *API) proxyToNode(w http.ResponseWriter, r *http.Request, keepPrefix boo
 			ResponseHeaderTimeout: 10 * time.Second,
 		},
 		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, _ error) {
-			writeError(w, http.StatusBadGateway, "无法连接终端控制台服务")
+			writeErrorCode(w, http.StatusBadGateway, "node_console_connect_failed", "无法连接终端控制台服务")
 		},
 	}
 	proxy.ServeHTTP(w, r)

@@ -29,32 +29,32 @@ func (a *API) importLocalVersion(w http.ResponseWriter, r *http.Request) {
 	v := req.AppVersion
 	v.AppID = appID
 	if v.Version == "" || v.Arch == "" {
-		writeError(w, http.StatusBadRequest, "version 与 arch 不能为空")
+		writeErrorCode(w, http.StatusBadRequest, "artifact_version_arch_required", "version 与 arch 不能为空")
 		return
 	}
 	if v.Format != "deb" && v.Format != "tar.bz2" {
-		writeError(w, http.StatusBadRequest, "format 仅支持 deb 或 tar.bz2")
+		writeErrorCode(w, http.StatusBadRequest, "artifact_format_invalid", "format 仅支持 deb 或 tar.bz2")
 		return
 	}
 	if !filepath.IsAbs(req.LocalPath) {
-		writeError(w, http.StatusBadRequest, "local_path 必须是服务端本机绝对路径")
+		writeErrorCode(w, http.StatusBadRequest, "local_path_absolute_required", "local_path 必须是服务端本机绝对路径")
 		return
 	}
 	f, err := os.Open(req.LocalPath)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "无法读取本地安装包："+err.Error())
+		writeErrorCode(w, http.StatusBadRequest, "local_artifact_unreadable", "无法读取本地安装包："+err.Error())
 		return
 	}
 	defer f.Close()
 	if st, err := f.Stat(); err != nil || st.IsDir() {
-		writeError(w, http.StatusBadRequest, "local_path 必须指向文件")
+		writeErrorCode(w, http.StatusBadRequest, "local_path_file_required", "local_path 必须指向文件")
 		return
 	}
 	var sig []byte
 	if req.SignaturePath != "" {
 		sig, err = os.ReadFile(req.SignaturePath)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "无法读取签名文件："+err.Error())
+			writeErrorCode(w, http.StatusBadRequest, "signature_file_unreadable", "无法读取签名文件："+err.Error())
 			return
 		}
 	}

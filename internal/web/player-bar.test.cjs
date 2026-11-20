@@ -148,7 +148,7 @@ function harness(t) {
     }
   };
   context.window = context; vm.createContext(context);
-  vm.runInContext(fs.readFileSync(path.join(assets, "app.js"), "utf8"), context);
+  for (const file of ["i18n.js", "i18n-app.js", "i18n-features.js", "i18n-errors.js", "app.js"]) vm.runInContext(fs.readFileSync(path.join(assets, file), "utf8"), context);
   vm.runInContext(fs.readFileSync(path.join(assets, "terminal-center.js"), "utf8"), context);
   vm.runInContext(`req = __request; toast = __toast; Date.now = __now;
     refreshOverview = async () => {}; refreshLibrary = async () => {}; refreshLibraryLive = async () => {};
@@ -188,6 +188,36 @@ function beginControl(h, kind, value) {
   if (kind !== "device") h.run(`onInput({target: $('#${id}')})`);
   return h.run(`CHG['${id}']($('#${id}'))`);
 }
+
+test("language changes preserve live playback controls, pending work and selected metadata", async t => {
+  const h = harness(t); await h.live();
+  h.run("setView('settings'); playerBarBeginRange($('#pb-seek')); PB.volPending=1; PB.devicePending=1");
+  const seek = h.el("pb-seek"), bar = h.el("player-bar"), timer = h.run("polls.get('playback')");
+  seek.value = "45000"; seek.focus();
+  const state = h.json("[PB.id, PB.seq, PB.seekContext, PB.dragging, PB.volPending, PB.devicePending, S.play.a.track_id, S.play.a.session_id]");
+  const calls = h.calls.length;
+  for (const locale of ["en", "zh-TW", "zh-CN"]) {
+    h.run(`I18n.setPreference('${locale}'); appLanguageChanged()`);
+    assert.equal(h.el("player-bar"), bar); assert.equal(h.el("pb-seek"), seek);
+    assert.equal(seek.value, "45000"); assert.equal(h.document.activeElement, seek);
+    assert.equal(h.run("polls.get('playback')"), timer); assert.equal(h.calls.length, calls);
+    assert.deepEqual(h.json("[PB.id, PB.seq, PB.seekContext, PB.dragging, PB.volPending, PB.devicePending, S.play.a.track_id, S.play.a.session_id]"), state);
+    assert.equal(h.el("pb-title").textContent, "Live title");
+    assert.equal(h.el("pb-pause").getAttribute("aria-label"), h.run("appT('m183')"));
+  }
+});
+
+test("asynchronous server language updates translate the already mounted home without navigation", async t => {
+  const h = harness(t); await h.live(); h.run("setView('overview')");
+  const view = h.el("view"), filter = h.el("ov-stat-node"), root = h.el("player-bar");
+  const epoch = h.run("OV.epoch"), count = h.calls.length, timer = h.run("polls.get('view:main')");
+  h.run("I18n.setDefault('en'); appLanguageChanged()");
+  assert.equal(h.el("view"), view); assert.equal(h.el("ov-stat-node"), filter); assert.equal(h.el("player-bar"), root);
+  assert.equal(h.el("ov-greeting").textContent, "Home");
+  assert.equal(h.document.querySelector(".ov-scope").textContent, "ZAT pushes only · Listening across terminals");
+  assert.equal(h.run("OV.epoch"), epoch); assert.equal(h.calls.length, count);
+  assert.equal(h.run("polls.get('view:main')"), timer);
+});
 
 test("index owns a single player root beside view; every view shell excludes it", async t => {
   const h = harness(t), root = h.el("player-bar-root"), view = h.el("view");

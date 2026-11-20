@@ -27,12 +27,26 @@ function harness() {
   };
   context.window = context;
   vm.createContext(context);
-  for (const name of ["app.js", "library-browser.js", "favorites.js"]) vm.runInContext(fs.readFileSync(path.join(__dirname, "assets", name), "utf8"), context);
+  for (const name of ["i18n.js", "i18n-app.js", "i18n-features.js", "i18n-errors.js", "app.js", "library-browser.js", "favorites.js"]) vm.runInContext(fs.readFileSync(path.join(__dirname, "assets", name), "utf8"), context);
   vm.runInContext("req=(method,route,opts)=>__api(method,route,opts?.body ? JSON.parse(opts.body) : undefined); toast=__toast; openPushPicker=__push; const XP={profile:{display_name:'小林'}};", context);
   h.run = source => vm.runInContext(source, context);
   return h;
 }
 function item(id, kind = "track") { return { kind, track_id: id, title: "歌曲 " + id, artist: "艺术家", album: "专辑", missing: false, decodable: true, track_count: 1 }; }
+
+test("translations never rewrite or interpret music metadata", () => {
+  const h = harness();
+  const row = { kind: "track", track_id: "a", title: "管理员", artist: "音乐随心而动", album: "<img src=x onerror=alert(1)>", missing: false, decodable: true };
+  for (const locale of ["zh-CN", "zh-TW", "en"]) {
+    h.run(`I18n.setPreference(${JSON.stringify(locale)})`);
+    const html = h.run(`favoriteRow(${JSON.stringify(row)}, 0, 'library')`);
+    assert.match(html, /管理员/);
+    assert.match(html, /音乐随心而动/);
+    assert.doesNotMatch(html, /<img src=x/);
+    assert.match(html, /&lt;img/);
+    assert.doesNotMatch(html, /features\.\w+/);
+  }
+});
 
 test("player has a distinct heart and a separate album action", () => {
   const h = harness(), html = h.run("playerBarShell()");

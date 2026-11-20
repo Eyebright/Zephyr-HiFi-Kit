@@ -39,13 +39,26 @@ function harness() {
   };
   context.window = context;
   vm.createContext(context);
-  for (const file of ["app.js", "settings.js"]) vm.runInContext(fs.readFileSync(path.join(assets, file), "utf8"), context, { filename: file });
+  for (const file of ["i18n.js", "i18n-app.js", "i18n-settings.js", "i18n-errors.js", "app.js", "settings.js"]) vm.runInContext(fs.readFileSync(path.join(assets, file), "utf8"), context, { filename: file });
   vm.runInContext("setView=__view", context);
   h.run = code => vm.runInContext(code, context);
   h.open = section => h.run(`openSettings(${JSON.stringify(section)})`);
   h.version = () => elements.get("#settings-about-version").textContent;
   return h;
 }
+
+test("settings render translated labels without changing section identifiers", () => {
+  const h = harness();
+  const ids = h.run("JSON.stringify(SETTINGS_SECTIONS.map(s => s[0]))");
+  for (const locale of ["zh-CN", "zh-TW", "en"]) {
+    h.run(`I18n.setPreference(${JSON.stringify(locale)}); SETTINGS.section='about'`);
+    const html = h.run("shellSettings()");
+    assert.equal(h.run("JSON.stringify(SETTINGS_SECTIONS.map(s => s[0]))"), ids);
+    assert.doesNotMatch(html, /settings\.\w+|undefined/);
+    if (locale === "en") assert.doesNotMatch(html, /[\u3400-\u9fff]/);
+    if (locale === "zh-TW") assert.match(html, /設定|關於/);
+  }
+});
 
 test("about is last and removed account/protocol sections fall back safely", () => {
   const h = harness();

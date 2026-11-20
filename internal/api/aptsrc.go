@@ -20,7 +20,7 @@ func (a *API) listAptApps(w http.ResponseWriter, _ *http.Request) {
 
 func (a *API) listAptSources(w http.ResponseWriter, _ *http.Request) {
 	if a.apt == nil {
-		writeError(w, http.StatusServiceUnavailable, "APT 源管理未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "apt_sources_unavailable", "APT 源管理未启用")
 		return
 	}
 	ss, err := a.apt.List()
@@ -33,7 +33,7 @@ func (a *API) listAptSources(w http.ResponseWriter, _ *http.Request) {
 
 func (a *API) createAptSource(w http.ResponseWriter, r *http.Request) {
 	if a.apt == nil {
-		writeError(w, http.StatusServiceUnavailable, "APT 源管理未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "apt_sources_unavailable", "APT 源管理未启用")
 		return
 	}
 	var req domain.AptSource
@@ -43,7 +43,7 @@ func (a *API) createAptSource(w http.ResponseWriter, r *http.Request) {
 	}
 	src, err := a.apt.Create(req)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeServiceError(w, http.StatusBadRequest, err, "apt_source_invalid")
 		return
 	}
 	writeJSON(w, http.StatusCreated, src)
@@ -51,7 +51,7 @@ func (a *API) createAptSource(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) deleteAptSource(w http.ResponseWriter, r *http.Request) {
 	if a.apt == nil {
-		writeError(w, http.StatusServiceUnavailable, "APT 源管理未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "apt_sources_unavailable", "APT 源管理未启用")
 		return
 	}
 	if err := a.apt.Delete(r.PathValue("id")); err != nil {
@@ -65,14 +65,14 @@ func (a *API) deleteAptSource(w http.ResponseWriter, r *http.Request) {
 // that matches the terminal's distro codename.
 func (a *API) applyAptSources(w http.ResponseWriter, r *http.Request) {
 	if a.apt == nil {
-		writeError(w, http.StatusServiceUnavailable, "APT 源管理未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "apt_sources_unavailable", "APT 源管理未启用")
 		return
 	}
 	id := r.PathValue("id")
 	n, err := a.nodes.Get(id)
 	if err != nil {
 		if errors.Is(err, catalog.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "终端不存在")
+			writeErrorCode(w, http.StatusNotFound, "node_not_found", "终端不存在")
 			return
 		}
 		fail(w, err)
@@ -84,13 +84,13 @@ func (a *API) applyAptSources(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(specs) == 0 {
-		writeError(w, http.StatusBadRequest, "没有适用于该终端发行版的第三方 APT 源（发行版自带软件包无需额外源）")
+		writeErrorCode(w, http.StatusBadRequest, "apt_sources_empty", "没有适用于该终端发行版的第三方 APT 源（发行版自带软件包无需额外源）")
 		return
 	}
 	c, err := a.cmds.Create(id, domain.CommandAptSource, domain.CommandParams{Sources: specs})
 	if err != nil {
 		if commands.IsPlaying(err) {
-			writeError(w, http.StatusConflict, err.Error())
+			writeServiceError(w, http.StatusConflict, err)
 			return
 		}
 		fail(w, err)

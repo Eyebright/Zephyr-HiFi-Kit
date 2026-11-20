@@ -1,23 +1,46 @@
 "use strict";
 
+const tcT = (key, params) => I18n.t("features." + key, params);
 const TC = {
   tab: "nodes", epoch: 0, busy: null, admin: false, loading: true,
   errors: [], commands: [], nodeErrors: {}, taskNode: "", taskType: "all", taskState: "all", page: 1,
   detail: null, detailTab: "overview", fleetError: ""
 };
-
+function tcTime(value) {
+  const time = ts(value);
+  return time ? I18n.date(new Date(time * 1000), { dateStyle: "medium", timeStyle: "medium" }) : "—";
+}
+function tcAgo(value) {
+  const time = ts(value); if (!time) return "—";
+  const seconds = Math.max(0, Math.floor(Date.now() / 1000) - time);
+  const [size, unit] = seconds < 60 ? [1, "second"] : seconds < 3600 ? [60, "minute"] : seconds < 86400 ? [3600, "hour"] : [86400, "day"];
+  return I18n.relative(-Math.floor(seconds / size), unit);
+}
+function tcRolloutLabel(state) {
+  const key = { done: "done", failed: "failed", running: "active", pending: "tcAwaitingAdvance" }[state];
+  return key ? tcT(key) : state || tcT("tcStateUnknown");
+}
 function cleanupTerminalCenter() { TC.epoch++; TC.busy = null; TC.loading = true; }
 function shellNodes() {
   return `<section id="terminal-center">
-    <div class="tc-heading"><div><h1>终端中心</h1><p class="hint">选择终端，安装服务，追踪每一次变更。</p></div>
-      <button class="btn ghost sm" data-act="tc-advanced">${icon("sliders", 15)} 高级维护</button></div>
-    <nav class="tc-tabs" aria-label="终端中心工作区">${[["nodes", "终端"], ["tasks", "任务记录"]].map(([tab, name]) => `<button class="btn ghost ${TC.tab === tab ? "active" : ""}" data-act="tc-tab" data-tab="${tab}" aria-pressed="${TC.tab === tab}">${name}</button>`).join("")}</nav>
+    <div class="tc-heading"><div><h1>${esc(tcT("tcTitle"))}</h1><p class="hint">${esc(tcT("tcSubtitle"))}</p></div>
+      <button class="btn ghost sm" data-act="tc-advanced">${icon("sliders", 15)} ${esc(tcT("tcAdvanced"))}</button></div>
+    <nav class="tc-tabs" aria-label="${esc(tcT("tcWorkspace"))}">${[["nodes", tcT("node")], ["tasks", tcT("taskRecords")]].map(([tab, name]) => `<button class="btn ghost ${TC.tab === tab ? "active" : ""}" data-act="tc-tab" data-tab="${tab}" aria-pressed="${TC.tab === tab}">${esc(name)}</button>`).join("")}</nav>
     <div id="tc-access"></div><div id="tc-errors" role="status"></div><div id="tc-workspace">${tcWorkspace()}</div>
   </section>`;
 }
+function terminalCenterLanguageChanged() {
+  const root = $("#terminal-center"); if (!root) return;
+  const next = document.createElement("div"); next.innerHTML = shellNodes();
+  for (const selector of [".tc-heading", ".tc-tabs"]) root.querySelector(selector)?.replaceWith(next.querySelector(selector));
+  const add = root.querySelector("[data-act='wz-open']");
+  if (add) add.innerHTML = icon("plus", 14) + " " + esc(tcT("tcAdd"));
+  paintTerminalFilters(true);
+  paintTerminalCenter();
+}
 function tcWorkspace() {
   if (TC.tab === "tasks") return `<section class="card tc-tasks"><div class="tc-task-filters" id="tc-task-filters"></div><div id="tc-task-list"></div><div id="tc-task-pages" class="tc-pages"></div></section>`;
-  return `<section class="card"><div class="sec-head tc-node-head"><div class="chips" id="nd-chips"></div><div class="spacer"></div><span id="tc-seats" class="hint"></span><button class="btn primary sm" data-act="wz-open">${icon("plus", 14)} 添加终端</button></div><div id="nd-bulk"></div><div id="nd-table"></div></section>`;
+  return `<section class="card"><div class="sec-head tc-node-head"><div class="chips" id="nd-chips"></div><div class="spacer"></div><span id="tc-seats" class="hint"></span><button class="btn primary sm" data-act="wz-open">${icon("plus", 14)} ${esc(tcT("tcAdd"))}</button></div><div id="nd-bulk"></div><div id="nd-table"></div></section>`;
 }
 function tcHere(root, epoch) { return S.view === "nodes" && $("#terminal-center") === root && TC.epoch === epoch; }
 async function refreshTerminalCenter() {
@@ -29,17 +52,17 @@ async function refreshTerminalCenter() {
     if (!tcHere(root, epoch)) return;
     TC.errors = [];
     if (responses[0].status === "rejected") {
-      TC.loading = false; TC.errors.push("终端列表刷新失败，未更新此前数据：" + responses[0].reason.message); paintTerminalCenter(); return;
+      TC.loading = false; TC.errors.push({ key: "tcNodesRefreshFailed", params: { message: responses[0].reason.message } }); paintTerminalCenter(); return;
     }
     S.nodes = responses[0].value || [];
     for (const id of S.sel) if (!S.nodes.some(n => n.node_id === id)) S.sel.delete(id);
-    for (const [i, key, name] of [[1, "jobs", "部署作业"], [2, "rollouts", "灰度记录"]]) {
+    for (const [i, key, nameKey] of [[1, "jobs", "jobType"], [2, "rollouts", "rolloutRecords"]]) {
       if (responses[i].status === "fulfilled") S[key] = responses[i].value || [];
-      else TC.errors.push(name + "刷新失败，以下可能包含旧记录：" + responses[i].reason.message);
+      else TC.errors.push({ key: "tcRecordsRefreshFailed", params: { get name() { return tcT(nameKey); }, message: responses[i].reason.message } });
     }
     S.license = responses[3].status === "fulfilled" ? responses[3].value : null;
     TC.admin = responses[4].status === "fulfilled" && responses[4].value.authenticated === true;
-    if (responses[4].status === "rejected") TC.errors.push("管理员会话状态暂不可用，管理操作需重新验证。");
+    if (responses[4].status === "rejected") TC.errors.push({ key: "tcSessionUnavailable" });
     TC.fleetError = responses[5].status === "rejected" ? responses[5].reason.message : "";
     S.upd.fleet = responses[5].status === "fulfilled" ? responses[5].value : null;
     TC.loading = false;
@@ -62,12 +85,12 @@ async function refreshTerminalCenter() {
     for (const { id, values } of results) {
       const [apps, commands, live] = values;
       if (apps.status === "fulfilled") S.nodeApps[id] = Array.isArray(apps.value) ? apps.value : apps.value?.apps || [];
-      else { S.nodeApps[id] = null; TC.nodeErrors[id] = "应用上报读取失败"; }
+      else { S.nodeApps[id] = null; TC.nodeErrors[id] = "tcAppsReadFailed"; }
       S.nodeSvc[id] = live.status === "fulfilled" && Array.isArray(live.value?.services) ? live.value.services : null;
       if (commands.status === "fulfilled") TC.commands.push(...(commands.value || []));
       else {
         TC.commands.push(...previousCommands.filter(c => c.node_id === id));
-        TC.errors.push(`${tcNodeName(id)}：命令记录刷新失败，未更新此前结果`);
+        TC.errors.push({ key: "tcCommandsRefreshFailed", params: { name: tcNodeName(id) } });
       }
     }
     paintTerminalCenter();
@@ -79,8 +102,8 @@ async function refreshTerminalCenter() {
 function paintTerminalCenter() {
   if (!$("#terminal-center")) return;
   const access = $("#tc-access"), errors = $("#tc-errors");
-  if (access) access.innerHTML = TC.admin ? "" : `<div class="tc-readonly"><span>${icon("lock", 14)} 只读浏览 · 安装与维护需要管理员登录</span><button class="btn ghost xs" data-act="tc-login">前往设置登录</button></div>`;
-  if (errors) errors.innerHTML = TC.errors.length ? `<div class="banner warn"><div>${TC.errors.map(esc).join("<br>")}</div><button class="btn ghost xs" data-act="refresh-view">重新读取</button></div>` : "";
+  if (access) access.innerHTML = TC.admin ? "" : `<div class="tc-readonly"><span>${icon("lock", 14)} ${esc(tcT("tcReadOnly"))}</span><button class="btn ghost xs" data-act="tc-login">${esc(tcT("tcLoginSettings"))}</button></div>`;
+  if (errors) errors.innerHTML = TC.errors.length ? `<div class="banner warn"><div>${TC.errors.map(e => esc(tcT(e.key, e.params))).join("<br>")}</div><button class="btn ghost xs" data-act="refresh-view">${esc(tcT("reload"))}</button></div>` : "";
   if (TC.tab === "nodes") paintNodes(); else { paintTerminalFilters(); paintTerminalTasks(); }
 }
 function setTerminalTab(tab) {
@@ -110,103 +133,104 @@ function paintNodes() { paintNodeChips(); paintBulkBar(); paintNodeTable(); }
 function paintNodeChips() {
   const el = $("#nd-chips"); if (!el) return;
   const counts = { all: S.nodes.length, online: S.nodes.filter(n => n.status === "online").length, offline: S.nodes.filter(n => n.status === "offline").length, playing: S.nodes.filter(n => n.status === "online" && n.playing).length };
-  el.innerHTML = [["all", "全部"], ["online", "在线"], ["offline", "离线"], ["playing", "播放中"]].map(([f, label]) => `<button class="chip ${S.nodeFilter === f ? "active" : ""}" data-act="nd-filter" data-f="${f}" aria-pressed="${S.nodeFilter === f}">${label}<span class="cnt">${counts[f]}</span></button>`).join("");
+  el.innerHTML = ["all", "online", "offline", "playing"].map(f => `<button class="chip ${S.nodeFilter === f ? "active" : ""}" data-act="nd-filter" data-f="${f}" aria-pressed="${S.nodeFilter === f}">${esc(tcT(f))}<span class="cnt">${esc(I18n.number(counts[f]))}</span></button>`).join("");
   const seats = $("#tc-seats");
-  if (seats) seats.textContent = S.license ? `授权 ${S.nodes.filter(n => n.authorized).length} / ${S.license.effective_seats ?? S.license.seats ?? S.license.builtin_seats ?? 3} 台` : "授权状态未读取";
+  if (seats) seats.textContent = S.license ? tcT("tcSeats", { count: I18n.number(S.nodes.filter(n => n.authorized).length), seats: I18n.number(S.license.effective_seats ?? S.license.seats ?? S.license.builtin_seats ?? 3) }) : tcT("tcLicenseUnread");
 }
 function paintBulkBar() {
   const el = $("#nd-bulk"); if (!el) return;
   if (!S.sel.size) { el.innerHTML = ""; return; }
   const visible = filteredNodes().filter(n => S.sel.has(n.node_id)).length;
-  el.innerHTML = `<div class="bulk-bar tc-bulk"><span class="b-cnt">已选 ${S.sel.size} 台${visible < S.sel.size ? `（${S.sel.size - visible} 台不在当前筛选中）` : ""}</span>
-    <button class="btn primary xs" data-act="tc-install">${icon("download", 13)} 安装 / 更新服务</button>
-    <details class="tc-more"><summary>更多操作</summary><div><button class="btn ghost xs" data-act="bulk-auth">批量授权</button><button class="btn ghost xs" data-act="bulk-revoke">批量撤销授权</button><button class="btn ghost danger xs" data-act="bulk-delete">批量注销</button></div></details>
-    <span class="spacer"></span><button class="btn xs ghost" data-act="nd-clear-sel">取消选择</button></div>`;
+  el.innerHTML = `<div class="bulk-bar tc-bulk"><span class="b-cnt">${esc(tcT(visible < S.sel.size ? "tcSelectedHidden" : "tcSelected", { count: I18n.number(S.sel.size), hidden: I18n.number(S.sel.size - visible) }))}</span>
+    <button class="btn primary xs" data-act="tc-install">${icon("download", 13)} ${esc(tcT("installUpdateServices"))}</button>
+    <details class="tc-more"><summary>${esc(tcT("tcMore"))}</summary><div><button class="btn ghost xs" data-act="bulk-auth">${esc(tcT("tcBulkAuth"))}</button><button class="btn ghost xs" data-act="bulk-revoke">${esc(tcT("tcBulkRevoke"))}</button><button class="btn ghost danger xs" data-act="bulk-delete">${esc(tcT("tcBulkDelete"))}</button></div></details>
+    <span class="spacer"></span><button class="btn xs ghost" data-act="nd-clear-sel">${esc(tcT("tcClearSelection"))}</button></div>`;
 }
 function tcServiceSummary(n) {
   const live = S.nodeSvc[n.node_id], apps = S.nodeApps[n.node_id];
   if (n.status === "online" && Array.isArray(live)) {
     const installed = live.filter(s => s.installed);
-    return `<div>${installed.length ? esc(installed.map(s => s.name).join("、")) : "未检测到已装服务"}</div><div class="sub">${installed.length} 项已安装 · ${installed.filter(s => s.running).length} 项运行中</div>`;
+    return `<div>${esc(installed.length ? installed.map(s => s.name).join(" / ") : tcT("tcNoServices"))}</div><div class="sub">${esc(tcT("tcServiceCounts", { installed: I18n.number(installed.length), running: I18n.number(installed.filter(s => s.running).length) }))}</div>`;
   }
-  return `<div>${apps?.length ? esc(apps.map(a => a.app_id).join("、")) : "安装状态未知"}</div><div class="sub">${apps?.length ? "历史上报 · " : ""}${n.status !== "online" ? "终端未在线" : TC.nodeErrors[n.node_id] || (TC.admin ? "实时状态未获取" : "实时检测需登录")}</div>`;
+  const status = tcT(n.status !== "online" ? "tcNodeNotOnline" : TC.nodeErrors[n.node_id] || (TC.admin ? "tcLiveNotLoaded" : "tcLiveLogin"));
+  return `<div>${esc(apps?.length ? apps.map(a => a.app_id).join(" / ") : tcT("tcInstallUnknown"))}</div><div class="sub">${esc(apps?.length ? tcT("tcHistoryStatus", { status }) : status)}</div>`;
 }
 function tcNodeIndicator(n) {
   const fleet = S.upd.fleet?.nodes?.find(x => x.node_id === n.node_id);
   const latest = terminalTaskRecords().filter(t => t.nodes.includes(n.node_id) && t.kind !== "rollout")[0];
-  if (latest?.group === "failed") return badge("最近任务失败", "err");
+  if (latest?.group === "failed") return badge(tcT("tcLatestFailed"), "err");
   if (fleet && !["converged", "unsupported"].includes(fleet.state)) return fleetStateBadge(fleet.state);
   if (latest && ["pending", "active", "waiting", "attention"].includes(latest.group)) return badge(latest.label, "info");
-  return `<span class="sub">${TC.errors.length ? "任务状态未完全同步" : TC.fleetError ? "Agent 更新状态未获取" : "无待处理任务"}</span>`;
+  return `<span class="sub">${esc(tcT(TC.errors.length ? "tcTasksNotSynced" : TC.fleetError ? "tcAgentNotLoaded" : "tcNoPending"))}</span>`;
 }
 function nodeRow(n) {
   const id = n.node_id;
-  return `<tr class="${S.sel.has(id) ? "selected" : ""}"><td><label class="check"><input type="checkbox" data-change="node-sel" data-id="${esc(id)}" aria-label="选择 ${esc(n.alias || id)}" ${S.sel.has(id) ? "checked" : ""}><span class="box"></span></label></td>
-    <td><button class="tc-name" data-act="node-open" data-id="${esc(id)}">${esc(n.alias || shortId(id))}</button><div class="sub mono">${esc(n.ip || "IP 未上报")}</div><div class="sub">${esc([n.distro, n.arch].filter(Boolean).join(" · "))}</div></td>
-    <td>${statusBadge(n.status)}<div class="sub">${n.status === "online" ? n.playing ? "播放中" + (n.active_proto ? " · " + esc(n.active_proto) : "") : "空闲" : "播放状态未知"}</div></td>
-    <td class="tc-service-cell">${tcServiceSummary(n)}</td><td>${tcNodeIndicator(n)}<div class="sub">${n.authorized ? "已授权" : "未授权"}</div></td>
-    <td><div class="acts"><button class="btn xs" data-act="tc-install" data-id="${esc(id)}">安装 / 更新</button><button class="btn ghost xs" data-act="node-open" data-id="${esc(id)}">详情</button></div></td></tr>`;
+  return `<tr class="${S.sel.has(id) ? "selected" : ""}"><td><label class="check"><input type="checkbox" data-change="node-sel" data-id="${esc(id)}" aria-label="${esc(tcT("tcSelectNode", { name: n.alias || id }))}" ${S.sel.has(id) ? "checked" : ""}><span class="box"></span></label></td>
+    <td><button class="tc-name" data-act="node-open" data-id="${esc(id)}">${esc(n.alias || shortId(id))}</button><div class="sub mono">${esc(n.ip || tcT("tcIPNotReported"))}</div><div class="sub">${esc([n.distro, n.arch].filter(Boolean).join(" · "))}</div></td>
+    <td>${statusBadge(n.status)}<div class="sub">${n.status === "online" ? n.playing ? esc(tcT("playing")) + (n.active_proto ? " · " + esc(n.active_proto) : "") : esc(tcT("tcIdle")) : esc(tcT("tcPlaybackUnknown"))}</div></td>
+    <td class="tc-service-cell">${tcServiceSummary(n)}</td><td>${tcNodeIndicator(n)}<div class="sub">${esc(tcT(n.authorized ? "authorized" : "unauthorized"))}</div></td>
+    <td><div class="acts"><button class="btn xs" data-act="tc-install" data-id="${esc(id)}">${esc(tcT("installUpdate"))}</button><button class="btn ghost xs" data-act="node-open" data-id="${esc(id)}">${esc(tcT("details"))}</button></div></td></tr>`;
 }
 function paintNodeTable() {
   const el = $("#nd-table"); if (!el) return;
   const list = filteredNodes(), all = list.length > 0 && list.every(n => S.sel.has(n.node_id));
-  if (TC.loading) { el.innerHTML = empty("refresh", "正在读取终端…", "", true); return; }
-  if (!list.length) { el.innerHTML = empty("server", S.nodes.length ? "没有匹配的终端" : TC.errors.length ? "终端数据不可用，请重新读取" : "还没有终端，添加终端后即可安装服务", "", true); return; }
-  el.innerHTML = `<div class="tbl-wrap"><table class="tbl tc-node-table"><thead><tr><th><label class="check"><input type="checkbox" data-change="node-sel-all" aria-label="选择当前筛选的全部终端" ${all ? "checked" : ""}><span class="box"></span></label></th><th><button class="tc-sort" data-act="nd-sort" data-key="alias">终端 ${S.nodeSort.dir > 0 ? "↑" : "↓"}</button></th><th>连接 / 播放</th><th>已装服务</th><th>任务 / 授权</th><th>操作</th></tr></thead><tbody>${list.map(nodeRow).join("")}</tbody></table></div>`;
+  if (TC.loading) { el.innerHTML = empty("refresh", tcT("tcLoadingNodes"), "", true); return; }
+  if (!list.length) { el.innerHTML = empty("server", tcT(S.nodes.length ? "tcNoMatches" : TC.errors.length ? "tcNodesUnavailable" : "tcNoNodes"), "", true); return; }
+  el.innerHTML = `<div class="tbl-wrap"><table class="tbl tc-node-table"><thead><tr><th><label class="check"><input type="checkbox" data-change="node-sel-all" aria-label="${esc(tcT("tcSelectAll"))}" ${all ? "checked" : ""}><span class="box"></span></label></th><th><button class="tc-sort" data-act="nd-sort" data-key="alias">${esc(tcT("node"))} ${S.nodeSort.dir > 0 ? "↑" : "↓"}</button></th><th>${esc(tcT("tcConnectionPlayback"))}</th><th>${esc(tcT("installedServices"))}</th><th>${esc(tcT("tcTaskLicense"))}</th><th>${esc(tcT("tcActions"))}</th></tr></thead><tbody>${list.map(nodeRow).join("")}</tbody></table></div>`;
   const select = $("[data-change=node-sel-all]"); if (select) select.indeterminate = !all && list.some(n => S.sel.has(n.node_id));
 }
 
 function terminalTaskRecords() {
   const jobs = S.jobs.map(j => {
     const state = jobState(j), phase = currentPhase(j);
-    return { id: j.id, kind: "job", type: "job", nodes: jobNodes(j), title: `${JOB_ZH[j.kind] || j.kind || "部署"} · ${j.bom_id || "模板未记录"}${j.bom_version ? "@" + j.bom_version : "（版本未记录）"}`, state, label: JOB_ZH[state] || state,
-      group: state === "done" ? "done" : state.startsWith("failed") ? "failed" : state === "queued" ? "pending" : state === "waiting_idle" ? "waiting" : ["suspended", "interrupted"].includes(state) ? "attention" : "active", time: j.created_at, detail: j.reason || JOB_ZH[phase.name] || phase.name || "", raw: j };
+    return { id: j.id, kind: "job", type: "job", nodes: jobNodes(j), title: tcT("tcJobTitle", { kind: JOB_ZH[j.kind] || j.kind || tcT("tcDeploy"), template: j.bom_id || tcT("tcTemplateUnrecorded"), version: j.bom_version ? "@" + j.bom_version : tcT("tcVersionUnrecorded") }), state, label: JOB_ZH[state] || state,
+      group: state === "done" ? "done" : state.startsWith("failed") ? "failed" : state === "queued" ? "pending" : state === "waiting_idle" ? "waiting" : ["suspended", "interrupted"].includes(state) ? "attention" : "active", time: j.created_at, detail: j.reason ? I18n.detail(j, "features.tcJobReason") : JOB_ZH[phase.name] || phase.name || "", raw: j };
   });
   const commands = TC.commands.map(c => {
     const finished = c.status === "done", outcome = finished && ["ok", "err"].includes(c.result_status) ? c.result_status : "";
     return { id: c.id, kind: "command", type: c.type.startsWith("apt-") ? "apt" : c.type === "agent-upgrade" ? "agent" : "system", nodes: [c.node_id], title: CMD_ZH[c.type] || c.type,
-      state: outcome || c.status, label: outcome === "ok" ? "已完成" : outcome === "err" ? "失败" : c.status === "pending" ? "待回报" : "结果未知",
+      state: outcome || c.status, label: tcT(outcome === "ok" ? "done" : outcome === "err" ? "failed" : c.status === "pending" ? "tcAwaitingReport" : "tcResultUnknown"),
       group: outcome === "ok" ? "done" : outcome === "err" ? "failed" : c.status === "pending" ? "pending" : "attention", time: c.created_at,
-      detail: c.params?.packages?.join("、") || c.params?.version || c.type, raw: c };
+      detail: c.params?.packages?.join(" / ") || c.params?.version || c.type, raw: c };
   });
   const rollouts = S.rollouts.map(r => ({ id: r.id, kind: "rollout", type: "rollout", nodes: [...new Set((r.rings || []).flatMap(x => x.nodes || []))], title: r.name || r.id, state: r.status,
-    label: ({ done: "已完成", failed: "失败", running: "进行中", pending: "待推进" })[r.status] || r.status || "状态未知", group: r.status === "done" ? "done" : r.status === "failed" ? "failed" : r.status === "pending" ? "pending" : r.status === "running" ? "active" : "attention", time: r.created_at, detail: `${r.bom_id}@${r.bom_version} · ${(r.rings || []).length} 个环`, raw: r }));
+    label: tcRolloutLabel(r.status), group: r.status === "done" ? "done" : r.status === "failed" ? "failed" : r.status === "pending" ? "pending" : r.status === "running" ? "active" : "attention", time: r.created_at, detail: tcT("tcRingCount", { template: `${r.bom_id}@${r.bom_version}`, count: I18n.number((r.rings || []).length) }), raw: r }));
   return [...jobs, ...commands, ...rollouts].sort((a, b) => ts(b.time) - ts(a.time) || a.id.localeCompare(b.id));
 }
 function filteredTerminalTasks() {
   return terminalTaskRecords().filter(t => (!TC.taskNode || t.nodes.includes(TC.taskNode)) && (TC.taskType === "all" || t.type === TC.taskType) && (TC.taskState === "all" || t.group === TC.taskState) && hit(t.id, t.title, t.detail, t.label, ...t.nodes.map(tcNodeName), ...t.nodes));
 }
-function paintTerminalFilters() {
-  const el = $("#tc-task-filters"); if (!el || el.contains(document.activeElement)) return;
-  const nodes = [["", "全部终端"], ...S.nodes.map(n => [n.node_id, n.alias || shortId(n.node_id)])];
+function paintTerminalFilters(force = false) {
+  const el = $("#tc-task-filters"); if (!el || (!force && el.contains(document.activeElement))) return;
+  const nodes = [["", tcT("tcAllNodes")], ...S.nodes.map(n => [n.node_id, n.alias || shortId(n.node_id)])];
   if (TC.taskNode && !nodes.some(([id]) => id === TC.taskNode)) nodes.push([TC.taskNode, tcNodeName(TC.taskNode)]);
-  const fields = [["node", "终端", TC.taskNode, nodes], ["type", "类型", TC.taskType, [["all", "全部类型"], ["job", "部署作业"], ["apt", "APT 服务 / 源"], ["system", "系统维护 / 诊断"], ["agent", "Agent 更新"], ["rollout", "灰度发布"]]], ["state", "状态", TC.taskState, [["all", "全部状态"], ["pending", "待处理 / 待回报"], ["active", "进行中"], ["waiting", "等待空闲"], ["done", "已完成"], ["failed", "失败"], ["attention", "挂起 / 中断 / 未知"]]]];
-  el.innerHTML = fields.map(([key, label, value, options]) => `<label class="field"><span>${label}</span><select class="inp" data-change="tc-task-filter" data-key="${key}" aria-label="任务${label}">${options.map(([id, name]) => `<option value="${esc(id)}" ${id === value ? "selected" : ""}>${esc(name)}</option>`).join("")}</select></label>`).join("") + `<span class="hint">服务器持久记录 · 待回报不代表正在执行</span>`;
+  const fields = [["node", tcT("node"), TC.taskNode, nodes], ["type", tcT("tcType"), TC.taskType, [["all", tcT("tcAllTypes")], ["job", tcT("jobType")], ["apt", tcT("tcAPTType")], ["system", tcT("tcSystemType")], ["agent", tcT("tcAgentType")], ["rollout", tcT("tcRolloutType")]]], ["state", tcT("status"), TC.taskState, [["all", tcT("tcAllStates")], ["pending", tcT("tcPending")], ["active", tcT("active")], ["waiting", tcT("tcWaitingIdle")], ["done", tcT("done")], ["failed", tcT("failed")], ["attention", tcT("tcAttention")]]]];
+  el.innerHTML = fields.map(([key, label, value, options]) => `<label class="field"><span>${esc(label)}</span><select class="inp" data-change="tc-task-filter" data-key="${key}" aria-label="${esc(tcT("tcTaskFilter", { field: label }))}">${options.map(([id, name]) => `<option value="${esc(id)}" ${id === value ? "selected" : ""}>${esc(name)}</option>`).join("")}</select></label>`).join("") + `<span class="hint">${esc(tcT("tcPersistentNote"))}</span>`;
 }
 function paintTerminalTasks() {
   const el = $("#tc-task-list"), pages = $("#tc-task-pages"); if (!el || !pages) return;
-  if (TC.loading) { el.innerHTML = empty("refresh", "正在读取任务记录…", "", true); pages.innerHTML = ""; return; }
+  if (TC.loading) { el.innerHTML = empty("refresh", tcT("tcLoadingTasks"), "", true); pages.innerHTML = ""; return; }
   const list = filteredTerminalTasks(), count = Math.max(1, Math.ceil(list.length / 25)); TC.page = Math.min(TC.page, count);
-  el.innerHTML = list.length ? `<div class="tbl-wrap"><table class="tbl tc-task-table"><thead><tr><th>任务</th><th>终端</th><th>状态</th><th>创建时间</th><th>记录</th></tr></thead><tbody>${list.slice((TC.page - 1) * 25, TC.page * 25).map(t => `<tr><td><div>${esc(t.title)}</div><div class="sub tc-task-detail">${esc(t.detail)}</div></td><td>${esc(t.nodes.map(tcNodeName).join("、") || "未分配")}</td><td>${badge(t.label, t.group === "failed" ? "err" : t.group === "done" ? "ok" : "info")}<div class="sub mono">${esc(t.state || "unknown")}</div></td><td class="nowrap">${fmtTime(t.time)}</td><td><button class="btn ghost xs" data-act="tc-task-open" data-kind="${t.kind}" data-id="${esc(t.id)}">详情 / 日志</button></td></tr>`).join("")}</tbody></table></div>` : empty("activity", TC.errors.length ? "当前没有可显示的记录；部分数据读取失败" : "没有匹配的任务记录", "", true);
-  pages.innerHTML = `<span class="hint">${list.length} 条记录 · 第 ${TC.page} / ${count} 页</span><span class="spacer"></span><button class="btn ghost sm" data-act="tc-page" data-dir="-1" ${TC.page <= 1 ? "disabled" : ""}>上一页</button><button class="btn ghost sm" data-act="tc-page" data-dir="1" ${TC.page >= count ? "disabled" : ""}>下一页</button>`;
+  el.innerHTML = list.length ? `<div class="tbl-wrap"><table class="tbl tc-task-table"><thead><tr><th>${esc(tcT("tcTask"))}</th><th>${esc(tcT("node"))}</th><th>${esc(tcT("status"))}</th><th>${esc(tcT("createdAt"))}</th><th>${esc(tcT("tcRecord"))}</th></tr></thead><tbody>${list.slice((TC.page - 1) * 25, TC.page * 25).map(t => `<tr><td><div>${esc(t.title)}</div><div class="sub tc-task-detail">${esc(t.detail)}</div></td><td>${esc(t.nodes.map(tcNodeName).join(" / ") || tcT("unassigned"))}</td><td>${badge(t.label, t.group === "failed" ? "err" : t.group === "done" ? "ok" : "info")}<div class="sub mono">${esc(t.state || "unknown")}</div></td><td class="nowrap">${esc(tcTime(t.time))}</td><td><button class="btn ghost xs" data-act="tc-task-open" data-kind="${t.kind}" data-id="${esc(t.id)}">${esc(tcT("tcDetailsLogs"))}</button></td></tr>`).join("")}</tbody></table></div>` : empty("activity", tcT(TC.errors.length ? "tcNoTasksPartial" : "tcNoTasks"), "", true);
+  pages.innerHTML = `<span class="hint">${esc(tcT("tcTaskPages", { count: I18n.number(list.length), page: I18n.number(TC.page), pages: I18n.number(count) }))}</span><span class="spacer"></span><button class="btn ghost sm" data-act="tc-page" data-dir="-1" ${TC.page <= 1 ? "disabled" : ""}>${esc(tcT("previousPage"))}</button><button class="btn ghost sm" data-act="tc-page" data-dir="1" ${TC.page >= count ? "disabled" : ""}>${esc(tcT("nextPage"))}</button>`;
 }
 function terminalTaskBody(t) {
-  let html = `<div class="kv">${kvRow("任务 ID", esc(t.id))}${kvRow("终端", esc(t.nodes.map(tcNodeName).join("、") || "未分配"))}${kvRow("状态", esc(`${t.label} · ${t.state || "unknown"}`))}${kvRow("创建时间", fmtTime(t.time))}</div>`;
+  let html = `<div class="kv">${kvRow(tcT("tcTaskID"), esc(t.id))}${kvRow(tcT("node"), esc(t.nodes.map(tcNodeName).join(" / ") || tcT("unassigned")))}${kvRow(tcT("status"), esc(`${t.label} · ${t.state || "unknown"}`))}${kvRow(tcT("createdAt"), esc(tcTime(t.time)))}</div>`;
   if (t.kind === "command") {
     const c = t.raw;
-    if (c.status === "pending") html += `<div class="banner info mt12">服务器已保存命令，尚未收到完成回报；不能据此判断终端是否正在执行。请先核实记录，不要重复下发。</div>`;
-    if (c.finished_at) html += `<div class="kv mt12">${kvRow("结束时间", fmtTime(c.finished_at))}</div>`;
-    html += `<div class="d-sec"><span class="lbl">参数</span><pre class="log-box">${esc(JSON.stringify(c.params || {}, null, 2))}</pre></div><div class="d-sec"><span class="lbl">执行日志</span><pre class="log-box">${esc(c.log || "尚无日志回报")}</pre></div>`;
-    if (c.data) html += `<div class="d-sec"><span class="lbl">结果数据</span><pre class="log-box">${esc(typeof c.data === "string" ? c.data : JSON.stringify(c.data, null, 2))}</pre></div>`;
+    if (c.status === "pending") html += `<div class="banner info mt12">${esc(tcT("tcPendingWarning"))}</div>`;
+    if (c.finished_at) html += `<div class="kv mt12">${kvRow(tcT("tcFinishedAt"), esc(tcTime(c.finished_at)))}</div>`;
+    html += `<div class="d-sec"><span class="lbl">${esc(tcT("tcParameters"))}</span><pre class="log-box">${esc(JSON.stringify(c.params || {}, null, 2))}</pre></div><div class="d-sec"><span class="lbl">${esc(tcT("tcExecutionLogs"))}</span><pre class="log-box">${esc(c.log || tcT("tcNoLogs"))}</pre></div>`;
+    if (c.data) html += `<div class="d-sec"><span class="lbl">${esc(tcT("tcResultData"))}</span><pre class="log-box">${esc(typeof c.data === "string" ? c.data : JSON.stringify(c.data, null, 2))}</pre></div>`;
   } else {
-    html += `<div class="d-sec"><span class="lbl">逐环记录 · ${esc(t.detail)}</span>${(t.raw.rings || []).map(r => `<div class="tc-ring"><div>${esc(r.name)} · ${r.percent}% · ${esc(r.status)}</div><p class="hint">终端：${esc((r.nodes || []).map(tcNodeName).join("、") || "未分配")}</p><div class="acts">${(r.jobs || []).map(id => `<button class="btn ghost xs" data-act="job-open" data-id="${esc(id)}">作业 ${esc(shortId(id))}</button>`).join("") || '<span class="hint">尚无作业</span>'}</div></div>`).join("")}</div>`;
+    html += `<div class="d-sec"><span class="lbl">${esc(tcT("tcRingRecords", { detail: t.detail }))}</span>${(t.raw.rings || []).map(r => `<div class="tc-ring"><div>${esc(r.name)} · ${esc(I18n.number(Number(r.percent) / 100, { style: "percent", maximumFractionDigits: 2 }))} · ${esc(tcRolloutLabel(r.status))}</div><p class="hint">${esc(tcT("tcRingNodes", { nodes: (r.nodes || []).map(tcNodeName).join(" / ") || tcT("unassigned") }))}</p><div class="acts">${(r.jobs || []).map(id => `<button class="btn ghost xs" data-act="job-open" data-id="${esc(id)}">${esc(tcT("tcJobLink", { id: shortId(id) }))}</button>`).join("") || `<span class="hint">${esc(tcT("tcNoJobs"))}</span>`}</div></div>`).join("")}</div>`;
   }
   return html;
 }
 function openTerminalTask(kind, id) {
   if (kind === "job") return openJobDrawer(id);
   const t = terminalTaskRecords().find(x => x.kind === kind && x.id === id); if (!t) return;
-  openDrawer(esc(t.title), esc(t.id), terminalTaskBody(t), `<button class="btn ghost" data-act="tc-tasks">返回任务记录</button>`, { ctx: { kind: "tc-task", id }, onClose: () => stopPoll("tc:task") });
+  openDrawer(esc(t.title), esc(t.id), terminalTaskBody(t), `<button class="btn ghost" data-act="tc-tasks">${esc(tcT("tcBackTasks"))}</button>`, { ctx: { kind: "tc-task", id }, onClose: () => stopPoll("tc:task") });
   const context = drawerCtx;
   poll("tc:task", async () => {
     if (drawerCtx !== context) return;
@@ -219,7 +243,7 @@ function openTerminalTask(kind, id) {
 
 async function openNodeDrawer(id) {
   TC.detailTab = "overview"; TC.detail = null;
-  openDrawer(esc(tcNodeName(id)), esc(id), empty("refresh", "正在读取终端…", "", true), "", { ctx: { kind: "node", id }, onClose: () => { stopPoll("node:poll"); TC.detail = null; } });
+  openDrawer(esc(tcNodeName(id)), esc(id), empty("refresh", tcT("tcLoadingNodes"), "", true), "", { ctx: { kind: "node", id }, onClose: () => { stopPoll("node:poll"); TC.detail = null; } });
   const context = drawerCtx;
   let busy = false;
   const refresh = async () => {
@@ -235,9 +259,9 @@ async function openNodeDrawer(id) {
       TC.detail = n;
       if (!$("#node-play-dev") || document.activeElement !== $("#node-play-dev")) setDrawerBody(nodeDrawerBody(n, S.nodeApps[id]));
       setDrawerTitle(esc(n.alias || shortId(id)), esc(id));
-      setDrawerFoot(`<button class="btn ghost" data-act="tc-tasks" data-id="${esc(id)}">任务记录</button><div class="spacer"></div><button class="btn primary" data-act="tc-install" data-id="${esc(id)}">安装 / 更新服务</button>`);
+      setDrawerFoot(`<button class="btn ghost" data-act="tc-tasks" data-id="${esc(id)}">${esc(tcT("taskRecords"))}</button><div class="spacer"></div><button class="btn primary" data-act="tc-install" data-id="${esc(id)}">${esc(tcT("installUpdateServices"))}</button>`);
     } catch (e) {
-      if (drawerCtx === context) setDrawerBody(`<div class="banner err">终端详情读取失败：${esc(e.message)}</div><button class="btn ghost" data-act="node-open" data-id="${esc(id)}">重新读取</button>`);
+      if (drawerCtx === context) setDrawerBody(`<div class="banner err">${esc(tcT("tcNodeDetailsFailed", { message: e.message }))}</div><button class="btn ghost" data-act="node-open" data-id="${esc(id)}">${esc(tcT("reload"))}</button>`);
     } finally { busy = false; }
   };
   await refresh();
@@ -245,34 +269,35 @@ async function openNodeDrawer(id) {
 }
 function nodeDrawerBody(n, apps) {
   const id = n.node_id;
-  let html = `<nav class="tc-tabs" aria-label="终端详情">${[["overview", "概况"], ["services", "已装服务"], ["maintenance", "设备与维护"]].map(([key, name]) => `<button class="btn ghost sm ${TC.detailTab === key ? "active" : ""}" data-act="tc-detail-tab" data-tab="${key}" aria-pressed="${TC.detailTab === key}">${name}</button>`).join("")}</nav>`;
-  if (n.status !== "online") html += `<div class="banner warn">终端未在线 · 以下为最近上报数据，不能确认当前安装与运行状态。最近心跳 ${ago(n.last_seen)}</div>`;
+  let html = `<nav class="tc-tabs" aria-label="${esc(tcT("tcNodeDetails"))}">${[["overview", tcT("tcOverview")], ["services", tcT("installedServices")], ["maintenance", tcT("tcMaintenance")]].map(([key, name]) => `<button class="btn ghost sm ${TC.detailTab === key ? "active" : ""}" data-act="tc-detail-tab" data-tab="${key}" aria-pressed="${TC.detailTab === key}">${esc(name)}</button>`).join("")}</nav>`;
+  if (n.status !== "online") html += `<div class="banner warn">${esc(tcT("tcOfflineWarning", { time: tcAgo(n.last_seen) }))}</div>`;
   if (TC.detailTab === "services") {
     const services = n.status === "online" && Array.isArray(S.nodeSvc[id]) ? S.nodeSvc[id].filter(s => s.installed) : null;
-    html += `<p class="hint">只展示已安装服务。系统已有服务不自动接管、升级或卸载；安装与运行状态分别展示。</p>`;
-    if (services) return html + (services.length ? `<div class="tbl-wrap"><table class="tbl tc-services"><thead><tr><th>服务 / 版本</th><th>来源</th><th>运行状态</th></tr></thead><tbody>${services.map(s => `<tr><td>${esc(s.name)}<div class="sub">${esc(s.version || "版本未知")} · ${esc(s.protocol || "协议未上报")}</div><div class="sub mono">${esc(s.unit || s.process || "")}</div></td><td>${tcSourceBadge(s.source)}</td><td>${s.running ? badge("运行中", "ok") : badge("未运行", "muted")}</td></tr>`).join("")}</tbody></table></div>` : empty("box", "当前未检测到已装音频服务", "", true));
-    html += `<div class="banner info">实时检测不可用${TC.admin ? "" : "（需要管理员登录）"}，下方仅为服务端保存的历史上报，不代表当前状态。</div>`;
-    return html + (apps?.length ? `<div class="tbl-wrap"><table class="tbl tc-services"><thead><tr><th>上报应用</th><th>版本</th><th>来源</th><th>当前状态</th></tr></thead><tbody>${apps.map(a => `<tr><td>${esc(a.app_id)}</td><td>${esc(a.version || "未知")}</td><td>${tcSourceBadge(a.source)}</td><td>未知</td></tr>`).join("")}</tbody></table></div>` : empty("box", apps === null ? "历史上报读取失败" : "暂无历史上报，安装状态未知", "", true));
+    html += `<p class="hint">${esc(tcT("tcInstalledNote"))}</p>`;
+    if (services) return html + (services.length ? `<div class="tbl-wrap"><table class="tbl tc-services"><thead><tr><th>${esc(tcT("tcServiceVersion"))}</th><th>${esc(tcT("tcSource"))}</th><th>${esc(tcT("tcRuntimeStatus"))}</th></tr></thead><tbody>${services.map(s => `<tr><td>${esc(s.name)}<div class="sub">${esc(s.version || tcT("versionUnknown"))} · ${esc(s.protocol || tcT("tcProtocolNotReported"))}</div><div class="sub mono">${esc(s.unit || s.process || "")}</div></td><td>${tcSourceBadge(s.source)}</td><td>${s.running ? badge(tcT("tcRunning"), "ok") : badge(tcT("tcNotRunning"), "muted")}</td></tr>`).join("")}</tbody></table></div>` : empty("box", tcT("tcNoAudioServices"), "", true));
+    html += `<div class="banner info">${esc(tcT(TC.admin ? "tcLiveUnavailable" : "tcLiveUnavailableLogin"))}</div>`;
+    return html + (apps?.length ? `<div class="tbl-wrap"><table class="tbl tc-services"><thead><tr><th>${esc(tcT("tcReportedApp"))}</th><th>${esc(tcT("tcVersion"))}</th><th>${esc(tcT("tcSource"))}</th><th>${esc(tcT("tcCurrentStatus"))}</th></tr></thead><tbody>${apps.map(a => `<tr><td>${esc(a.app_id)}</td><td>${esc(a.version || tcT("unknown"))}</td><td>${tcSourceBadge(a.source)}</td><td>${esc(tcT("unknown"))}</td></tr>`).join("")}</tbody></table></div>` : empty("box", tcT(apps === null ? "tcHistoryFailed" : "tcNoHistory"), "", true));
   }
   if (TC.detailTab === "maintenance") {
     const p = S.nodePlay[id] || {}, { devs, cur } = nodePlayDevs(p);
-    return html + `<div class="d-sec"><span class="lbl">设备与播放保护</span><div class="kv">${kvRow("DAC 仲裁", esc(n.dac_arbitration || "未知"))}${kvRow("DAC 设备", esc(n.dac_device || "未上报"))}${kvRow("DAC 占用", n.dac_holder_pid ? `PID ${Number(n.dac_holder_pid)}` : "未报告占用")}${kvRow("播放保护", n.play_protect ? badge("已开启", "ok") : badge("未开启", "warn"))}</div><label class="field mt12">ALSA 输出设备<select id="node-play-dev" class="inp mono" data-change="node-device" data-id="${esc(id)}" ${p.connected && TC.admin ? "" : "disabled"}>${nodePlayOpts(devs, cur)}</select></label><p class="hint">终端上报的输出设备；变更后下次播放生效。</p><button class="btn ghost sm" data-act="node-config" data-id="${esc(id)}">编辑配置与保护</button></div>
-      <div class="d-sec"><span class="lbl">系统维护</span><div class="kv">${kvRow("自动系统更新", n.auto_os_update ? "开启" : "关闭")}${kvRow("系统更新窗口", esc(n.os_window || "未设置"))}${kvRow("Agent 版本", esc(n.agent_version || "未知"))}</div><p class="hint">系统软件包升级与终端 Agent 更新为两条独立流程。</p><div class="acts"><button class="btn ghost sm" data-act="node-os" data-id="${esc(id)}">系统软件包更新</button><button class="btn ghost sm" data-act="node-net" data-id="${esc(id)}">网络诊断</button></div></div>
-      <details class="tc-advanced-details"><summary>高级操作</summary><p class="hint">原生控制台提供设备侧能力；Agent 更新策略位于终端中心高级维护。</p><div class="acts"><button class="btn ghost sm" data-act="node-console" data-id="${esc(id)}">打开原生控制台</button><button class="btn ghost sm" data-act="${n.authorized ? "node-revoke" : "node-auth"}" data-id="${esc(id)}">${n.authorized ? "撤销授权" : "授权终端"}</button></div></details>`;
+    const arbitration = n.dac_arbitration === "auto" ? tcT("tcAuto") : n.dac_arbitration === "manual" ? tcT("tcManual") : n.dac_arbitration || tcT("unknown");
+    return html + `<div class="d-sec"><span class="lbl">${esc(tcT("tcDevicesProtection"))}</span><div class="kv">${kvRow(tcT("tcDACArbitration"), esc(arbitration))}${kvRow(tcT("tcDACDevice"), esc(n.dac_device || tcT("notReported")))}${kvRow(tcT("tcDACHolder"), n.dac_holder_pid ? `PID ${Number(n.dac_holder_pid)}` : esc(tcT("tcNoHolder")))}${kvRow(tcT("tcProtection"), n.play_protect ? badge(tcT("tcEnabled"), "ok") : badge(tcT("tcDisabled"), "warn"))}</div><label class="field mt12">${esc(tcT("tcALSAOutput"))}<select id="node-play-dev" class="inp mono" data-change="node-device" data-id="${esc(id)}" ${p.connected && TC.admin ? "" : "disabled"}>${nodePlayOpts(devs, cur)}</select></label><p class="hint">${esc(tcT("tcOutputNote"))}</p><button class="btn ghost sm" data-act="node-config" data-id="${esc(id)}">${esc(tcT("tcEditConfig"))}</button></div>
+      <div class="d-sec"><span class="lbl">${esc(tcT("tcSystemMaintenance"))}</span><div class="kv">${kvRow(tcT("tcAutoOSUpdate"), esc(tcT(n.auto_os_update ? "tcOn" : "tcOff")))}${kvRow(tcT("tcOSWindow"), esc(n.os_window || tcT("tcNotSet")))}${kvRow(tcT("tcAgentVersion"), esc(n.agent_version || tcT("unknown")))}</div><p class="hint">${esc(tcT("tcUpdatesNote"))}</p><div class="acts"><button class="btn ghost sm" data-act="node-os" data-id="${esc(id)}">${esc(tcT("tcOSPackages"))}</button><button class="btn ghost sm" data-act="node-net" data-id="${esc(id)}">${esc(tcT("tcNetwork"))}</button></div></div>
+      <details class="tc-advanced-details"><summary>${esc(tcT("tcAdvancedActions"))}</summary><p class="hint">${esc(tcT("tcNativeNote"))}</p><div class="acts"><button class="btn ghost sm" data-act="node-console" data-id="${esc(id)}">${esc(tcT("tcNativeConsole"))}</button><button class="btn ghost sm" data-act="${n.authorized ? "node-revoke" : "node-auth"}" data-id="${esc(id)}">${esc(tcT(n.authorized ? "tcRevoke" : "tcAuthorize"))}</button></div></details>`;
   }
-  return html + `<div class="kv">${kvRow("连接", statusBadge(n.status))}${kvRow("授权", authBadge(n))}${kvRow("IP", esc(n.ip || "未上报"))}${kvRow("系统 / 架构", esc([n.distro, n.arch].filter(Boolean).join(" · ") || "未上报"))}${kvRow("最近心跳", fmtTime(n.last_seen))}${kvRow("期望部署模板", n.bom_id ? esc(`${n.bom_id}@${n.bom_version}`) : "未绑定")}${kvRow("分组", esc(n.group || "未分组"))}${n.note ? kvRow("备注", esc(n.note)) : ""}</div>
-    <div class="d-sec"><span class="lbl">播放概况</span><div id="tc-play-summary">${terminalPlaySummary(n, S.nodePlay[id])}</div><button class="btn ghost sm mt8" data-act="tc-player" data-id="${esc(id)}">打开该终端播放器</button></div>
-    <div class="d-sec"><span class="lbl">最近上报资源</span><div class="tc-resources"><div><span>CPU</span><strong>${n.cpu == null ? "未知" : Number(n.cpu).toFixed(1) + "%"}</strong></div><div><span>内存占用</span><strong>${n.mem_mb == null ? "未知" : Number(n.mem_mb).toFixed(0) + " MB"}</strong></div><div><span>温度</span><strong>${n.temp_c ? Number(n.temp_c).toFixed(1) + " °C" : "未上报"}</strong></div></div></div>`;
+  return html + `<div class="kv">${kvRow(tcT("tcConnection"), statusBadge(n.status))}${kvRow(tcT("tcAuthorization"), authBadge(n))}${kvRow("IP", esc(n.ip || tcT("notReported")))}${kvRow(tcT("tcSystemArch"), esc([n.distro, n.arch].filter(Boolean).join(" · ") || tcT("notReported")))}${kvRow(tcT("tcLastHeartbeat"), esc(tcTime(n.last_seen)))}${kvRow(tcT("tcDesiredTemplate"), n.bom_id ? esc(`${n.bom_id}@${n.bom_version}`) : esc(tcT("tcUnbound")))}${kvRow(tcT("tcGroup"), esc(n.group || tcT("tcUngrouped")))}${n.note ? kvRow(tcT("tcNote"), esc(n.note)) : ""}</div>
+    <div class="d-sec"><span class="lbl">${esc(tcT("tcPlayback"))}</span><div id="tc-play-summary">${terminalPlaySummary(n, S.nodePlay[id])}</div><button class="btn ghost sm mt8" data-act="tc-player" data-id="${esc(id)}">${esc(tcT("tcOpenPlayer"))}</button></div>
+    <div class="d-sec"><span class="lbl">${esc(tcT("tcResources"))}</span><div class="tc-resources"><div><span>CPU</span><strong>${esc(n.cpu == null ? tcT("unknown") : I18n.number(Number(n.cpu) / 100, { style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 1 }))}</strong></div><div><span>${esc(tcT("tcMemory"))}</span><strong>${esc(n.mem_mb == null ? tcT("unknown") : I18n.number(Number(n.mem_mb), { maximumFractionDigits: 0 }) + " MB")}</strong></div><div><span>${esc(tcT("tcTemperature"))}</span><strong>${esc(n.temp_c ? I18n.number(Number(n.temp_c), { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + " °C" : tcT("notReported"))}</strong></div></div></div>`;
 }
-function tcSourceBadge(source) { return source === "system" ? badge("系统已有", "info") : ["server", "managed"].includes(source) ? badge("服务端下发", "ok") : badge(source || "来源未知", "muted"); }
+function tcSourceBadge(source) { return source === "system" ? badge(tcT("sourceSystem"), "info") : ["server", "managed"].includes(source) ? badge(tcT("sourceServer"), "ok") : badge(source || tcT("sourceUnknown"), "muted"); }
 function terminalPlaySummary(n, p) {
-  if (!p) return `<span class="hint">播放状态读取失败</span>`;
-  return `<div>${p.connected ? p.title ? esc(p.title) : p.state === "paused" ? "已暂停" : "ZAT 已连接 · 未报告曲目" : "ZAT 未连接"}</div><div class="hint">${esc([p.artist, p.album].filter(Boolean).join(" · "))}</div>${n.active_proto ? `<div class="hint">终端活动协议：${esc(n.active_proto)}</div>` : ""}`;
+  if (!p) return `<span class="hint">${esc(tcT("tcPlaybackFailed"))}</span>`;
+  return `<div>${esc(p.connected ? p.title ? p.title : tcT(p.state === "paused" ? "tcPaused" : "tcZATNoTrack") : tcT("tcZATDisconnected"))}</div><div class="hint">${esc([p.artist, p.album].filter(Boolean).join(" · "))}</div>${n.active_proto ? `<div class="hint">${esc(tcT("tcActiveProtocol", { protocol: n.active_proto }))}</div>` : ""}`;
 }
 function paintNodePlay(id) { const el = $("#tc-play-summary"); if (el && TC.detail?.node_id === id) el.innerHTML = terminalPlaySummary(TC.detail, S.nodePlay[id]); }
 async function openTerminalAdvanced() {
   closeDrawer();
-  openModal("终端高级维护", `<div id="tc-advanced"><p class="hint">此处为全局终端维护，不使用列表勾选范围。系统软件包更新在单台终端的「设备与维护」中。</p><div class="d-sec"><span class="lbl">终端 Agent 更新策略</span><div id="upd-body" data-update-scope="fleet"><div id="upd-policy"></div><div id="upd-fleet" class="mt16"></div></div></div><details class="tc-advanced-details"><summary>高级灰度发布</summary><p class="hint">灰度按后端规则分环分配终端；创建前请核对范围。逐环推进与下发结果保留在任务记录中。</p><div class="acts"><button class="btn ghost sm" data-act="tc-packages">管理部署模板与签名包</button><button class="btn primary sm" data-act="ro-create">新建灰度</button></div><div id="dl-rollouts"></div></details></div>`, `<button class="btn ghost" data-act="modal-close">关闭</button>`, { onClose: () => stopPoll("tc:advanced") });
+  openModal(tcT("tcAdvancedTitle"), `<div id="tc-advanced"><p class="hint">${esc(tcT("tcGlobalMaintenanceNote"))}</p><div class="d-sec"><span class="lbl">${esc(tcT("tcAgentPolicy"))}</span><div id="upd-body" data-update-scope="fleet"><div id="upd-policy"></div><div id="upd-fleet" class="mt16"></div></div></div><details class="tc-advanced-details"><summary>${esc(tcT("tcAdvancedRollouts"))}</summary><p class="hint">${esc(tcT("tcRolloutNote"))}</p><div class="acts"><button class="btn ghost sm" data-act="tc-packages">${esc(tcT("tcManagePackages"))}</button><button class="btn primary sm" data-act="ro-create">${esc(tcT("tcNewRollout"))}</button></div><div id="dl-rollouts"></div></details></div>`, `<button class="btn ghost" data-act="modal-close">${esc(tcT("close"))}</button>`, { onClose: () => stopPoll("tc:advanced") });
   const root = $("#tc-advanced");
   await refreshUpdate();
   if ($("#tc-advanced") !== root) return;
@@ -280,13 +305,13 @@ async function openTerminalAdvanced() {
     const [boms, rollouts] = await Promise.all([api("GET", "/boms?status=published"), api("GET", "/rollouts")]);
     if ($("#tc-advanced") !== root) return;
     S.pubBoms = boms || []; S.rollouts = rollouts || []; paintRollouts();
-  } catch (e) { if ($("#tc-advanced") === root) $("#dl-rollouts").innerHTML = `<div class="banner err">灰度数据读取失败：${esc(e.message)}</div>`; }
+  } catch (e) { if ($("#tc-advanced") === root) $("#dl-rollouts").innerHTML = `<div class="banner err">${esc(tcT("tcRolloutsFailed", { message: e.message }))}</div>`; }
   if ($("#tc-advanced") === root) poll("tc:advanced", refreshUpdateLive, 4000);
 }
 async function terminalRequireAdmin() {
   try { const session = await api("GET", "/settings/session"); TC.admin = session.authenticated === true; }
-  catch (e) { TC.admin = false; toast("无法验证管理员会话：" + e.message, "err"); return false; }
-  if (!TC.admin) { toast("请先在右上角设置中登录管理员，再执行终端管理操作。", "warn"); paintTerminalCenter(); }
+  catch (e) { TC.admin = false; toast(tcT("tcSessionFailed", { message: e.message }), "err"); return false; }
+  if (!TC.admin) { toast(tcT("tcAdminRequired"), "warn"); paintTerminalCenter(); }
   return TC.admin;
 }
 Object.assign(ACT, {

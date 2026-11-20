@@ -59,27 +59,27 @@ func favoriteWriteAllowed(w http.ResponseWriter, r *http.Request) bool {
 	host, ok := favoriteAuthority(r.Host, scheme)
 	origins := r.Header.Values("Origin")
 	if !ok || len(origins) != 1 || origins[0] == "" {
-		writeError(w, http.StatusForbidden, "需要同源 Origin")
+		writeErrorCode(w, http.StatusForbidden, "same_origin_required", "需要同源 Origin")
 		return false
 	}
 	sites := r.Header.Values("Sec-Fetch-Site")
 	if len(sites) > 1 || len(sites) == 1 && sites[0] != "same-origin" && sites[0] != "none" {
-		writeError(w, http.StatusForbidden, "不允许跨站请求")
+		writeErrorCode(w, http.StatusForbidden, "cross_site_forbidden", "不允许跨站请求")
 		return false
 	}
 	u, err := url.Parse(origins[0])
 	if err != nil || u.Scheme != scheme || u.User != nil || origins[0] != u.Scheme+"://"+u.Host {
-		writeError(w, http.StatusForbidden, "不允许跨源请求")
+		writeErrorCode(w, http.StatusForbidden, "cross_origin_forbidden", "不允许跨源请求")
 		return false
 	}
 	origin, valid := favoriteAuthority(u.Host, u.Scheme)
 	if !valid || origin != host {
-		writeError(w, http.StatusForbidden, "不允许跨源请求")
+		writeErrorCode(w, http.StatusForbidden, "cross_origin_forbidden", "不允许跨源请求")
 		return false
 	}
 	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if len(r.Header.Values("Content-Type")) != 1 || err != nil || mediaType != "application/json" {
-		writeError(w, http.StatusUnsupportedMediaType, "需要 application/json")
+		writeErrorCode(w, http.StatusUnsupportedMediaType, "json_content_type_required", "需要 application/json")
 		return false
 	}
 	return true
@@ -88,7 +88,7 @@ func favoriteWriteAllowed(w http.ResponseWriter, r *http.Request) bool {
 func favoriteQueryValues(r *http.Request, allowed ...string) (url.Values, error) {
 	v, err := url.ParseQuery(r.URL.RawQuery)
 	if err != nil {
-		return nil, fmt.Errorf("无效查询参数")
+		return nil, invalidInput("query_invalid", "无效查询参数")
 	}
 	for key, values := range v {
 		known := false
@@ -96,7 +96,7 @@ func favoriteQueryValues(r *http.Request, allowed ...string) (url.Values, error)
 			known = known || key == name
 		}
 		if !known || len(values) != 1 {
-			return nil, fmt.Errorf("未知或重复查询参数：%s", key)
+			return nil, invalidInput("query_unknown_or_duplicate", fmt.Sprintf("未知或重复查询参数：%s", key), map[string]any{"field": key})
 		}
 	}
 	return v, nil
@@ -105,7 +105,7 @@ func favoriteQueryValues(r *http.Request, allowed ...string) (url.Values, error)
 func (a *API) listFavorites(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	if a.lib == nil {
-		writeError(w, http.StatusServiceUnavailable, "媒体库未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "library_unavailable", "媒体库未启用")
 		return
 	}
 	v, err := favoriteQueryValues(r, "kind", "page", "page_size", "q")
@@ -115,14 +115,14 @@ func (a *API) listFavorites(w http.ResponseWriter, r *http.Request) {
 	}
 	q := library.FavoriteQuery{Kind: v.Get("kind"), Q: v.Get("q")}
 	if v.Has("kind") && q.Kind == "" {
-		writeError(w, http.StatusBadRequest, "kind 必须为 track 或 album")
+		writeErrorCode(w, http.StatusBadRequest, "favorite_kind_invalid", "kind 必须为 track 或 album")
 		return
 	}
 	for key, dst := range map[string]*int{"page": &q.Page, "page_size": &q.PageSize} {
 		if v.Has(key) {
 			n, err := strconv.Atoi(v.Get(key))
 			if err != nil || n <= 0 {
-				writeError(w, http.StatusBadRequest, key+" 必须为正整数")
+				writeErrorCode(w, http.StatusBadRequest, "positive_integer_required", key+" 必须为正整数", map[string]any{"field": key})
 				return
 			}
 			*dst = n
@@ -139,7 +139,7 @@ func (a *API) listFavorites(w http.ResponseWriter, r *http.Request) {
 func (a *API) favoriteState(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	if a.lib == nil {
-		writeError(w, http.StatusServiceUnavailable, "媒体库未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "library_unavailable", "媒体库未启用")
 		return
 	}
 	v, err := favoriteQueryValues(r, "track_id")
@@ -166,7 +166,7 @@ func (a *API) deleteFavorite(w http.ResponseWriter, r *http.Request) {
 func (a *API) writeFavorite(w http.ResponseWriter, r *http.Request, save bool) {
 	w.Header().Set("Cache-Control", "no-store")
 	if a.lib == nil {
-		writeError(w, http.StatusServiceUnavailable, "媒体库未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "library_unavailable", "媒体库未启用")
 		return
 	}
 	if !favoriteWriteAllowed(w, r) {
@@ -190,9 +190,9 @@ func (a *API) writeFavorite(w http.ResponseWriter, r *http.Request, save bool) {
 	if err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
-			writeError(w, http.StatusRequestEntityTooLarge, "收藏请求不能超过16KiB")
+			writeErrorCode(w, http.StatusRequestEntityTooLarge, "favorite_request_too_large", "收藏请求不能超过16KiB")
 		} else {
-			writeError(w, http.StatusBadRequest, "无效收藏 JSON")
+			writeErrorCode(w, http.StatusBadRequest, "favorite_json_invalid", "无效收藏 JSON")
 		}
 		return
 	}

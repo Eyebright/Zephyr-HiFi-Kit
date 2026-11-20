@@ -12,7 +12,7 @@ import (
 // console polls this alongside /update/fleet to render the convergence panel.
 func (a *API) updateStatus(w http.ResponseWriter, _ *http.Request) {
 	if a.upd == nil {
-		writeError(w, http.StatusServiceUnavailable, "更新服务未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "update_unavailable", "更新服务未启用")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -25,7 +25,7 @@ func (a *API) updateStatus(w http.ResponseWriter, _ *http.Request) {
 // (idle/offline/failed), so an unreachable feed is a 200 with state=offline.
 func (a *API) updateCheck(w http.ResponseWriter, r *http.Request) {
 	if a.upd == nil {
-		writeError(w, http.StatusServiceUnavailable, "更新服务未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "update_unavailable", "更新服务未启用")
 		return
 	}
 	st, _ := a.upd.Check(r.Context())
@@ -36,16 +36,16 @@ func (a *API) updateCheck(w http.ResponseWriter, r *http.Request) {
 // play-gated: a busy fleet yields 409 and the poller retries when idle.
 func (a *API) updateApply(w http.ResponseWriter, r *http.Request) {
 	if a.upd == nil {
-		writeError(w, http.StatusServiceUnavailable, "更新服务未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "update_unavailable", "更新服务未启用")
 		return
 	}
 	st, err := a.upd.Apply(r.Context())
 	if err != nil {
 		if errors.Is(err, update.ErrBusy) {
-			writeError(w, http.StatusConflict, err.Error())
+			writeServiceError(w, http.StatusConflict, err)
 			return
 		}
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeServiceError(w, http.StatusBadRequest, err, "update_apply_failed")
 		return
 	}
 	writeJSON(w, http.StatusOK, st)
@@ -54,14 +54,14 @@ func (a *API) updateApply(w http.ResponseWriter, r *http.Request) {
 // updateAuto toggles unattended self-upgrade.
 func (a *API) updateAuto(w http.ResponseWriter, r *http.Request) {
 	if a.upd == nil {
-		writeError(w, http.StatusServiceUnavailable, "更新服务未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "update_unavailable", "更新服务未启用")
 		return
 	}
 	var body struct {
 		AutoApply bool `json:"auto_apply"`
 	}
 	if err := decode(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "请求体不是合法 JSON")
+		writeErrorCode(w, http.StatusBadRequest, "bad_json", "请求体不是合法 JSON")
 		return
 	}
 	writeJSON(w, http.StatusOK, a.upd.SetAutoApply(body.AutoApply))
@@ -70,7 +70,7 @@ func (a *API) updateAuto(w http.ResponseWriter, r *http.Request) {
 // updateFleet returns the terminal convergence snapshot without issuing commands.
 func (a *API) updateFleet(w http.ResponseWriter, _ *http.Request) {
 	if a.upd == nil {
-		writeError(w, http.StatusServiceUnavailable, "更新服务未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "update_unavailable", "更新服务未启用")
 		return
 	}
 	writeJSON(w, http.StatusOK, a.upd.FleetStatus())
@@ -79,17 +79,17 @@ func (a *API) updateFleet(w http.ResponseWriter, _ *http.Request) {
 // updateFleetPolicy validates and persists the convergence policy.
 func (a *API) updateFleetPolicy(w http.ResponseWriter, r *http.Request) {
 	if a.upd == nil {
-		writeError(w, http.StatusServiceUnavailable, "更新服务未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "update_unavailable", "更新服务未启用")
 		return
 	}
 	var body domain.FleetUpdatePolicy
 	if err := decode(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "请求体不是合法 JSON")
+		writeErrorCode(w, http.StatusBadRequest, "bad_json", "请求体不是合法 JSON")
 		return
 	}
 	p, err := a.upd.SetPolicy(body)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeServiceError(w, http.StatusBadRequest, err, "update_policy_invalid")
 		return
 	}
 	writeJSON(w, http.StatusOK, p)
@@ -98,7 +98,7 @@ func (a *API) updateFleetPolicy(w http.ResponseWriter, r *http.Request) {
 // updateFleetConverge forces one immediate convergence pass.
 func (a *API) updateFleetConverge(w http.ResponseWriter, r *http.Request) {
 	if a.upd == nil {
-		writeError(w, http.StatusServiceUnavailable, "更新服务未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "update_unavailable", "更新服务未启用")
 		return
 	}
 	writeJSON(w, http.StatusOK, a.upd.Converge(r.Context()))
@@ -107,11 +107,11 @@ func (a *API) updateFleetConverge(w http.ResponseWriter, r *http.Request) {
 // updateFleetRetry clears a suspended terminal's failure counter.
 func (a *API) updateFleetRetry(w http.ResponseWriter, r *http.Request) {
 	if a.upd == nil {
-		writeError(w, http.StatusServiceUnavailable, "更新服务未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "update_unavailable", "更新服务未启用")
 		return
 	}
 	if err := a.upd.RetryNode(r.PathValue("id")); err != nil {
-		writeError(w, http.StatusNotFound, err.Error())
+		writeServiceError(w, http.StatusNotFound, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})

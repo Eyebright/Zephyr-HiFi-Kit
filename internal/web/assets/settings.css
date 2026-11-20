@@ -33,7 +33,14 @@
 .settings-auth-form .btn { min-height: 40px; }
 .settings-setup-form { display: grid; grid-template-columns: minmax(0, 1fr); max-width: 460px; }
 .settings-setup-form .btn { justify-self: start; }
+#settings-profile-content > .card + .card { margin-top: 16px; }
 #settings-profile-content form { max-width: 460px; }
+.settings-language-card .field { width: min(100%, 320px); margin: 0; }
+.settings-language-card select { width: 100%; min-height: 40px; }
+.settings-language-server { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 12px; margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--soft); }
+.settings-language-server .btn { min-height: 40px; white-space: normal; }
+#settings-language-status:not(:empty), [data-xp-language-feedback]:not(:empty) { margin-top: 12px; }
+.settings-language-card .settings-note { margin-bottom: 0; }
 #settings-profile-content form .btn { margin-top: 12px; }
 .settings-card-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
 .settings-card-foot { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--soft); color: var(--muted); font-size: 12px; }

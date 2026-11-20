@@ -13,7 +13,7 @@ import (
 
 func (a *API) listMounts(w http.ResponseWriter, _ *http.Request) {
 	if a.lib == nil {
-		writeError(w, http.StatusServiceUnavailable, "媒体库未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "library_unavailable", "媒体库未启用")
 		return
 	}
 	ms, err := a.lib.ListMounts()
@@ -26,7 +26,7 @@ func (a *API) listMounts(w http.ResponseWriter, _ *http.Request) {
 
 func (a *API) addMount(w http.ResponseWriter, r *http.Request) {
 	if a.lib == nil {
-		writeError(w, http.StatusServiceUnavailable, "媒体库未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "library_unavailable", "媒体库未启用")
 		return
 	}
 	var req library.AddMountRequest
@@ -36,7 +36,11 @@ func (a *API) addMount(w http.ResponseWriter, r *http.Request) {
 	}
 	m, err := a.lib.AddMount(req)
 	if err != nil {
-		fail(w, err)
+		code := "source_add_failed"
+		if req.Kind == "local" {
+			code = "local_source_invalid"
+		}
+		fail(w, err, code)
 		return
 	}
 	status := http.StatusCreated
@@ -48,7 +52,7 @@ func (a *API) addMount(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) getMount(w http.ResponseWriter, r *http.Request) {
 	if a.lib == nil {
-		writeError(w, http.StatusServiceUnavailable, "媒体库未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "library_unavailable", "媒体库未启用")
 		return
 	}
 	m, err := a.lib.GetMount(r.PathValue("id"))
@@ -61,7 +65,7 @@ func (a *API) getMount(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) deleteMount(w http.ResponseWriter, r *http.Request) {
 	if a.lib == nil {
-		writeError(w, http.StatusServiceUnavailable, "媒体库未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "library_unavailable", "媒体库未启用")
 		return
 	}
 	if err := a.lib.DeleteMount(r.Context(), r.PathValue("id")); err != nil {
@@ -73,38 +77,51 @@ func (a *API) deleteMount(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) mountShare(w http.ResponseWriter, r *http.Request) {
 	if a.lib == nil {
-		writeError(w, http.StatusServiceUnavailable, "媒体库未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "library_unavailable", "媒体库未启用")
 		return
 	}
 	m, err := a.lib.Mount(r.Context(), r.PathValue("id"))
 	if err != nil {
-		fail(w, err)
+		fail(w, err, "source_mount_failed")
 		return
 	}
-	writeJSON(w, http.StatusOK, m)
+	writeMountResult(w, m, "source_mount_failed")
 }
 
 func (a *API) unmountShare(w http.ResponseWriter, r *http.Request) {
 	if a.lib == nil {
-		writeError(w, http.StatusServiceUnavailable, "媒体库未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "library_unavailable", "媒体库未启用")
 		return
 	}
 	m, err := a.lib.Unmount(r.Context(), r.PathValue("id"))
 	if err != nil {
-		fail(w, err)
+		fail(w, err, "source_unmount_failed")
 		return
 	}
-	writeJSON(w, http.StatusOK, m)
+	writeMountResult(w, m, "source_unmount_failed")
+}
+
+// A mount operation may return HTTP 200 with status=error. Keep its persisted
+// detail verbatim and add only an operation-level summary to this API response.
+func writeMountResult(w http.ResponseWriter, m library.Mount, code string) {
+	detailCode := ""
+	if m.Status == library.StatusError {
+		detailCode = "errors." + code
+	}
+	writeJSON(w, http.StatusOK, struct {
+		library.Mount
+		DetailCode string `json:"detail_code,omitempty"`
+	}{m, detailCode})
 }
 
 func (a *API) scanMount(w http.ResponseWriter, r *http.Request) {
 	if a.lib == nil {
-		writeError(w, http.StatusServiceUnavailable, "媒体库未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "library_unavailable", "媒体库未启用")
 		return
 	}
 	mode := r.URL.Query().Get("mode")
 	if mode != "" && mode != "update" && mode != "full" {
-		writeError(w, http.StatusBadRequest, "扫描模式必须为 update 或 full")
+		writeErrorCode(w, http.StatusBadRequest, "scan_mode_invalid", "扫描模式必须为 update 或 full")
 		return
 	}
 	result, err := a.lib.ScanChanges(r.Context(), r.PathValue("id"), mode == "full")
@@ -117,7 +134,7 @@ func (a *API) scanMount(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) archiveMount(w http.ResponseWriter, r *http.Request) {
 	if a.lib == nil {
-		writeError(w, http.StatusServiceUnavailable, "媒体库未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "library_unavailable", "媒体库未启用")
 		return
 	}
 	m, err := a.lib.ArchiveMount(r.Context(), r.PathValue("id"))
@@ -132,7 +149,7 @@ func (a *API) archiveMount(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) listTracks(w http.ResponseWriter, r *http.Request) {
 	if a.lib == nil {
-		writeError(w, http.StatusServiceUnavailable, "媒体库未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "library_unavailable", "媒体库未启用")
 		return
 	}
 	ts, err := a.lib.ListTracks(r.URL.Query().Get("mount_id"))
@@ -145,7 +162,7 @@ func (a *API) listTracks(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) getTrack(w http.ResponseWriter, r *http.Request) {
 	if a.lib == nil {
-		writeError(w, http.StatusServiceUnavailable, "媒体库未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "library_unavailable", "媒体库未启用")
 		return
 	}
 	t, err := a.lib.GetTrack(r.PathValue("id"))
@@ -163,7 +180,7 @@ func (a *API) getCover(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
 	if a.lib == nil {
-		writeError(w, http.StatusServiceUnavailable, "媒体库未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "library_unavailable", "媒体库未启用")
 		return
 	}
 	mime, data, err := a.lib.GetCover(r.PathValue("hash"))
@@ -181,7 +198,7 @@ func (a *API) getCover(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) playTrack(w http.ResponseWriter, r *http.Request) {
 	if a.zat == nil {
-		writeError(w, http.StatusServiceUnavailable, "ZAT 服务未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "zat_unavailable", "ZAT 服务未启用")
 		return
 	}
 	var body struct {
@@ -192,13 +209,13 @@ func (a *API) playTrack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if body.TrackID == "" {
-		writeError(w, http.StatusBadRequest, "track_id 不能为空")
+		writeErrorCode(w, http.StatusBadRequest, "track_id_required", "track_id 不能为空")
 		return
 	}
 	sessionID, err := a.zat.StartPlay(r.Context(), r.PathValue("id"), body.TrackID)
 	if err != nil {
 		if errors.Is(err, zatserver.ErrNotConnected) {
-			writeError(w, http.StatusConflict, err.Error())
+			writeServiceError(w, http.StatusConflict, err)
 			return
 		}
 		fail(w, err)
@@ -214,12 +231,12 @@ func (a *API) playTrack(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) stopPlay(w http.ResponseWriter, r *http.Request) {
 	if a.zat == nil {
-		writeError(w, http.StatusServiceUnavailable, "ZAT 服务未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "zat_unavailable", "ZAT 服务未启用")
 		return
 	}
 	if err := a.zat.Stop(r.PathValue("id")); err != nil {
 		if errors.Is(err, zatserver.ErrNotConnected) {
-			writeError(w, http.StatusConflict, err.Error())
+			writeServiceError(w, http.StatusConflict, err)
 			return
 		}
 		fail(w, err)
@@ -230,7 +247,7 @@ func (a *API) stopPlay(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) playStatus(w http.ResponseWriter, r *http.Request) {
 	if a.zat == nil {
-		writeError(w, http.StatusServiceUnavailable, "ZAT 服务未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "zat_unavailable", "ZAT 服务未启用")
 		return
 	}
 	st, err := a.zat.Status(r.PathValue("id"))
@@ -243,7 +260,7 @@ func (a *API) playStatus(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) setNodeDevice(w http.ResponseWriter, r *http.Request) {
 	if a.zat == nil {
-		writeError(w, http.StatusServiceUnavailable, "ZAT 服务未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "zat_unavailable", "ZAT 服务未启用")
 		return
 	}
 	var body struct {
@@ -256,9 +273,9 @@ func (a *API) setNodeDevice(w http.ResponseWriter, r *http.Request) {
 	if err := a.zat.SetDevice(r.PathValue("id"), body.Device); err != nil {
 		switch {
 		case errors.Is(err, zatserver.ErrNotConnected):
-			writeError(w, http.StatusConflict, err.Error())
+			writeServiceError(w, http.StatusConflict, err)
 		case errors.Is(err, zatserver.ErrUnknownDevice):
-			writeError(w, http.StatusBadRequest, err.Error())
+			writeServiceError(w, http.StatusBadRequest, err)
 		default:
 			fail(w, err)
 		}
@@ -271,7 +288,7 @@ func (a *API) setNodeDevice(w http.ResponseWriter, r *http.Request) {
 func zatControlFail(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, zatserver.ErrNotConnected), errors.Is(err, zatserver.ErrNoSession):
-		writeError(w, http.StatusConflict, err.Error())
+		writeServiceError(w, http.StatusConflict, err)
 	default:
 		fail(w, err)
 	}
@@ -279,7 +296,7 @@ func zatControlFail(w http.ResponseWriter, err error) {
 
 func (a *API) pausePlay(w http.ResponseWriter, r *http.Request) {
 	if a.zat == nil {
-		writeError(w, http.StatusServiceUnavailable, "ZAT 服务未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "zat_unavailable", "ZAT 服务未启用")
 		return
 	}
 	if err := a.zat.Pause(r.PathValue("id")); err != nil {
@@ -291,7 +308,7 @@ func (a *API) pausePlay(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) resumePlay(w http.ResponseWriter, r *http.Request) {
 	if a.zat == nil {
-		writeError(w, http.StatusServiceUnavailable, "ZAT 服务未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "zat_unavailable", "ZAT 服务未启用")
 		return
 	}
 	if err := a.zat.Resume(r.PathValue("id")); err != nil {
@@ -303,7 +320,7 @@ func (a *API) resumePlay(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) seekPlay(w http.ResponseWriter, r *http.Request) {
 	if a.zat == nil {
-		writeError(w, http.StatusServiceUnavailable, "ZAT 服务未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "zat_unavailable", "ZAT 服务未启用")
 		return
 	}
 	var body struct {
@@ -314,7 +331,7 @@ func (a *API) seekPlay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if body.PositionMS < 0 {
-		writeError(w, http.StatusBadRequest, "position_ms 不能为负")
+		writeErrorCode(w, http.StatusBadRequest, "seek_position_invalid", "position_ms 不能为负")
 		return
 	}
 	id := r.PathValue("id")
@@ -324,7 +341,7 @@ func (a *API) seekPlay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if st.Rate <= 0 {
-		writeError(w, http.StatusConflict, "当前没有可定位的播放会话")
+		writeErrorCode(w, http.StatusConflict, "no_seekable_session", "当前没有可定位的播放会话")
 		return
 	}
 	samples := uint64(body.PositionMS) * uint64(st.Rate) / 1000
@@ -337,7 +354,7 @@ func (a *API) seekPlay(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) setNodeVolume(w http.ResponseWriter, r *http.Request) {
 	if a.zat == nil {
-		writeError(w, http.StatusServiceUnavailable, "ZAT 服务未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "zat_unavailable", "ZAT 服务未启用")
 		return
 	}
 	var body struct {
@@ -348,7 +365,7 @@ func (a *API) setNodeVolume(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if body.Volume < 0 || body.Volume > 100 {
-		writeError(w, http.StatusBadRequest, "volume 须在 0..100")
+		writeErrorCode(w, http.StatusBadRequest, "volume_invalid", "volume 须在 0..100")
 		return
 	}
 	if err := a.zat.SetVolume(r.PathValue("id"), body.Volume); err != nil {
@@ -362,7 +379,7 @@ func (a *API) setNodeVolume(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) nodeQueue(w http.ResponseWriter, r *http.Request) {
 	if a.zat == nil {
-		writeError(w, http.StatusServiceUnavailable, "ZAT 服务未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "zat_unavailable", "ZAT 服务未启用")
 		return
 	}
 	q, err := a.zat.Queue(r.PathValue("id"))
@@ -375,7 +392,7 @@ func (a *API) nodeQueue(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) setNodeQueue(w http.ResponseWriter, r *http.Request) {
 	if a.zat == nil {
-		writeError(w, http.StatusServiceUnavailable, "ZAT 服务未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "zat_unavailable", "ZAT 服务未启用")
 		return
 	}
 	var body struct {
@@ -400,7 +417,7 @@ func (a *API) setNodeQueue(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) enqueueTrack(w http.ResponseWriter, r *http.Request) {
 	if a.zat == nil {
-		writeError(w, http.StatusServiceUnavailable, "ZAT 服务未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "zat_unavailable", "ZAT 服务未启用")
 		return
 	}
 	var body struct {
@@ -411,13 +428,13 @@ func (a *API) enqueueTrack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if body.TrackID == "" {
-		writeError(w, http.StatusBadRequest, "track_id 不能为空")
+		writeErrorCode(w, http.StatusBadRequest, "track_id_required", "track_id 不能为空")
 		return
 	}
 	q, sessionID, err := a.zat.Enqueue(r.Context(), r.PathValue("id"), body.TrackID)
 	if err != nil {
 		if errors.Is(err, zatserver.ErrNotConnected) {
-			writeError(w, http.StatusConflict, err.Error())
+			writeServiceError(w, http.StatusConflict, err)
 			return
 		}
 		fail(w, err)
@@ -428,7 +445,7 @@ func (a *API) enqueueTrack(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) enqueueTracks(w http.ResponseWriter, r *http.Request) {
 	if a.zat == nil {
-		writeError(w, http.StatusServiceUnavailable, "ZAT 服务未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "zat_unavailable", "ZAT 服务未启用")
 		return
 	}
 	var body struct {
@@ -449,16 +466,16 @@ func (a *API) enqueueTracks(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) queueMove(w http.ResponseWriter, r *http.Request, move func(context.Context, string) (string, error)) {
 	if a.zat == nil {
-		writeError(w, http.StatusServiceUnavailable, "ZAT 服务未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "zat_unavailable", "ZAT 服务未启用")
 		return
 	}
 	sessionID, err := move(r.Context(), r.PathValue("id"))
 	if err != nil {
 		switch {
 		case errors.Is(err, zatserver.ErrNotConnected):
-			writeError(w, http.StatusConflict, err.Error())
+			writeServiceError(w, http.StatusConflict, err)
 		case errors.Is(err, zatserver.ErrQueueEmpty), errors.Is(err, zatserver.ErrQueueEnd), errors.Is(err, zatserver.ErrQueueIndex):
-			writeError(w, http.StatusBadRequest, err.Error())
+			writeServiceError(w, http.StatusBadRequest, err)
 		default:
 			fail(w, err)
 		}
@@ -477,7 +494,7 @@ func (a *API) queuePrev(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) queueJump(w http.ResponseWriter, r *http.Request) {
 	if a.zat == nil {
-		writeError(w, http.StatusServiceUnavailable, "ZAT 服务未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "zat_unavailable", "ZAT 服务未启用")
 		return
 	}
 	var body struct {

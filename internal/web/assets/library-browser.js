@@ -1,10 +1,11 @@
 "use strict";
 
-const LIB_CATEGORIES = [["artists", "艺术家"], ["albums", "专辑"], ["tracks", "曲目"], ["genres", "风格"], ["years", "年份"], ["composers", "作曲家"], ["folders", "文件目录"]];
-const LB = { states: {}, page: null, busy: false, request: 0, searchTimer: null };
+const lbT = (key, params) => I18n.t("features." + key, params);
+const LIB_CATEGORIES = [["artists", "artists"], ["albums", "albums"], ["tracks", "tracks"], ["genres", "genres"], ["years", "years"], ["composers", "composers"], ["folders", "libFolders"]].map(([id, key]) => Object.defineProperty([id], 1, { get: () => lbT(key), enumerable: true }));
+const LB = { states: {}, page: null, error: null, busy: false, request: 0, searchTimer: null };
 function lbState() {
   const category = S.libTab || "albums";
-  if (!LB.states[category]) LB.states[category] = { frames: [{ label: (LIB_CATEGORIES.find(c => c[0] === category) || [category, category])[1], query: { category, page: 1, page_size: 24, field: "all", sort: "name", direction: "asc", artist_mode: "album", q: "" } }] };
+  if (!LB.states[category]) LB.states[category] = { frames: [{ get label() { return String((LIB_CATEGORIES.find(c => c[0] === category) || [category, category])[1]); }, query: { category, page: 1, page_size: 24, field: "all", sort: "name", direction: "asc", artist_mode: "album", q: "" } }] };
   return LB.states[category];
 }
 function lbFrame() { return lbState().frames.at(-1); }
@@ -18,41 +19,41 @@ function paintLibraryBrowserHeader() {
   const el = $("#lb-header"); if (!el) return;
   const frame = lbFrame(), q = frame.query, auxiliary = S.libTab === "playlists" || S.libTab === "favorites";
   const fields = {
-    artists: [["all", "名字 / 相关专辑"], ["artist", "艺术家名字"]],
-    albums: [["all", "专辑 / 艺术家"], ["album", "专辑名"], ["artist", "艺术家"]],
-    tracks: [["all", "全部元数据"], ["title", "曲目名"], ["artist", "艺术家"], ["album", "专辑"], ["genre", "风格"], ["composer", "作曲家"], ["year", "年份"], ["path", "文件路径"]],
-    genres: [["genre", "风格名称"]], years: [["year", "年代 / 年份"]], composers: [["composer", "作曲家名字"]], folders: [["path", "目录 / 文件路径"], ["title", "曲目名"]]
+    artists: [["all", lbT("libNameAlbums")], ["artist", lbT("libArtistName")]],
+    albums: [["all", lbT("libAlbumArtist")], ["album", lbT("libAlbumName")], ["artist", lbT("artists")]],
+    tracks: [["all", lbT("libAllMetadata")], ["title", lbT("libTrackName")], ["artist", lbT("artists")], ["album", lbT("albums")], ["genre", lbT("genres")], ["composer", lbT("composers")], ["year", lbT("years")], ["path", lbT("libFilePath")]],
+    genres: [["genre", lbT("libGenreName")]], years: [["year", lbT("libDecadeYear")]], composers: [["composer", lbT("libComposerName")]], folders: [["path", lbT("libFolderPath")], ["title", lbT("libTrackName")]]
   };
   const categoryFields = fields[q.category] || [];
   if (!auxiliary && !categoryFields.some(([key]) => key === q.field)) q.field = categoryFields[0][0];
-  el.innerHTML = `<div class="sec-head"><div class="sec-title">${icon("music", 18)} 音乐库</div><div class="spacer"></div><button class="btn ghost sm" data-act="lib-refresh">${icon("refresh", 14)} 刷新</button></div>
-    <nav class="lb-tabs" aria-label="曲库分类">${LIB_CATEGORIES.concat([["favorites", "我喜欢的"], ["playlists", "播放列表"]]).map(([id, label]) => `<button class="chip ${id === S.libTab ? "active" : ""}" data-act="lib-tab" data-f="${id}" aria-pressed="${id === S.libTab}">${label}</button>`).join("")}</nav>
-    ${auxiliary ? `<div class="f-hint lb-note">${S.libTab === "favorites" ? "曲目和专辑分别收藏，保存在服务端；文件不可用时仍保留收藏。" : "播放列表保存在服务端，可跨终端推送。"}</div>` : `
-    <nav class="lb-crumbs" aria-label="浏览路径">${lbState().frames.map((f, i) => `<button class="btn ghost xs" data-act="lb-back" data-index="${i}" ${i === lbState().frames.length - 1 ? "disabled" : ""}>${esc(f.label)}</button>`).join('<span aria-hidden="true">/</span>')}</nav>
+  el.innerHTML = `<div class="sec-head"><div class="sec-title">${icon("music", 18)} ${esc(lbT("libTitle"))}</div><div class="spacer"></div><button class="btn ghost sm" data-act="lib-refresh">${icon("refresh", 14)} ${esc(lbT("refresh"))}</button></div>
+    <nav class="lb-tabs" aria-label="${esc(lbT("libCategories"))}">${LIB_CATEGORIES.concat([["favorites", lbT("favorites")], ["playlists", lbT("playlists")]]).map(([id, label]) => `<button class="chip ${id === S.libTab ? "active" : ""}" data-act="lib-tab" data-f="${id}" aria-pressed="${id === S.libTab}">${esc(label)}</button>`).join("")}</nav>
+    ${auxiliary ? `<div class="f-hint lb-note">${esc(lbT(S.libTab === "favorites" ? "libFavoritesNote" : "libPlaylistsNote"))}</div>` : `
+    <nav class="lb-crumbs" aria-label="${esc(lbT("libBrowsePath"))}">${lbState().frames.map((f, i) => `<button class="btn ghost xs" data-act="lb-back" data-index="${i}" ${i === lbState().frames.length - 1 ? "disabled" : ""}>${esc(f.label)}</button>`).join('<span aria-hidden="true">/</span>')}</nav>
     <div class="lb-toolbar">
-      <label>搜索范围<select class="inp" data-change="lb-field" aria-label="搜索范围">${lbOptions(categoryFields, q.field)}</select></label>
-      <label class="lb-query">搜索<input class="inp" type="search" id="lb-search" value="${esc(q.q)}" placeholder="${q.category === "years" ? "如 1980、1985 或 1980–1989" : "搜索当前分类…"}" aria-label="搜索音乐库"></label>
-      <button class="btn" data-act="lb-search">搜索</button>
-      <label>排序<select class="inp" data-change="lb-sort" aria-label="曲库排序">${lbOptions([["name", "名称"], ["year", "年份"], ["added", "添加时间"], ["duration", "时长"]], q.sort)}</select></label>
-      <button class="btn ghost" data-act="lb-direction" aria-label="切换排序方向">${q.direction === "asc" ? "升序 ↑" : "降序 ↓"}</button>
-      ${S.libTab === "artists" ? `<label>艺术家口径<select class="inp" data-change="lb-artist-mode" aria-label="艺术家口径">${lbOptions([["album", "专辑艺术家"], ["track", "曲目艺术家"]], q.artist_mode)}</select></label>` : ""}
-      ${q.category === "folders" && q.mount_id ? `<label class="lb-recursive"><input type="checkbox" data-change="lb-recursive" ${q.recursive ? "checked" : ""}>搜索子目录</label>` : ""}
+      <label>${esc(lbT("libSearchScope"))}<select class="inp" data-change="lb-field" aria-label="${esc(lbT("libSearchScope"))}">${lbOptions(categoryFields, q.field)}</select></label>
+      <label class="lb-query">${esc(lbT("search"))}<input class="inp" type="search" id="lb-search" value="${esc(q.q)}" placeholder="${esc(lbT(q.category === "years" ? "libYearPlaceholder" : "libSearchPlaceholder"))}" aria-label="${esc(lbT("libSearch"))}"></label>
+      <button class="btn" data-act="lb-search">${esc(lbT("search"))}</button>
+      <label>${esc(lbT("libSort"))}<select class="inp" data-change="lb-sort" aria-label="${esc(lbT("libSortLabel"))}">${lbOptions([["name", lbT("libName")], ["year", lbT("years")], ["added", lbT("libAdded")], ["duration", lbT("libDuration")]], q.sort)}</select></label>
+      <button class="btn ghost" data-act="lb-direction" aria-label="${esc(lbT("libDirection"))}">${esc(lbT(q.direction === "asc" ? "libAscending" : "libDescending"))}</button>
+      ${S.libTab === "artists" ? `<label>${esc(lbT("libArtistMode"))}<select class="inp" data-change="lb-artist-mode" aria-label="${esc(lbT("libArtistMode"))}">${lbOptions([["album", lbT("libAlbumArtistMode")], ["track", lbT("libTrackArtistMode")]], q.artist_mode)}</select></label>` : ""}
+      ${q.category === "folders" && q.mount_id ? `<label class="lb-recursive"><input type="checkbox" data-change="lb-recursive" ${q.recursive ? "checked" : ""}>${esc(lbT("libRecursive"))}</label>` : ""}
     </div>
-    ${q.category === "artists" ? `<div class="lb-initials" aria-label="艺术家首字母">${["", ..."ABCDEFGHIJKLMNOPQRSTUVWXYZ", "0-9", "#"].map(initial => `<button class="chip ${String(q.initial || "") === initial ? "active" : ""}" data-act="lb-initial" data-initial="${initial}" aria-pressed="${String(q.initial || "") === initial}">${initial || "全部"}</button>`).join("")}</div><div class="f-hint lb-note">中文按拼音首字母归类；数字与其他字符单列。缺失标签显示为未知。</div>` : ""}
-    ${q.category === "years" ? '<div class="f-hint lb-note">按十年年代分组，点击时间段查看专辑；缺失年份单列为“未知年份”。</div>' : ""}
+    ${q.category === "artists" ? `<div class="lb-initials" aria-label="${esc(lbT("libInitials"))}">${["", ..."ABCDEFGHIJKLMNOPQRSTUVWXYZ", "0-9", "#"].map(initial => `<button class="chip ${String(q.initial || "") === initial ? "active" : ""}" data-act="lb-initial" data-initial="${initial}" aria-pressed="${String(q.initial || "") === initial}">${initial || esc(lbT("all"))}</button>`).join("")}</div><div class="f-hint lb-note">${esc(lbT("libInitialsNote"))}</div>` : ""}
+    ${q.category === "years" ? `<div class="f-hint lb-note">${esc(lbT("libYearsNote"))}</div>` : ""}
     ${q.category === "tracks" && Object.hasOwn(q, "album") && q.artist_mode === "album" && typeof favoriteAlbumButton === "function" ? `<div class="lb-note">${favoriteAlbumButton(q.artist, q.album)}</div>` : ""}
-    <div class="lb-summary"><span id="lb-total" class="txt-faint"></span><div class="spacer"></div><button class="btn sm" data-act="lb-all" data-mode="playlist" ${LB.busy ? "disabled" : ""}>全部结果加入列表</button><button class="btn primary sm" data-act="lb-all" data-mode="play" ${LB.busy ? "disabled" : ""}>全部结果推送 / 排队</button></div>`}`;
+    <div class="lb-summary"><span id="lb-total" class="txt-faint"></span><div class="spacer"></div><button class="btn sm" data-act="lb-all" data-mode="playlist" ${LB.busy ? "disabled" : ""}>${esc(lbT("libAllToPlaylist"))}</button><button class="btn primary sm" data-act="lb-all" data-mode="play" ${LB.busy ? "disabled" : ""}>${esc(lbT("libAllPush"))}</button></div>`}`;
 }
 async function refreshLibraryBrowser() {
   if (!$("#lb-header")) return;
   clearTimeout(LB.searchTimer);
   const seq = ++LB.request, tab = S.libTab;
-  LB.busy = true; LB.page = null;
+  LB.busy = true; LB.page = null; LB.error = null;
   paintLibraryBrowserHeader();
   const q = lbFrame().query;
   $("#global-search").value = q.q || "";
   S.search = q.q || "";
-  $("#lb-body").innerHTML = empty("refresh", "正在加载…", "", true);
+  $("#lb-body").innerHTML = empty("refresh", lbT("loading"), "", true);
   $("#lb-pages").innerHTML = "";
   if (tab === "favorites") return refreshFavoriteLibrary(seq);
   try {
@@ -70,29 +71,42 @@ async function refreshLibraryBrowser() {
     paintLibraryBrowserHeader(); paintLibraryBrowserItems();
   } catch (e) {
     if (seq !== LB.request || S.view !== "library") return;
-    LB.busy = false;
-    $("#lb-body").innerHTML = empty("alert", "加载失败：" + e.message, '<button class="btn" data-act="lib-refresh">重试</button>', true);
+    LB.busy = false; LB.error = e;
+    libraryBrowserLanguageChanged();
   }
+}
+function libraryBrowserLanguageChanged() {
+  paintLibraryBrowserHeader();
+  paintLibraryBrowserItems();
+  const body = $("#lb-body");
+  if (body && LB.busy) body.innerHTML = empty("refresh", lbT("loading"), "", true);
+  else if (body && LB.error) body.innerHTML = empty("alert", lbT("loadFailed", { message: I18n.message(LB.error.data, LB.error.rawMessage || LB.error.message) }), `<button class="btn" data-act="lib-refresh">${esc(lbT("retry"))}</button>`, true);
 }
 function paintLibraryBrowserItems() {
   const body = $("#lb-body"); if (!body) return;
   if (S.libTab === "playlists") {
     const list = S.playlists.filter(p => hit(p.name));
-    body.innerHTML = '<div class="acts mb8"><button class="btn primary sm" data-act="pl-new">新建播放列表</button></div>' + (list.length ? `<div class="q-list">${list.map(plRow).join("")}</div>` : empty("layers", "还没有匹配的播放列表", "", true));
+    body.innerHTML = `<div class="acts mb8"><button class="btn primary sm" data-act="pl-new">${esc(lbT("libNewPlaylist"))}</button></div>` + (list.length ? `<div class="q-list">${list.map(plRow).join("")}</div>` : empty("layers", lbT("libNoPlaylists"), "", true));
     return;
   }
   if (S.libTab === "favorites") { paintFavoriteLibrary(); return; }
   if (!LB.page) return;
   const p = LB.page;
-  $("#lb-total").textContent = `${p.total} 项 · ${p.total_tracks} 首曲目（批量操作包含全部页，仅选择可解码曲目）`;
-  body.innerHTML = p.items.length ? `<div class="${lbFrame().query.category === "albums" ? "lb-albums" : "lb-list"}">${p.items.map(lbItem).join("")}</div>` : empty("music", "没有匹配的音乐；可调整搜索，或到设置中添加音乐文件夹并扫描。", '<button class="btn ghost sm" data-act="settings-open" data-section="folders">音乐文件夹设置</button>', true);
+  $("#lb-total").textContent = lbT("libTotal", { count: I18n.number(p.total), tracks: I18n.number(p.total_tracks) });
+  body.innerHTML = p.items.length ? `<div class="${lbFrame().query.category === "albums" ? "lb-albums" : "lb-list"}">${p.items.map(lbItem).join("")}</div>` : empty("music", lbT("libNoMusic"), `<button class="btn ghost sm" data-act="settings-open" data-section="folders">${esc(lbT("libFolderSettings"))}</button>`, true);
   const count = Math.max(1, Math.ceil(p.total / p.page_size));
-  $("#lb-pages").innerHTML = `<div class="lb-pagination"><span>第 ${p.page} / ${count} 页</span><button class="btn sm" data-act="lb-page" data-page="${p.page - 1}" ${p.page <= 1 ? "disabled" : ""}>上一页</button><button class="btn sm" data-act="lb-page" data-page="${p.page + 1}" ${p.page >= count ? "disabled" : ""}>下一页</button><label>每页 <select class="inp" data-change="lb-size" aria-label="每页数量">${lbOptions([[24, "24"], [48, "48"], [96, "96"]], p.page_size)}</select></label></div>`;
+  $("#lb-pages").innerHTML = `<div class="lb-pagination"><span>${esc(lbT("page", { page: I18n.number(p.page), pages: I18n.number(count) }))}</span><button class="btn sm" data-act="lb-page" data-page="${p.page - 1}" ${p.page <= 1 ? "disabled" : ""}>${esc(lbT("previousPage"))}</button><button class="btn sm" data-act="lb-page" data-page="${p.page + 1}" ${p.page >= count ? "disabled" : ""}>${esc(lbT("nextPage"))}</button><label>${esc(lbT("perPage"))} <select class="inp" data-change="lb-size" aria-label="${esc(lbT("pageSize"))}">${lbOptions([24, 48, 96].map(n => [n, I18n.number(n)]), p.page_size)}</select></label></div>`;
+}
+function lbItemName(item) {
+  const key = { artist: "unknownArtist", album: "unknownAlbum", genre: "unknownGenre", composer: "unknownComposer", year: "unknownYear", track: "unknownTrack" }[item.kind];
+  // Empty entity values identify server-generated placeholders, not user metadata.
+  const missing = item.kind === "year" ? item.year === 0 : item.kind === "track" ? item.track && !item.track.title : item.value === "";
+  return missing && key ? lbT(key) : item.name || lbT(key || "unnamed");
 }
 function lbItem(item, index) {
-  const t = item.track, name = item.name || ({ artist: "未知艺术家", album: "未知专辑", genre: "未知风格", composer: "未知作曲家", year: "未知年份" }[item.kind]) || "未命名";
-  const detail = t ? [t.artist || "未知艺术家", t.album || "未知专辑", t.year || "未知年份", t.genre, t.composer, t.codec, fmtDur(t.duration_ms)].filter(Boolean).join(" · ") : [item.artist, `${item.track_count} 首`, item.album_count ? `${item.album_count} 张专辑` : "", item.kind === "year" ? "" : item.year || ""].filter(Boolean).join(" · ");
-  const actions = `<div class="lb-item-acts">${item.kind === "album" && lbFrame().query.artist_mode === "album" && typeof favoriteAlbumButton === "function" ? favoriteAlbumButton(item.artist, item.album ?? item.value) : ""}<button class="btn xs ghost" data-act="lb-pick" data-index="${index}" data-mode="playlist" title="加入播放列表">加列表</button><button class="btn xs primary" data-act="lb-pick" data-index="${index}" data-mode="play" ${t && !t.decodable ? "disabled" : ""}>推送 / 排队</button></div>`;
+  const t = item.track, name = lbItemName(item);
+  const detail = t ? [t.artist || lbT("unknownArtist"), t.album || lbT("unknownAlbum"), t.year || lbT("unknownYear"), t.genre, t.composer, t.codec, fmtDur(t.duration_ms)].filter(Boolean).join(" · ") : [item.artist, lbT("trackCount", { count: I18n.number(item.track_count) }), item.album_count ? lbT("albumCount", { count: I18n.number(item.album_count) }) : "", item.kind === "year" ? "" : item.year || ""].filter(Boolean).join(" · ");
+  const actions = `<div class="lb-item-acts">${item.kind === "album" && lbFrame().query.artist_mode === "album" && typeof favoriteAlbumButton === "function" ? favoriteAlbumButton(item.artist, item.album ?? item.value) : ""}<button class="btn xs ghost" data-act="lb-pick" data-index="${index}" data-mode="playlist" title="${esc(lbT("libAddPlaylist"))}">${esc(lbT("libAddPlaylistShort"))}</button><button class="btn xs primary" data-act="lb-pick" data-index="${index}" data-mode="play" ${t && !t.decodable ? "disabled" : ""}>${esc(lbT("libPush"))}</button></div>`;
   if (item.kind === "album") return `<article class="lb-album"><button class="lb-album-open" data-act="lb-open" data-index="${index}">${coverArt(name, item.artist, "lb-art", 30, item.cover_hash)}<strong>${esc(name)}</strong><span>${esc(detail)}</span></button>${actions}</article>`;
   return `<article class="lb-item">${t ? coverArt(t.album, t.artist, "thumb", 20, t.cover_hash) : `<span class="lb-item-icon">${esc(item.initial || "") || icon(item.kind === "folder" || item.kind === "source" ? "folder" : "music", 19)}</span>`}<div class="lb-item-info">${t ? `<strong>${esc(t.title || name)}</strong>` : `<button class="lb-name" data-act="lb-open" data-index="${index}">${esc(name)}</button>`}<span class="txt-faint">${esc(detail)}</span>${t ? `<span class="txt-faint mono" title="${esc(t.rel_path)}">${esc(t.rel_path)}</span>` : ""}</div>${actions}</article>`;
 }
@@ -135,16 +149,16 @@ async function lbPick(item, mode) {
     const result = await api("GET", "/library/select?" + new URLSearchParams(q));
     ids = result.track_ids;
   }
-  if (!ids.length) { toast("没有可解码的匹配曲目", "warn"); return; }
+  if (!ids.length) { toast(lbT("libNoDecodable"), "warn"); return; }
   if (mode === "playlist") await openPlPicker(ids);
-  else await openPushPicker({ trackIDs: ids, track: item && item.track, label: item ? item.name : "全部匹配结果" });
+  else await openPushPicker({ trackIDs: ids, track: item && item.track, label: item ? lbItemName(item) : lbT("libAllResults") });
 }
 Object.assign(ACT, {
   "lb-open": ds => {
     if (LB.busy) return;
     const item = LB.page.items[Number(ds.index)];
     if (!item || item.track) return;
-    lbState().frames.push({ label: item.name || "未知", query: lbItemQuery(item) });
+    lbState().frames.push({ get label() { return lbItemName(item); }, query: lbItemQuery(item) });
     return refreshLibraryBrowser();
   },
   "lb-back": ds => { lbState().frames.splice(Number(ds.index) + 1); return refreshLibraryBrowser(); },

@@ -120,14 +120,14 @@ func (a *API) nodeSubresource(w http.ResponseWriter, r *http.Request) {
 	case "queue":
 		a.nodeQueue(w, r)
 	default:
-		writeError(w, http.StatusNotFound, "未知的终端子资源")
+		writeErrorCode(w, http.StatusNotFound, "node_resource_not_found", "未知的终端子资源")
 	}
 }
 
 func (a *API) patchNode(w http.ResponseWriter, r *http.Request) {
 	var p node.Patch
 	if err := decode(r, &p); err != nil {
-		writeError(w, http.StatusBadRequest, "请求体不是合法 JSON")
+		writeErrorCode(w, http.StatusBadRequest, "bad_json", "请求体不是合法 JSON")
 		return
 	}
 	// A bound BOM must exist and be published; default to its latest version.
@@ -140,11 +140,11 @@ func (a *API) patchNode(w http.ResponseWriter, r *http.Request) {
 			b, err = a.boms.Latest(*p.BomID)
 		}
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "BOM 不存在："+*p.BomID)
+			writeErrorCode(w, http.StatusBadRequest, "bom_not_found", "BOM 不存在："+*p.BomID, map[string]any{"id": *p.BomID})
 			return
 		}
 		if b.Status != domain.BomPublished {
-			writeError(w, http.StatusConflict, "BOM 未发布，不能绑定到终端")
+			writeErrorCode(w, http.StatusConflict, "bom_unpublished", "BOM 未发布，不能绑定到终端")
 			return
 		}
 		if p.BomVersion == nil || *p.BomVersion == 0 {
@@ -155,10 +155,10 @@ func (a *API) patchNode(w http.ResponseWriter, r *http.Request) {
 	n, err := a.nodes.Patch(r.PathValue("id"), p)
 	if err != nil {
 		if errors.Is(err, catalog.ErrNotFound) {
-			writeError(w, http.StatusNotFound, err.Error())
+			writeServiceError(w, http.StatusNotFound, err)
 			return
 		}
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeServiceError(w, http.StatusBadRequest, err, "node_update_failed")
 		return
 	}
 	writeJSON(w, http.StatusOK, n)
@@ -169,17 +169,17 @@ func (a *API) deleteNode(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		switch {
 		case errors.Is(err, node.ErrPlaying):
-			writeError(w, http.StatusConflict, err.Error())
+			writeServiceError(w, http.StatusConflict, err)
 		case errors.Is(err, catalog.ErrNotFound):
-			writeError(w, http.StatusNotFound, err.Error())
+			writeServiceError(w, http.StatusNotFound, err)
 		default:
-			writeError(w, http.StatusInternalServerError, err.Error())
+			writeServiceError(w, http.StatusInternalServerError, err)
 		}
 		return
 	}
 	if a.rolls != nil {
 		if err := a.rolls.StripNode(n.NodeID); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
+			writeServiceError(w, http.StatusInternalServerError, err)
 			return
 		}
 	}
@@ -191,11 +191,11 @@ func (a *API) restoreNode(w http.ResponseWriter, r *http.Request) {
 		Node domain.Node `json:"node"`
 	}
 	if err := decode(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "请求体不是合法 JSON")
+		writeErrorCode(w, http.StatusBadRequest, "bad_json", "请求体不是合法 JSON")
 		return
 	}
 	if body.Node.NodeID == "" {
-		writeError(w, http.StatusBadRequest, "node_id 不能为空")
+		writeErrorCode(w, http.StatusBadRequest, "node_id_required", "node_id 不能为空")
 		return
 	}
 	a.seatMu.Lock()
@@ -203,22 +203,22 @@ func (a *API) restoreNode(w http.ResponseWriter, r *http.Request) {
 	if body.Node.Authorized {
 		seats, _, err := a.lic.SeatLimit()
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
+			writeServiceError(w, http.StatusInternalServerError, err)
 			return
 		}
 		used, err := a.nodes.AuthorizedCount()
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
+			writeServiceError(w, http.StatusInternalServerError, err)
 			return
 		}
 		if used >= seats {
-			writeError(w, http.StatusConflict, "授权席位已满，无法恢复已授权终端")
+			writeErrorCode(w, http.StatusConflict, "restore_seats_full", "授权席位已满，无法恢复已授权终端")
 			return
 		}
 	}
 	n, err := a.nodes.Restore(body.Node)
 	if err != nil {
-		writeError(w, http.StatusConflict, err.Error())
+		writeServiceError(w, http.StatusConflict, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"node": n})
@@ -229,35 +229,37 @@ func (a *API) authorizeNode(w http.ResponseWriter, r *http.Request) {
 	defer a.seatMu.Unlock()
 	seats, licensed, err := a.lic.SeatLimit()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServiceError(w, http.StatusInternalServerError, err)
 		return
 	}
 	id := r.PathValue("id")
 	n, err := a.nodes.Get(id)
 	if err != nil {
-		writeError(w, http.StatusNotFound, err.Error())
+		writeServiceError(w, http.StatusNotFound, err)
 		return
 	}
 	if !n.Authorized {
 		used, err := a.nodes.AuthorizedCount()
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
+			writeServiceError(w, http.StatusInternalServerError, err)
 			return
 		}
 		if used >= seats {
+			code := "builtin_seats_full"
 			msg := fmt.Sprintf("内置授权席位已满（%d/%d），激活许可证可授权更多终端", used, seats)
 			if licensed {
+				code = "license_seats_full"
 				msg = fmt.Sprintf("许可证席位已满（%d/%d），无法授权新终端", used, seats)
 			}
-			writeError(w, http.StatusConflict, msg)
+			writeErrorCode(w, http.StatusConflict, code, msg, map[string]any{"used": used, "seats": seats})
 			return
 		}
 		if err := a.nodes.SetAuthorized(id, true); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
+			writeServiceError(w, http.StatusInternalServerError, err)
 			return
 		}
 		if n, err = a.nodes.Get(id); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
+			writeServiceError(w, http.StatusInternalServerError, err)
 			return
 		}
 	}
@@ -268,15 +270,15 @@ func (a *API) revokeNode(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if err := a.nodes.SetAuthorized(id, false); err != nil {
 		if errors.Is(err, catalog.ErrNotFound) {
-			writeError(w, http.StatusNotFound, err.Error())
+			writeServiceError(w, http.StatusNotFound, err)
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServiceError(w, http.StatusInternalServerError, err)
 		return
 	}
 	n, err := a.nodes.Get(id)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServiceError(w, http.StatusInternalServerError, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "node": n})
@@ -285,7 +287,7 @@ func (a *API) revokeNode(w http.ResponseWriter, r *http.Request) {
 func (a *API) tokenStatus(w http.ResponseWriter, r *http.Request) {
 	used, exp, nid, err := a.nodes.TokenStatus(r.PathValue("token"))
 	if err != nil {
-		writeError(w, http.StatusNotFound, "注册令牌不存在")
+		writeErrorCode(w, http.StatusNotFound, "registration_token_not_found", "注册令牌不存在")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"used": used, "expires_at": exp, "node_id": nid})

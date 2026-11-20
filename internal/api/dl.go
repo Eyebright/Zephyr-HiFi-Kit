@@ -15,18 +15,18 @@ var distNameRE = regexp.MustCompile(`^(hifihub-agent_[0-9.]+_(amd64|arm64|armhf)
 func (a *API) downloadDist(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	if !distNameRE.MatchString(name) {
-		writeError(w, http.StatusNotFound, "文件不存在")
+		writeErrorCode(w, http.StatusNotFound, "file_not_found", "文件不存在")
 		return
 	}
 	f, err := os.Open(filepath.Join(a.cfg.DistDir, name))
 	if err != nil {
-		writeError(w, http.StatusNotFound, "文件不存在")
+		writeErrorCode(w, http.StatusNotFound, "file_not_found", "文件不存在")
 		return
 	}
 	defer f.Close()
 	fi, err := f.Stat()
 	if err != nil || fi.IsDir() {
-		writeError(w, http.StatusNotFound, "文件不存在")
+		writeErrorCode(w, http.StatusNotFound, "file_not_found", "文件不存在")
 		return
 	}
 	switch {

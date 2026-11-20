@@ -25,6 +25,7 @@ func Handler() http.Handler {
 	}
 	files := http.FileServer(http.FS(sub))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
 		name := strings.TrimPrefix(r.URL.Path, "/")
 		if name == "" {
 			name = "index.html"

@@ -44,7 +44,7 @@ function harness() {
   };
   context.window = context;
   vm.createContext(context);
-  vm.runInContext(fs.readFileSync(path.join(assets, "app.js"), "utf8"), context);
+  for (const file of ["i18n.js", "i18n-app.js", "i18n-features.js", "i18n-errors.js", "app.js"]) vm.runInContext(fs.readFileSync(path.join(assets, file), "utf8"), context);
   vm.runInContext(fs.readFileSync(path.join(assets, "terminal-center.js"), "utf8"), context);
   vm.runInContext(`req = (method, route, opts) => __api(method, route, opts?.body ? JSON.parse(opts.body) : undefined); toast = __toast; S.view = 'nodes'; openDrawer = (title, sub, body, foot, opts) => { drawerCtx = opts.ctx; __drawer(title, sub, body, foot, opts); }; setDrawerBody = html => __drawer('', '', html, '', {}); openPlayer = __player;`, context);
   h.run = source => vm.runInContext(source, context);
@@ -52,6 +52,106 @@ function harness() {
   h.node = (id, status = "offline") => ({ node_id: id, alias: "终端 " + id, status, arch: "arm64", distro: "debian", playing: false, authorized: true });
   return h;
 }
+
+test("task filter paints respect focus by default but force translated labels without changing filters", () => {
+  const h = harness(), filters = h.elements.get("#tc-task-filters"), focused = { value: "removed" };
+  h.context.document.activeElement = focused;
+  filters.contains = el => el === focused;
+  filters.innerHTML = "focused draft";
+  h.run(`S.nodes=[{node_id:'a',alias:'Alias <kept>'}]; S.search='keep search'; S.sel.add('a');
+    TC.taskNode='removed'; TC.taskType='agent'; TC.taskState='pending'; TC.page=3;`);
+  const before = h.run("JSON.stringify([S,TC])");
+  for (const [locale, nodeLabel, typeLabel, stateLabel] of [
+    ["en", "Terminal", "Type", "Status"], ["zh-TW", "終端", "類型", "狀態"], ["zh-CN", "终端", "类型", "状态"]
+  ]) {
+    const html = filters.innerHTML;
+    h.run(`I18n.setPreference(${JSON.stringify(locale)}); paintTerminalFilters(); paintTerminalFilters(false)`);
+    assert.equal(filters.innerHTML, html, "ordinary refresh must not replace focused filters");
+    h.run("paintTerminalFilters(true)");
+    for (const label of [nodeLabel, typeLabel, stateLabel]) assert.ok(filters.innerHTML.includes(`<span>${label}</span>`));
+    assert.ok(filters.innerHTML.includes(h.run("tcT('tcTaskFilter',{field:tcT('status')})")));
+    assert.ok(filters.innerHTML.includes(h.run("tcT('tcPersistentNote')")));
+    assert.match(filters.innerHTML, /<option value="removed" selected>removed<\/option>/);
+    assert.match(filters.innerHTML, /<option value="agent" selected>/);
+    assert.match(filters.innerHTML, /<option value="pending" selected>/);
+    assert.match(filters.innerHTML, /Alias &lt;kept&gt;/);
+    assert.equal((filters.innerHTML.match(/ selected>/g) || []).length, 3);
+    assert.equal(h.run("JSON.stringify([S,TC])"), before);
+    assert.equal(h.run("S.sel.has('a')"), true);
+    assert.equal(h.context.document.activeElement, focused);
+    assert.deepEqual(h.calls, []); assert.deepEqual(h.actions, []);
+  }
+  h.context.document.activeElement = null; filters.innerHTML = "unfocused stale labels";
+  h.run("paintTerminalFilters()");
+  assert.match(filters.innerHTML, /任务状态/);
+  h.elements.delete("#tc-task-filters");
+  assert.doesNotThrow(() => h.run("paintTerminalFilters(); paintTerminalFilters(true)"));
+});
+
+test("terminal language changes retain the workspace and repaint cached tabs without requests or action replay", async t => {
+  for (const tab of ["nodes", "tasks"]) await t.test(tab, () => {
+    const h = harness(), root = h.elements.get("#terminal-center"), workspace = h.elements.get("#tc-workspace");
+    h.run(`TC.tab=${JSON.stringify(tab)}; TC.loading=false; TC.epoch=9; TC.busy={pending:true};
+      TC.taskNode='a'; TC.taskType='agent'; TC.taskState='pending'; TC.page=2;
+      TC.detail={node_id:'a'}; TC.detailTab='services'; TC.errors=[{key:'tcSessionUnavailable'}];
+      S.nodes=[{node_id:'a',alias:'Keep alias',status:'offline',authorized:true}];
+      S.sel.add('a'); S.search='Keep'; S.nodeFilter='offline'; S.nodeSort={key:'alias',dir:-1};
+      S.play={node_id:'a',position:42}; S.nodeQueue.a=[{id:'queued'}];
+      TC.commands=Array.from({length:31},(_,i)=>({id:'c'+i,node_id:'a',type:'agent-upgrade',status:'pending',created_at:i+1}));
+      window.filterPaints=[]; const filtersForLanguageTest=paintTerminalFilters;
+      paintTerminalFilters=(force)=>{ filterPaints.push(force); return filtersForLanguageTest(force); };`);
+    const parts = new Map();
+    const part = (selector, innerHTML) => ({ innerHTML, replaceWith(next) { assert.ok(next); parts.set(selector, part(selector, next.innerHTML)); } });
+    for (const selector of [".tc-heading", ".tc-tabs"]) parts.set(selector, part(selector, "old labels"));
+    const add = { innerHTML: "old add label" };
+    root.querySelector = selector => selector === "[data-act='wz-open']" ? tab === "nodes" ? add : null : parts.get(selector) || null;
+    // Only extract the two replaceable shell fragments, not a simulated browser DOM.
+    h.context.document.createElement = tag => {
+      assert.equal(tag, "div");
+      return { innerHTML: "", querySelector(selector) {
+        const html = selector === ".tc-heading" ? this.innerHTML.match(/<div class="tc-heading">([\s\S]*?)<nav class="tc-tabs"/)[1]
+          : this.innerHTML.match(/<nav class="tc-tabs"[\s\S]*?<\/nav>/)[0];
+        return { innerHTML: html };
+      } };
+    };
+    for (const node of [root, workspace]) Object.defineProperty(node, "innerHTML", { get: () => "retained workspace", set() { assert.fail("translation must not replace terminal roots"); } });
+    if (tab === "nodes") h.elements.delete("#tc-task-filters");
+    else {
+      const focused = { value: "a" }; h.context.document.activeElement = focused;
+      h.elements.get("#tc-task-filters").contains = el => el === focused;
+    }
+    const state = h.run("JSON.stringify([S,TC])"), busy = h.run("TC.busy"), commands = h.run("TC.commands");
+    for (const [locale, title, addLabel, taskLabel] of [
+      ["en", "Terminal center", "Add terminal", "Task history"],
+      ["zh-TW", "終端中心", "新增終端", "工作紀錄"],
+      ["zh-CN", "终端中心", "添加终端", "任务记录"]
+    ]) {
+      h.run(`filterPaints.length=0; I18n.setPreference(${JSON.stringify(locale)}); terminalCenterLanguageChanged()`);
+      assert.ok(parts.get(".tc-heading").innerHTML.includes(title));
+      assert.ok(parts.get(".tc-tabs").innerHTML.includes(taskLabel));
+      assert.ok(parts.get(".tc-tabs").innerHTML.includes(`data-tab="${tab}" aria-pressed="true"`));
+      assert.equal(h.elements.get("#terminal-center"), root); assert.equal(h.elements.get("#tc-workspace"), workspace);
+      assert.deepEqual(Array.from(h.run("filterPaints")), tab === "tasks" ? [true, undefined] : [true]);
+      if (tab === "nodes") {
+        assert.ok(add.innerHTML.includes(addLabel));
+        assert.match(h.elements.get("#nd-table").innerHTML, /Keep alias/);
+        assert.match(h.elements.get("#nd-chips").innerHTML, /data-f="offline" aria-pressed="true"/);
+      } else {
+        assert.ok(h.elements.get("#tc-task-filters").innerHTML.includes(h.run("tcT('tcAllNodes')")), "forced paint updates even focused filters");
+        assert.ok(h.elements.get("#tc-task-list").innerHTML.includes(h.run("tcT('tcAwaitingReport')")));
+        assert.equal((h.elements.get("#tc-task-list").innerHTML.match(/data-act="tc-task-open"/g) || []).length, 6);
+      }
+      assert.ok(h.elements.get("#tc-access").innerHTML.includes(h.run("tcT('tcReadOnly')")));
+      assert.ok(h.elements.get("#tc-errors").innerHTML.includes(h.run("tcT('tcSessionUnavailable')")));
+      assert.equal(h.run("JSON.stringify([S,TC])"), state);
+      assert.equal(h.run("TC.busy"), busy); assert.equal(h.run("TC.commands"), commands);
+      assert.equal(h.run("S.sel.has('a')"), true);
+      assert.deepEqual(h.calls, []); assert.deepEqual(h.actions, []);
+    }
+    h.elements.delete("#terminal-center"); h.context.document.createElement = () => assert.fail("missing root must be a no-op");
+    assert.doesNotThrow(() => h.run("terminalCenterLanguageChanged()"));
+  });
+});
 
 test("navigation contains one terminal entry, with no old deployment selectors", () => {
   const h = harness();

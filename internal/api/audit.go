@@ -12,14 +12,14 @@ func (a *API) listAudit(w http.ResponseWriter, r *http.Request) {
 	if v := r.URL.Query().Get("limit"); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 0 {
-			writeError(w, http.StatusBadRequest, "limit 必须是非负整数")
+			writeErrorCode(w, http.StatusBadRequest, "audit_limit_invalid", "limit 必须是非负整数")
 			return
 		}
 		limit = n
 	}
 	entries, err := a.aud.List(limit)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServiceError(w, http.StatusInternalServerError, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, entries)
@@ -28,7 +28,7 @@ func (a *API) listAudit(w http.ResponseWriter, r *http.Request) {
 func (a *API) exportAudit(w http.ResponseWriter, r *http.Request) {
 	entries, err := a.aud.All()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServiceError(w, http.StatusInternalServerError, err)
 		return
 	}
 	switch r.URL.Query().Get("format") {
@@ -49,6 +49,6 @@ func (a *API) exportAudit(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Disposition", `attachment; filename="audit.json"`)
 		writeJSON(w, http.StatusOK, entries)
 	default:
-		writeError(w, http.StatusBadRequest, "format 仅支持 csv 或 json")
+		writeErrorCode(w, http.StatusBadRequest, "audit_format_invalid", "format 仅支持 csv 或 json")
 	}
 }

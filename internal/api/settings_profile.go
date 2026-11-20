@@ -93,14 +93,14 @@ func decodeSettingsProfileRequest(w http.ResponseWriter, r *http.Request, out an
 func (a *API) getSettingsProfile(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	if a.admin == nil {
-		writeError(w, http.StatusServiceUnavailable, "管理员资料不可用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "settings_profile_unavailable", "管理员资料不可用")
 		return
 	}
 	a.admin.mu.Lock()
 	defer a.admin.mu.Unlock()
 	p, err := a.settingsProfileLocked()
 	if err != nil {
-		writeError(w, http.StatusServiceUnavailable, "无法读取管理员资料")
+		writeErrorCode(w, http.StatusServiceUnavailable, "settings_profile_read_failed", "无法读取管理员资料")
 		return
 	}
 	writeJSON(w, http.StatusOK, p)
@@ -112,12 +112,12 @@ func (a *API) updateSettingsProfile(w http.ResponseWriter, r *http.Request) {
 			DisplayName *string `json:"display_name"`
 		}
 		if err := decodeSettingsProfileRequest(w, r, &req, "display_name"); err != nil || req.DisplayName == nil {
-			writeError(w, http.StatusBadRequest, "需要 display_name")
+			writeErrorCode(w, http.StatusBadRequest, "settings_display_name_required", "需要 display_name")
 			return
 		}
 		name, err := library.NormalizeSettingsDisplayName(*req.DisplayName)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "显示名字须为1至40个Unicode字符，且不含控制字符")
+			writeErrorCode(w, http.StatusBadRequest, "settings_display_name_invalid", "显示名字须为1至40个Unicode字符，且不含控制字符")
 			return
 		}
 		a.admin.mu.Lock()
@@ -134,7 +134,7 @@ func (a *API) updateSettingsProfile(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if err != nil {
-			writeError(w, http.StatusServiceUnavailable, "无法保存管理员资料")
+			writeErrorCode(w, http.StatusServiceUnavailable, "settings_profile_save_failed", "无法保存管理员资料")
 			return
 		}
 		writeJSON(w, http.StatusOK, p)
@@ -148,7 +148,7 @@ func (a *API) updateSettingsOnboarding(w http.ResponseWriter, r *http.Request) {
 			Complete *bool `json:"complete"`
 		}
 		if err := decodeSettingsProfileRequest(w, r, &req, "step", "complete"); err != nil || req.Step == nil || req.Complete == nil || *req.Step < 1 || *req.Step > 3 || (*req.Complete && *req.Step != 3) {
-			writeError(w, http.StatusBadRequest, "需要1至3的 step 和 complete，且只能在第3步完成引导")
+			writeErrorCode(w, http.StatusBadRequest, "settings_onboarding_invalid", "需要1至3的 step 和 complete，且只能在第3步完成引导")
 			return
 		}
 		a.admin.mu.Lock()
@@ -165,11 +165,11 @@ func (a *API) updateSettingsOnboarding(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if errors.Is(err, library.ErrSettingsOnboarding) {
-			writeError(w, http.StatusBadRequest, "请先设置合法的显示名字")
+			writeErrorCode(w, http.StatusBadRequest, "settings_display_name_needed", "请先设置合法的显示名字")
 			return
 		}
 		if err != nil {
-			writeError(w, http.StatusServiceUnavailable, "无法保存引导进度")
+			writeErrorCode(w, http.StatusServiceUnavailable, "settings_onboarding_save_failed", "无法保存引导进度")
 			return
 		}
 		writeJSON(w, http.StatusOK, p)

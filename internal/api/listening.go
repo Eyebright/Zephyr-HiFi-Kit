@@ -7,7 +7,7 @@ import (
 
 func (a *API) listListening(w http.ResponseWriter, r *http.Request) {
 	if a.lib == nil {
-		writeError(w, http.StatusServiceUnavailable, "媒体库未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "library_unavailable", "媒体库未启用")
 		return
 	}
 	days := 7
@@ -15,7 +15,7 @@ func (a *API) listListening(w http.ResponseWriter, r *http.Request) {
 		var err error
 		days, err = strconv.Atoi(raw)
 		if err != nil || (days != 1 && days != 7 && days != 30) {
-			writeError(w, http.StatusBadRequest, "days 必须为 1、7 或 30")
+			writeErrorCode(w, http.StatusBadRequest, "listening_days_invalid", "days 必须为 1、7 或 30")
 			return
 		}
 	}

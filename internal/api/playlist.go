@@ -13,7 +13,7 @@ import (
 
 func (a *API) listHistory(w http.ResponseWriter, r *http.Request) {
 	if a.lib == nil {
-		writeError(w, http.StatusServiceUnavailable, "媒体库未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "library_unavailable", "媒体库未启用")
 		return
 	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
@@ -29,7 +29,7 @@ func (a *API) listHistory(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) listPlaylists(w http.ResponseWriter, _ *http.Request) {
 	if a.lib == nil {
-		writeError(w, http.StatusServiceUnavailable, "媒体库未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "library_unavailable", "媒体库未启用")
 		return
 	}
 	ps, err := a.lib.ListPlaylists()
@@ -42,7 +42,7 @@ func (a *API) listPlaylists(w http.ResponseWriter, _ *http.Request) {
 
 func (a *API) createPlaylist(w http.ResponseWriter, r *http.Request) {
 	if a.lib == nil {
-		writeError(w, http.StatusServiceUnavailable, "媒体库未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "library_unavailable", "媒体库未启用")
 		return
 	}
 	var body struct {
@@ -62,7 +62,7 @@ func (a *API) createPlaylist(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) getPlaylist(w http.ResponseWriter, r *http.Request) {
 	if a.lib == nil {
-		writeError(w, http.StatusServiceUnavailable, "媒体库未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "library_unavailable", "媒体库未启用")
 		return
 	}
 	d, err := a.lib.GetPlaylist(r.PathValue("id"))
@@ -75,7 +75,7 @@ func (a *API) getPlaylist(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) renamePlaylist(w http.ResponseWriter, r *http.Request) {
 	if a.lib == nil {
-		writeError(w, http.StatusServiceUnavailable, "媒体库未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "library_unavailable", "媒体库未启用")
 		return
 	}
 	var body struct {
@@ -94,7 +94,7 @@ func (a *API) renamePlaylist(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) deletePlaylist(w http.ResponseWriter, r *http.Request) {
 	if a.lib == nil {
-		writeError(w, http.StatusServiceUnavailable, "媒体库未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "library_unavailable", "媒体库未启用")
 		return
 	}
 	if err := a.lib.DeletePlaylist(r.PathValue("id")); err != nil {
@@ -114,7 +114,7 @@ func (a *API) setPlaylistItems(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) playlistItems(w http.ResponseWriter, r *http.Request, replace bool) {
 	if a.lib == nil {
-		writeError(w, http.StatusServiceUnavailable, "媒体库未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "library_unavailable", "媒体库未启用")
 		return
 	}
 	var body struct {
@@ -140,12 +140,12 @@ func (a *API) playlistItems(w http.ResponseWriter, r *http.Request, replace bool
 
 func (a *API) removePlaylistItem(w http.ResponseWriter, r *http.Request) {
 	if a.lib == nil {
-		writeError(w, http.StatusServiceUnavailable, "媒体库未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "library_unavailable", "媒体库未启用")
 		return
 	}
 	pos, err := strconv.Atoi(r.PathValue("pos"))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "位置无效")
+		writeErrorCode(w, http.StatusBadRequest, "playlist_position_invalid", "位置无效")
 		return
 	}
 	d, err := a.lib.RemovePlaylistItem(r.PathValue("id"), pos)
@@ -160,7 +160,7 @@ func (a *API) removePlaylistItem(w http.ResponseWriter, r *http.Request) {
 // playback at the first entry. Like a direct push, it replaces the queue.
 func (a *API) pushPlaylist(w http.ResponseWriter, r *http.Request) {
 	if a.lib == nil || a.zat == nil {
-		writeError(w, http.StatusServiceUnavailable, "媒体库或 ZAT 服务未启用")
+		writeErrorCode(w, http.StatusServiceUnavailable, "playback_unavailable", "媒体库或 ZAT 服务未启用")
 		return
 	}
 	var body struct {
@@ -171,7 +171,7 @@ func (a *API) pushPlaylist(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if body.NodeID == "" {
-		writeError(w, http.StatusBadRequest, "node_id 不能为空")
+		writeErrorCode(w, http.StatusBadRequest, "node_id_required", "node_id 不能为空")
 		return
 	}
 	d, err := a.lib.GetPlaylist(r.PathValue("id"))
@@ -180,13 +180,13 @@ func (a *API) pushPlaylist(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(d.Items) == 0 {
-		writeError(w, http.StatusBadRequest, "播放列表为空")
+		writeErrorCode(w, http.StatusBadRequest, "playlist_empty", "播放列表为空")
 		return
 	}
 	ids := make([]string, 0, len(d.Items))
 	for _, it := range d.Items {
 		if it.Missing {
-			writeError(w, http.StatusBadRequest, "播放列表包含已缺失的曲目，请先移除："+it.TrackID)
+			writeErrorCode(w, http.StatusBadRequest, "playlist_track_missing", "播放列表包含已缺失的曲目，请先移除："+it.TrackID, map[string]any{"id": it.TrackID})
 			return
 		}
 		ids = append(ids, it.TrackID)
@@ -194,7 +194,7 @@ func (a *API) pushPlaylist(w http.ResponseWriter, r *http.Request) {
 	sessionID, err := a.zat.StartPlay(r.Context(), body.NodeID, ids[0])
 	if err != nil {
 		if errors.Is(err, zatserver.ErrNotConnected) {
-			writeError(w, http.StatusConflict, err.Error())
+			writeServiceError(w, http.StatusConflict, err)
 			return
 		}
 		fail(w, err)

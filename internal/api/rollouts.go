@@ -11,7 +11,7 @@ import (
 func (a *API) listRollouts(w http.ResponseWriter, _ *http.Request) {
 	rs, err := a.rolls.List()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServiceError(w, http.StatusInternalServerError, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, rs)
@@ -25,16 +25,16 @@ func (a *API) createRollout(w http.ResponseWriter, r *http.Request) {
 		Rings      []rollouts.RingSpec `json:"rings"`
 	}
 	if err := decode(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "请求体不是合法 JSON")
+		writeErrorCode(w, http.StatusBadRequest, "bad_json", "请求体不是合法 JSON")
 		return
 	}
 	ro, err := a.rolls.Create(body.Name, body.BomID, body.BomVersion, body.Rings)
 	if err != nil {
 		if errors.Is(err, catalog.ErrNotFound) {
-			writeError(w, http.StatusNotFound, err.Error())
+			writeServiceError(w, http.StatusNotFound, err)
 			return
 		}
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeServiceError(w, http.StatusBadRequest, err, "rollout_operation_failed")
 		return
 	}
 	writeJSON(w, http.StatusCreated, ro)
@@ -44,10 +44,10 @@ func (a *API) getRollout(w http.ResponseWriter, r *http.Request) {
 	ro, err := a.rolls.Get(r.PathValue("id"))
 	if err != nil {
 		if errors.Is(err, catalog.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "灰度发布不存在")
+			writeErrorCode(w, http.StatusNotFound, "rollout_not_found", "灰度发布不存在")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServiceError(w, http.StatusInternalServerError, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, ro)
@@ -58,11 +58,11 @@ func (a *API) advanceRollout(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		switch {
 		case errors.Is(err, rollouts.ErrRingBusy):
-			writeError(w, http.StatusConflict, err.Error())
+			writeServiceError(w, http.StatusConflict, err)
 		case errors.Is(err, catalog.ErrNotFound):
-			writeError(w, http.StatusNotFound, "灰度发布不存在")
+			writeErrorCode(w, http.StatusNotFound, "rollout_not_found", "灰度发布不存在")
 		default:
-			writeError(w, http.StatusBadRequest, err.Error())
+			writeServiceError(w, http.StatusBadRequest, err, "rollout_operation_failed")
 		}
 		return
 	}
@@ -72,10 +72,10 @@ func (a *API) advanceRollout(w http.ResponseWriter, r *http.Request) {
 func (a *API) deleteRollout(w http.ResponseWriter, r *http.Request) {
 	if err := a.rolls.Delete(r.PathValue("id")); err != nil {
 		if errors.Is(err, catalog.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "灰度发布不存在")
+			writeErrorCode(w, http.StatusNotFound, "rollout_not_found", "灰度发布不存在")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServiceError(w, http.StatusInternalServerError, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})

@@ -63,8 +63,16 @@ func TestAptSourceCRUDAndApply(t *testing.T) {
 	}
 
 	nTrixie := registerNodeDistro(t, base, "apt-trixie", "Debian GNU/Linux 13 (trixie)")
-	if s, _ := doJSON(t, "POST", base+"/nodes/"+nTrixie+"/apt-sources/apply", nil); s != 400 {
-		t.Fatalf("trixie should have no matching source: %d", s)
+	s, b = doJSON(t, "POST", base+"/nodes/"+nTrixie+"/apt-sources/apply", nil)
+	if s != 400 {
+		t.Fatalf("trixie should have no matching source: %d %s", s, b)
+	}
+	empty := mustJSON(t, b)
+	if empty["code"] != "apt_sources_empty" || empty["message_code"] != "errors.apt_sources_empty" {
+		t.Fatalf("missing stable empty-source code: %s", b)
+	}
+	if empty["error"] != "没有适用于该终端发行版的第三方 APT 源（发行版自带软件包无需额外源）" || empty["message"] != empty["error"] || empty["trace_id"] == "" {
+		t.Fatalf("empty-source diagnostic envelope changed: %s", b)
 	}
 	if s, _ := doJSON(t, "POST", base+"/nodes/nope/apt-sources/apply", nil); s != 404 {
 		t.Fatalf("unknown node: %d", s)

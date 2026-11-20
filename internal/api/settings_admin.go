@@ -53,6 +53,7 @@ type settingsAdmin struct {
 
 	profileInitialized bool
 	profile            *library.SettingsProfile // in-memory fallback only when lib is nil
+	defaultLanguage    string                   // independent in-memory fallback only when lib is nil
 }
 
 func newSettingsAdmin(cfg config.Config) *settingsAdmin {
@@ -148,7 +149,7 @@ func settingsSecureContext(r *http.Request) bool {
 func settingsRequestAllowed(w http.ResponseWriter, r *http.Request, mutation bool) bool {
 	w.Header().Set("Cache-Control", "no-store")
 	if !settingsSecureContext(r) {
-		writeError(w, http.StatusForbidden, "管理操作需要 HTTPS，或本机 localhost 连接")
+		writeErrorCode(w, http.StatusForbidden, "settings_secure_context_required", "管理操作需要 HTTPS，或本机 localhost 连接")
 		return false
 	}
 	scheme := "http"
@@ -158,22 +159,22 @@ func settingsRequestAllowed(w http.ResponseWriter, r *http.Request, mutation boo
 	host, ok := settingsAuthority(r.Host, scheme)
 	origin := r.Header.Get("Origin")
 	if !ok || (mutation && origin == "") {
-		writeError(w, http.StatusForbidden, "需要同源请求")
+		writeErrorCode(w, http.StatusForbidden, "settings_same_origin_required", "需要同源请求")
 		return false
 	}
 	if site := r.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" && site != "none" {
-		writeError(w, http.StatusForbidden, "不允许跨站请求")
+		writeErrorCode(w, http.StatusForbidden, "settings_cross_site_denied", "不允许跨站请求")
 		return false
 	}
 	if origin != "" {
 		u, err := url.Parse(origin)
 		if err != nil || u.Scheme != scheme || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
-			writeError(w, http.StatusForbidden, "不允许跨源请求")
+			writeErrorCode(w, http.StatusForbidden, "settings_cross_origin_denied", "不允许跨源请求")
 			return false
 		}
 		o, valid := settingsAuthority(u.Host, u.Scheme)
 		if !valid || o != host {
-			writeError(w, http.StatusForbidden, "不允许跨源请求")
+			writeErrorCode(w, http.StatusForbidden, "settings_cross_origin_denied", "不允许跨源请求")
 			return false
 		}
 	}
@@ -181,7 +182,7 @@ func settingsRequestAllowed(w http.ResponseWriter, r *http.Request, mutation boo
 		mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 		artifactUpload := r.Pattern == "POST /api/v1/apps/{id}/versions" && mediaType == "multipart/form-data"
 		if err != nil || (mediaType != "application/json" && !artifactUpload) {
-			writeError(w, http.StatusUnsupportedMediaType, "需要 application/json")
+			writeErrorCode(w, http.StatusUnsupportedMediaType, "settings_json_required", "需要 application/json")
 			return false
 		}
 	}
@@ -274,7 +275,7 @@ func settingsReadPassword(w http.ResponseWriter, r *http.Request) (string, bool)
 		Password string `json:"password"`
 	}
 	if err := decodeSettingsJSON(http.MaxBytesReader(w, r.Body, 8192), &req); err != nil || !utf8.ValidString(req.Password) || len(req.Password) > 1024 || utf8.RuneCountInString(req.Password) < 12 {
-		writeError(w, http.StatusBadRequest, "密码须为至少12个字符，最多1024字节")
+		writeErrorCode(w, http.StatusBadRequest, "settings_password_invalid", "密码须为至少12个字符，最多1024字节")
 		return "", false
 	}
 	return req.Password, true
@@ -286,16 +287,16 @@ func settingsReadSetup(w http.ResponseWriter, r *http.Request) (string, string, 
 		DisplayName *string `json:"display_name"`
 	}
 	if err := decodeSettingsProfileRequest(w, r, &req, "password", "display_name"); err != nil || req.DisplayName == nil {
-		writeError(w, http.StatusBadRequest, "需要 password 和 display_name")
+		writeErrorCode(w, http.StatusBadRequest, "settings_identity_required", "需要 password 和 display_name")
 		return "", "", false
 	}
 	if !utf8.ValidString(req.Password) || len(req.Password) > 1024 || utf8.RuneCountInString(req.Password) < 12 {
-		writeError(w, http.StatusBadRequest, "密码须为至少12个字符，最多1024字节")
+		writeErrorCode(w, http.StatusBadRequest, "settings_password_invalid", "密码须为至少12个字符，最多1024字节")
 		return "", "", false
 	}
 	name, err := library.NormalizeSettingsDisplayName(*req.DisplayName)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "显示名字须为1至40个Unicode字符，且不含控制字符")
+		writeErrorCode(w, http.StatusBadRequest, "settings_display_name_invalid", "显示名字须为1至40个Unicode字符，且不含控制字符")
 		return "", "", false
 	}
 	return req.Password, name, true
@@ -306,11 +307,11 @@ func (a *API) setupSettingsAdmin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !settingsLocalRequest(r) {
-		writeError(w, http.StatusForbidden, "仅本机 localhost 连接可初始化管理员")
+		writeErrorCode(w, http.StatusForbidden, "settings_local_setup_required", "仅本机 localhost 连接可初始化管理员")
 		return
 	}
 	if a.admin == nil || strings.TrimSpace(a.admin.dataDir) == "" {
-		writeError(w, http.StatusServiceUnavailable, "请先配置数据目录")
+		writeErrorCode(w, http.StatusServiceUnavailable, "settings_data_dir_required", "请先配置数据目录")
 		return
 	}
 	password, name, ok := settingsReadSetup(w, r)
@@ -321,29 +322,29 @@ func (a *API) setupSettingsAdmin(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.configured || s.unavailable {
-		writeError(w, http.StatusConflict, "管理员已初始化或不可用")
+		writeErrorCode(w, http.StatusConflict, "settings_setup_unavailable", "管理员已初始化或不可用")
 		return
 	}
 	// Commit the new-instance marker BEFORE creating any credentials. If this
 	// fails, no account is created; a restart must not classify it as legacy.
 	if _, err := a.settingsProfileLocked(); err != nil {
-		writeError(w, http.StatusServiceUnavailable, "无法保存初始引导状态，尚未创建管理员")
+		writeErrorCode(w, http.StatusServiceUnavailable, "settings_initial_state_failed", "无法保存初始引导状态，尚未创建管理员")
 		return
 	}
 	p := settingsPassword{Version: 1, Iterations: settingsIterations, Salt: make([]byte, 32)}
 	if _, err := rand.Read(p.Salt); err != nil {
-		writeError(w, 500, "无法初始化管理员")
+		writeErrorCode(w, 500, "settings_setup_failed", "无法初始化管理员")
 		return
 	}
 	var err error
 	p.Hash, err = pbkdf2.Key(sha256.New, password, p.Salt, p.Iterations, 32)
 	if err != nil {
-		writeError(w, 500, "无法初始化管理员")
+		writeErrorCode(w, 500, "settings_setup_failed", "无法初始化管理员")
 		return
 	}
 	data, _ := json.Marshal(p)
 	if err = os.MkdirAll(s.dataDir, 0700); err != nil {
-		writeError(w, 500, "无法保存管理员配置")
+		writeErrorCode(w, 500, "settings_credentials_save_failed", "无法保存管理员配置")
 		return
 	}
 	path := filepath.Join(s.dataDir, "settings-admin.json")
@@ -354,7 +355,7 @@ func (a *API) setupSettingsAdmin(w http.ResponseWriter, r *http.Request) {
 			// not advertise setup again, or overwrite credentials we do not own.
 			s.configured, s.unavailable = true, true
 		}
-		writeError(w, http.StatusConflict, "无法保存管理员配置")
+		writeErrorCode(w, http.StatusConflict, "settings_credentials_save_failed", "无法保存管理员配置")
 		return
 	}
 	// From this point a partial file also disables setup, including on restart.
@@ -365,16 +366,16 @@ func (a *API) setupSettingsAdmin(w http.ResponseWriter, r *http.Request) {
 	}
 	closeErr := f.Close()
 	if err != nil || closeErr != nil {
-		writeError(w, 500, "管理员配置写入失败，无法再次初始化")
+		writeErrorCode(w, 500, "settings_credentials_write_failed", "管理员配置写入失败，无法再次初始化")
 		return
 	}
 	s.password, s.unavailable = p, false
 	if err = a.completeSettingsSetupLocked(name); err != nil {
-		writeError(w, 500, "管理员已创建，请登录后补全显示名字并继续引导")
+		writeErrorCode(w, 500, "settings_setup_profile_incomplete", "管理员已创建，请登录后补全显示名字并继续引导")
 		return
 	}
 	if err = s.issueSession(w, r); err != nil {
-		writeError(w, 500, "管理员已创建，请重新登录")
+		writeErrorCode(w, 500, "settings_setup_login_required", "管理员已创建，请重新登录")
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]bool{"configured": true, "authenticated": true})
@@ -385,7 +386,7 @@ func (a *API) loginSettingsAdmin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if a.admin == nil {
-		writeError(w, http.StatusUnauthorized, "请先初始化管理员")
+		writeErrorCode(w, http.StatusUnauthorized, "settings_setup_required", "请先初始化管理员")
 		return
 	}
 	password, ok := settingsReadPassword(w, r)
@@ -396,12 +397,12 @@ func (a *API) loginSettingsAdmin(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !s.configured || s.unavailable {
-		writeError(w, http.StatusUnauthorized, "管理员未初始化或不可用")
+		writeErrorCode(w, http.StatusUnauthorized, "settings_admin_unavailable", "管理员未初始化或不可用")
 		return
 	}
 	if s.now().Before(s.nextAttempt) {
 		w.Header().Set("Retry-After", "60")
-		writeError(w, http.StatusTooManyRequests, "登录尝试过多，请稍后再试")
+		writeErrorCode(w, http.StatusTooManyRequests, "settings_login_rate_limited", "登录尝试过多，请稍后再试")
 		return
 	}
 	derived, err := pbkdf2.Key(sha256.New, password, s.password.Salt, s.password.Iterations, 32)
@@ -409,12 +410,12 @@ func (a *API) loginSettingsAdmin(w http.ResponseWriter, r *http.Request) {
 		s.failures++
 		delay := time.Second << min(s.failures-1, 6)
 		s.nextAttempt = s.now().Add(delay)
-		writeError(w, http.StatusUnauthorized, "密码错误")
+		writeErrorCode(w, http.StatusUnauthorized, "settings_password_incorrect", "密码错误")
 		return
 	}
 	s.failures, s.nextAttempt = 0, time.Time{}
 	if err := s.issueSession(w, r); err != nil {
-		writeError(w, 500, "无法创建会话")
+		writeErrorCode(w, 500, "settings_session_failed", "无法创建会话")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"authenticated": true})
@@ -442,7 +443,7 @@ func (a *API) requireSettingsAdmin(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		if !a.admin.authenticated(w, r) {
-			writeError(w, http.StatusUnauthorized, "需要管理员登录")
+			writeErrorCode(w, http.StatusUnauthorized, "settings_login_required", "需要管理员登录")
 			return
 		}
 		next(w, r)
