@@ -104,7 +104,7 @@ func TestReadTagsAbsentAndUnsupported(t *testing.T) {
 		"wav":   taggedWAV(wavChunk("LIST", []byte("INFO"))),
 	} {
 		t.Run(name, func(t *testing.T) {
-			got, err := readTags(bytes.NewReader(data), int64(len(data)))
+			got, err := readTags(bytes.NewReader(data), int64(len(data)), EncodingAuto)
 			if err != nil || got != (Tags{}) {
 				t.Fatalf("tags = %+v, %v", got, err)
 			}
@@ -145,7 +145,7 @@ func TestReadTagsMalformed(t *testing.T) {
 		{"wav riff length", badRIFF, Tags{}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := readTags(bytes.NewReader(tc.data), int64(len(tc.data)))
+			got, err := readTags(bytes.NewReader(tc.data), int64(len(tc.data)), EncodingAuto)
 			if err == nil || got != tc.want {
 				t.Fatalf("tags = %+v, %v; want %+v and an error", got, err, tc.want)
 			}
@@ -159,13 +159,13 @@ func TestReadTagsMalformed(t *testing.T) {
 func TestReadTagsValueLimits(t *testing.T) {
 	long := strings.Repeat("a", maxTagValueBytes+1)
 	comment := vorbisComments("TITLE="+long, "GENRE=\xff", "GENRE=", "GENRE= Soul ", "GENRE=Rock")
-	got, err := parseVorbisTags(comment)
+	got, err := parseVorbisTags(comment, EncodingUTF8)
 	if err != nil || got != (Tags{Genre: "Soul; Rock"}) {
 		t.Fatalf("Vorbis value limits: %+v, %v", got, err)
 	}
 	info := append(wavChunk("INAM", []byte(long)), wavChunk("IGNR", []byte("Jazz"))...)
 	var tags Tags
-	if err := tags.parseWAVInfo(info); err != nil || tags != (Tags{Genre: "Jazz"}) {
+	if err := tags.parseWAVInfo(info, EncodingAuto); err != nil || tags != (Tags{Genre: "Jazz"}) {
 		t.Fatalf("WAV value limits: %+v, %v", tags, err)
 	}
 }
@@ -181,7 +181,7 @@ func TestReadTagsBlockLimits(t *testing.T) {
 	}
 	binary.LittleEndian.PutUint32(wav[4:8], uint32(len(wav)-8))
 	for _, data := range [][]byte{flac, wav} {
-		if _, err := readTags(bytes.NewReader(data), int64(len(data))); err == nil {
+		if _, err := readTags(bytes.NewReader(data), int64(len(data)), EncodingAuto); err == nil {
 			t.Fatal("expected metadata block limit")
 		}
 	}
@@ -191,13 +191,13 @@ func TestExtendedVorbisMetadata(t *testing.T) {
 	got, err := parseVorbisTags(vorbisComments(
 		"ALBUM ARTIST=王菲", "ALBUMARTIST=ignored", "COMPOSER=Bach, Johann Sebastian",
 		"COMPOSER= Mozart ; Bach, Johann Sebastian", "COMPOSER=mozart", "GENRE=Jazz; Rock", "GENRE=jazz",
-		"DATE=1998-05-09", "YEAR=2001", "DISCNUMBER=2/3", "TRACKNUMBER=07/12"))
+		"DATE=1998-05-09", "YEAR=2001", "DISCNUMBER=2/3", "TRACKNUMBER=07/12"), EncodingAuto)
 	want := Tags{AlbumArtist: "王菲", Composer: "Bach, Johann Sebastian; Mozart", Genre: "Jazz; Rock", Year: 1998, DiscNumber: 2, TrackNumber: 7}
 	if err != nil || got != want {
 		t.Fatalf("extended metadata=%+v err=%v want=%+v", got, err, want)
 	}
 	for _, invalid := range []string{"-1", "garbage", "99999999999999999999999999", "0"} {
-		got, err := parseVorbisTags(vorbisComments("YEAR="+invalid, "DISCNUMBER="+invalid, "TRACKNUMBER="+invalid))
+		got, err := parseVorbisTags(vorbisComments("YEAR="+invalid, "DISCNUMBER="+invalid, "TRACKNUMBER="+invalid), EncodingAuto)
 		if err != nil || got != (Tags{}) {
 			t.Fatalf("invalid numeric metadata %q: %+v %v", invalid, got, err)
 		}
@@ -210,7 +210,7 @@ func TestExtendedWAVMetadata(t *testing.T) {
 		info = append(info, wavChunk(field[0], []byte(field[1]))...)
 	}
 	var got Tags
-	if err := got.parseWAVInfo(info); err != nil || got != (Tags{Year: 2003, TrackNumber: 4, Composer: "Bach, Johann Sebastian; Mozart"}) {
+	if err := got.parseWAVInfo(info, EncodingAuto); err != nil || got != (Tags{Year: 2003, TrackNumber: 4, Composer: "Bach, Johann Sebastian; Mozart"}) {
 		t.Fatalf("WAV metadata=%+v err=%v", got, err)
 	}
 	// INFO has no standard album-artist or disc-number field; do not invent one.
@@ -238,7 +238,7 @@ func FuzzReadTags(f *testing.F) {
 		if len(b) > 2*maxTagBytes {
 			t.Skip()
 		}
-		tags, _ := readTags(bytes.NewReader(b), int64(len(b)))
+		tags, _ := readTags(bytes.NewReader(b), int64(len(b)), EncodingAuto)
 		for _, v := range []string{tags.Title, tags.Artist, tags.Album, tags.Genre, tags.AlbumArtist, tags.Composer} {
 			if len(v) > maxTagValueBytes || !utf8.ValidString(v) {
 				t.Fatalf("unbounded or invalid tag: %d bytes", len(v))

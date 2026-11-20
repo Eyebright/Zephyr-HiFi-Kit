@@ -3,6 +3,19 @@
 和风HiFi音乐播放套件。最新版本在前，版本号与 Git 标签、GitHub Releases 一致。
 Newest first; version numbers match Git tags and GitHub Releases.
 
+## 0.56 — 2026-11-20
+
+**中文**
+- 封面：专辑图改为完整显示，不再裁切；支持 `folder.jpg`/`cover.png`/`front.webp` 等侧车图片（同一目录及多碟布局的父目录，取最大有效图）。
+- 标签编码：Windows 服务端可自动识别 GBK、Big5、Shift-JIS、Windows-1251 标签，也允许在“编辑源”中手动指定编码；合法 UTF-8 不会被转换。
+- 说明：编码设置保存在音乐源上；修改后需执行一次“全量重扫”以更新已索引的元数据与封面。
+- 限制：非 Windows 服务端暂不转码旧编码；MP3/AAC/DSD 标签解析仍未加入（本次仅 FLAC/WAV）。
+
+**English**
+- Covers: album art is shown in full, and conventional sidecar images (`folder.jpg`, `cover.png`, `front.webp`, ...) are used when no embedded art exists.
+- Text: Windows servers auto-detect GBK, Big5, Shift-JIS and Windows-1251 tags, with a per-source manual override; valid UTF-8 is never converted.
+- Run a full rescan after changing the encoding. Legacy decoding currently applies to FLAC/WAV tags on Windows only.
+
 ## 0.55 — 2026-11-20
 
 **中文**

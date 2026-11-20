@@ -1,7 +1,10 @@
 package media
 
 import (
+	"bytes"
 	"encoding/binary"
+	"image"
+	"image/png"
 	"os"
 	"path/filepath"
 	"testing"
@@ -97,5 +100,24 @@ func TestReadFLACCoverNotFLAC(t *testing.T) {
 	}
 	if _, err := ReadFLACCover(p); err != ErrNoCover {
 		t.Fatalf("expected ErrNoCover, got %v", err)
+	}
+}
+
+func TestReadSidecarCoverPicksConventionalImage(t *testing.T) {
+	dir := t.TempDir()
+	img := image.NewRGBA(image.Rect(0, 0, 3, 3))
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "cover.png"), buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, err := ReadSidecarCover(dir)
+	if err != nil || c.MIME != "image/png" || len(c.Data) != buf.Len() {
+		t.Fatalf("sidecar cover = %+v, %v", c, err)
+	}
+	if _, err := ReadSidecarCover(t.TempDir()); err != ErrNoCover {
+		t.Fatalf("empty dir err = %v", err)
 	}
 }

@@ -1,10 +1,13 @@
 package library
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"image"
+	"image/png"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -1084,5 +1087,37 @@ func TestPruneCoversPreservesHistoryReferences(t *testing.T) {
 				t.Fatalf("unreferenced history cover not pruned: %v", err)
 			}
 		})
+	}
+}
+
+func TestScanStoresSidecarCover(t *testing.T) {
+	s, _ := newService(t, &fakeRunner{}, t.TempDir())
+	root := t.TempDir()
+	buildWAV(t, filepath.Join(root, "a.wav"))
+	img := image.NewRGBA(image.Rect(0, 0, 2, 2))
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "folder.png"), buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m, err := s.AddMount(AddMountRequest{Kind: "local", Path: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Mount(context.Background(), m.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ScanChanges(context.Background(), m.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	tracks, err := s.ListTracks(m.ID)
+	if err != nil || len(tracks) != 1 || tracks[0].CoverHash == "" {
+		t.Fatalf("tracks=%+v err=%v", tracks, err)
+	}
+	mime, data, err := s.GetCover(tracks[0].CoverHash)
+	if err != nil || mime != "image/png" || len(data) != buf.Len() {
+		t.Fatalf("cover mime=%q len=%d err=%v", mime, len(data), err)
 	}
 }

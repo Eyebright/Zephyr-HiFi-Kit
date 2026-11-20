@@ -1,6 +1,7 @@
 package media
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"io"
@@ -33,7 +34,11 @@ const (
 var errInvalidTags = errors.New("invalid or oversized audio tags")
 
 // ReadTags retains valid fields on malformed input and skips pictures and audio without loading them.
-func ReadTags(path string) (Tags, error) {
+func ReadTags(path string) (Tags, error) { return ReadTagsWithEncoding(path, EncodingAuto) }
+
+// ReadTagsWithEncoding decodes legacy text tags (GBK, Big5, Shift-JIS,
+// Windows-1251) when encoding is not auto/UTF-8. Valid UTF-8 is never converted.
+func ReadTagsWithEncoding(path, encoding string) (Tags, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return Tags{}, err
@@ -43,10 +48,10 @@ func ReadTags(path string) (Tags, error) {
 	if err != nil {
 		return Tags{}, err
 	}
-	return readTags(f, st.Size())
+	return readTags(f, st.Size(), encoding)
 }
 
-func readTags(r io.ReaderAt, size int64) (Tags, error) {
+func readTags(r io.ReaderAt, size int64, encoding string) (Tags, error) {
 	var h [12]byte
 	n, err := r.ReadAt(h[:], 0)
 	if err != nil && err != io.EOF {
@@ -54,19 +59,19 @@ func readTags(r io.ReaderAt, size int64) (Tags, error) {
 	}
 	switch {
 	case n >= 4 && string(h[:4]) == "fLaC":
-		return readFLACTags(r, size)
+		return readFLACTags(r, size, encoding)
 	case n == 12 && string(h[:4]) == "RIFF" && string(h[8:]) == "WAVE":
 		end := int64(binary.LittleEndian.Uint32(h[4:8])) + 8
 		if end < 12 || end > size {
 			return Tags{}, errInvalidTags
 		}
-		return readWAVTags(r, end)
+		return readWAVTags(r, end, encoding)
 	default:
 		return Tags{}, nil
 	}
 }
 
-func readFLACTags(r io.ReaderAt, size int64) (Tags, error) {
+func readFLACTags(r io.ReaderAt, size int64, encoding string) (Tags, error) {
 	var tags Tags
 	off := int64(4)
 	for i := 0; i < maxTagBlocks; i++ {
@@ -90,7 +95,7 @@ func readFLACTags(r io.ReaderAt, size int64) (Tags, error) {
 			if _, err := r.ReadAt(buf, off); err != nil {
 				return tags, err
 			}
-			return parseVorbisTags(buf)
+			return parseVorbisTags(buf, encoding)
 		}
 		off += n
 		if h[0]&0x80 != 0 {
@@ -100,7 +105,7 @@ func readFLACTags(r io.ReaderAt, size int64) (Tags, error) {
 	return tags, errInvalidTags
 }
 
-func parseVorbisTags(b []byte) (Tags, error) {
+func parseVorbisTags(b []byte, encoding string) (Tags, error) {
 	var tags Tags
 	readString := func() ([]byte, bool) {
 		if len(b) < 4 {
@@ -131,15 +136,19 @@ func parseVorbisTags(b []byte) (Tags, error) {
 		if len(entry) > maxTagValueBytes+32 {
 			continue
 		}
-		key, value, ok := strings.Cut(string(entry), "=")
+		rawKey, rawValue, ok := bytes.Cut(entry, []byte("="))
 		if ok {
-			tags.set(strings.ToUpper(key), value)
+			key := strings.ToUpper(string(rawKey))
+			if !utf8.ValidString(key) {
+				continue
+			}
+			tags.set(key, decodeTagText(rawValue, encoding))
 		}
 	}
 	return tags, nil
 }
 
-func readWAVTags(r io.ReaderAt, end int64) (Tags, error) {
+func readWAVTags(r io.ReaderAt, end int64, encoding string) (Tags, error) {
 	var tags Tags
 	off := int64(12)
 	budget := int64(maxTagBytes)
@@ -173,7 +182,7 @@ func readWAVTags(r io.ReaderAt, end int64) (Tags, error) {
 						return tags, err
 					}
 				}
-				if err := tags.parseWAVInfo(buf); err != nil {
+				if err := tags.parseWAVInfo(buf, encoding); err != nil {
 					return tags, err
 				}
 			}
@@ -186,7 +195,7 @@ func readWAVTags(r io.ReaderAt, end int64) (Tags, error) {
 	return tags, nil
 }
 
-func (tags *Tags) parseWAVInfo(b []byte) error {
+func (tags *Tags) parseWAVInfo(b []byte, encoding string) error {
 	for i := 0; len(b) > 0 && i < maxTagEntries; i++ {
 		if len(b) < 8 {
 			return errInvalidTags
@@ -201,19 +210,19 @@ func (tags *Tags) parseWAVInfo(b []byte) error {
 		if n <= maxTagValueBytes {
 			switch key {
 			case "INAM":
-				tags.set("TITLE", string(b[:int(n)]))
+				tags.set("TITLE", decodeTagText(b[:int(n)], encoding))
 			case "IART":
-				tags.set("ARTIST", string(b[:int(n)]))
+				tags.set("ARTIST", decodeTagText(b[:int(n)], encoding))
 			case "IPRD":
-				tags.set("ALBUM", string(b[:int(n)]))
+				tags.set("ALBUM", decodeTagText(b[:int(n)], encoding))
 			case "IGNR":
-				tags.set("GENRE", string(b[:int(n)]))
+				tags.set("GENRE", decodeTagText(b[:int(n)], encoding))
 			case "ICRD":
-				tags.set("DATE", string(b[:int(n)]))
+				tags.set("DATE", decodeTagText(b[:int(n)], encoding))
 			case "ITRK", "IPRT":
-				tags.set("TRACKNUMBER", string(b[:int(n)]))
+				tags.set("TRACKNUMBER", decodeTagText(b[:int(n)], encoding))
 			case "IMUS": // RIFF INFO music composer (IWRI is the writer).
-				tags.set("COMPOSER", string(b[:int(n)]))
+				tags.set("COMPOSER", decodeTagText(b[:int(n)], encoding))
 			}
 		}
 		b = b[int(padded):]

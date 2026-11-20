@@ -40,23 +40,24 @@ const (
 
 // Mount is one registered SMB share. Password is write-only (json:"-").
 type Mount struct {
-	Kind       string     `json:"kind"`
-	ID         string     `json:"id"`
-	Host       string     `json:"host"`
-	Share      string     `json:"share"`
-	Target     string     `json:"target"`
-	Username   string     `json:"username"`
-	Password   string     `json:"-"`
-	Domain     string     `json:"domain"`
-	Version    string     `json:"version"`
-	Writable   bool       `json:"writable"`
-	Status     string     `json:"status"`
-	Detail     string     `json:"detail"`
-	CreatedAt  int64      `json:"created_at"`
-	MountedAt  int64      `json:"mounted_at"`
-	LastScan   int64      `json:"last_scan"`
-	ScanResult ScanResult `json:"scan_result"`
-	Reused     bool       `json:"reused,omitempty"`
+	Kind         string     `json:"kind"`
+	ID           string     `json:"id"`
+	Host         string     `json:"host"`
+	Share        string     `json:"share"`
+	Target       string     `json:"target"`
+	Username     string     `json:"username"`
+	Password     string     `json:"-"`
+	Domain       string     `json:"domain"`
+	Version      string     `json:"version"`
+	TextEncoding string     `json:"text_encoding"`
+	Writable     bool       `json:"writable"`
+	Status       string     `json:"status"`
+	Detail       string     `json:"detail"`
+	CreatedAt    int64      `json:"created_at"`
+	MountedAt    int64      `json:"mounted_at"`
+	LastScan     int64      `json:"last_scan"`
+	ScanResult   ScanResult `json:"scan_result"`
+	Reused       bool       `json:"reused,omitempty"`
 }
 
 type ScanResult struct {
@@ -69,15 +70,16 @@ type ScanResult struct {
 
 // AddMountRequest is the client-supplied share configuration.
 type AddMountRequest struct {
-	Kind     string `json:"kind"`
-	Path     string `json:"path"`
-	Host     string `json:"host"`
-	Share    string `json:"share"`
-	Username string `json:"username"`
-	Password string `json:"password"`
-	Domain   string `json:"domain"`
-	Version  string `json:"version"`
-	Writable bool   `json:"writable"`
+	Kind         string `json:"kind"`
+	Path         string `json:"path"`
+	Host         string `json:"host"`
+	Share        string `json:"share"`
+	Username     string `json:"username"`
+	Password     string `json:"password"`
+	Domain       string `json:"domain"`
+	Version      string `json:"version"`
+	TextEncoding string `json:"text_encoding"`
+	Writable     bool   `json:"writable"`
 }
 
 // Track is one identified audio file in a mounted library.
@@ -155,8 +157,8 @@ func (s *Service) AddMount(req AddMountRequest) (Mount, error) {
 			continue
 		}
 		if old.Status == StatusArchived {
-			_, err = s.db.Exec(`UPDATE mounts SET status=?,detail='',username=?,password=?,domain=?,version=?,writable=? WHERE id=?`,
-				StatusUnmounted, m.Username, m.Password, m.Domain, m.Version, boolInt(m.Writable), old.ID)
+			_, err = s.db.Exec(`UPDATE mounts SET status=?,detail='',username=?,password=?,domain=?,version=?,text_encoding=?,writable=? WHERE id=?`,
+				StatusUnmounted, m.Username, m.Password, m.Domain, m.Version, m.TextEncoding, boolInt(m.Writable), old.ID)
 			if err != nil {
 				return Mount{}, err
 			}
@@ -169,9 +171,9 @@ func (s *Service) AddMount(req AddMountRequest) (Mount, error) {
 		return old, nil
 	}
 	_, err = s.db.Exec(`INSERT INTO mounts
-		(id,host,share,target,username,password,domain,version,writable,status,detail,created_at,mounted_at,kind)
-		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		id, m.Host, m.Share, m.Target, m.Username, m.Password, m.Domain, m.Version,
+		(id,host,share,target,username,password,domain,version,text_encoding,writable,status,detail,created_at,mounted_at,kind)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		id, m.Host, m.Share, m.Target, m.Username, m.Password, m.Domain, m.Version, m.TextEncoding,
 		boolInt(m.Writable), StatusUnmounted, "", time.Now().Unix(), 0, m.Kind)
 	if err != nil {
 		return Mount{}, err
@@ -179,14 +181,14 @@ func (s *Service) AddMount(req AddMountRequest) (Mount, error) {
 	return s.GetMount(id)
 }
 
-const mountCols = `id,host,share,target,username,password,domain,version,writable,status,detail,created_at,mounted_at,kind,last_scan,scan_result`
+const mountCols = `id,host,share,target,username,password,domain,version,text_encoding,writable,status,detail,created_at,mounted_at,kind,last_scan,scan_result`
 
 func scanMount(row interface{ Scan(...any) error }) (Mount, error) {
 	var m Mount
 	var writable int
 	var result string
 	err := row.Scan(&m.ID, &m.Host, &m.Share, &m.Target, &m.Username, &m.Password, &m.Domain,
-		&m.Version, &writable, &m.Status, &m.Detail, &m.CreatedAt, &m.MountedAt, &m.Kind, &m.LastScan, &result)
+		&m.Version, &m.TextEncoding, &writable, &m.Status, &m.Detail, &m.CreatedAt, &m.MountedAt, &m.Kind, &m.LastScan, &result)
 	if err != nil {
 		return m, err
 	}
@@ -389,6 +391,7 @@ func (s *Service) ScanChanges(ctx context.Context, id string, full bool) (ScanRe
 	now := time.Now().Unix()
 	changed := []Track{}
 	seen := map[string]fs.FileInfo{}
+	coverCache := map[string]string{}
 	err = filepath.WalkDir(root, func(p string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -433,7 +436,7 @@ func (s *Service) ScanChanges(ctx context.Context, id string, full bool) (ScanRe
 		if err != nil {
 			return fmt.Errorf("probe %s: %w", p, err)
 		}
-		tags, err := media.ReadTags(p)
+		tags, err := media.ReadTagsWithEncoding(p, m.TextEncoding)
 		var pathErr *os.PathError
 		if errors.As(err, &pathErr) {
 			return err
@@ -481,7 +484,7 @@ func (s *Service) ScanChanges(ctx context.Context, id string, full bool) (ScanRe
 		}
 	}
 	for _, t := range changed {
-		t.CoverHash, err = storeCover(ctx, tx, t.Path, t.Container, now)
+		t.CoverHash, err = s.storeCover(ctx, tx, t.Path, t.Container, root, coverCache, now)
 		if err != nil {
 			return ScanResult{}, err
 		}
@@ -581,18 +584,53 @@ func rememberTrackIdentities(ctx context.Context, tx *sql.Tx, mountID string) er
 	return err
 }
 
-func storeCover(ctx context.Context, tx *sql.Tx, p, container string, now int64) (string, error) {
+func (s *Service) storeCover(ctx context.Context, tx *sql.Tx, p, container, root string, cache map[string]string, now int64) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	if container != "flac" {
+	if container == "flac" {
+		c, err := media.ReadFLACCover(p)
+		if err == nil {
+			return coverBytes(ctx, tx, c, now)
+		}
+		if !errors.Is(err, media.ErrNoCover) {
+			return "", err
+		}
+	}
+	dir := filepath.Dir(p)
+	if hash, ok := cache[dir]; ok {
+		return hash, nil
+	}
+	c, err := sidecarCover(dir, root)
+	if err != nil {
+		cache[dir] = ""
 		return "", nil
 	}
-	c, err := media.ReadFLACCover(p)
+	hash, err := coverBytes(ctx, tx, c, now)
 	if err != nil {
-		if errors.Is(err, media.ErrNoCover) {
-			return "", nil
+		return "", err
+	}
+	cache[dir] = hash
+	return hash, nil
+}
+
+// sidecarCover checks the track's folder and, for multi-disc layouts, its
+// immediate parent inside the mount root.
+func sidecarCover(dir, root string) (media.Cover, error) {
+	if c, err := media.ReadSidecarCover(dir); err == nil {
+		return c, nil
+	}
+	parent := filepath.Dir(dir)
+	if parent != dir {
+		if rel, err := filepath.Rel(root, parent); err == nil && rel != "." && !strings.HasPrefix(rel, "..") {
+			return media.ReadSidecarCover(parent)
 		}
+	}
+	return media.Cover{}, media.ErrNoCover
+}
+
+func coverBytes(ctx context.Context, tx *sql.Tx, c media.Cover, now int64) (string, error) {
+	if err := ctx.Err(); err != nil {
 		return "", err
 	}
 	sum := sha256.Sum256(c.Data)

@@ -11,6 +11,8 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 )
 
 // Cover is embedded album art extracted from an audio container.
@@ -104,6 +106,49 @@ func ReadFLACCover(path string) (Cover, error) {
 		return *fallback, nil
 	}
 	return Cover{}, ErrNoCover
+}
+
+var sidecarBases = map[string]bool{"folder": true, "cover": true, "front": true, "album": true, "artwork": true}
+var sidecarExts = map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".webp": true}
+
+// ReadSidecarCover looks for a conventional album image in dir (folder.jpg,
+// cover.png, front.webp, ...), choosing the largest valid candidate.
+func ReadSidecarCover(dir string) (Cover, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return Cover{}, err
+	}
+	var best string
+	var bestSize int64
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := strings.ToLower(e.Name())
+		ext := filepath.Ext(name)
+		if !sidecarExts[ext] || !sidecarBases[strings.TrimSuffix(name, ext)] {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil || info.Size() <= 0 || info.Size() > maxCoverBytes {
+			continue
+		}
+		if info.Size() > bestSize {
+			best, bestSize = filepath.Join(dir, e.Name()), info.Size()
+		}
+	}
+	if best == "" {
+		return Cover{}, ErrNoCover
+	}
+	data, err := os.ReadFile(best)
+	if err != nil {
+		return Cover{}, err
+	}
+	mime := http.DetectContentType(data)
+	if !ValidCoverData(mime, data) {
+		return Cover{}, ErrNoCover
+	}
+	return Cover{MIME: mime, Data: data}, nil
 }
 
 type picture struct {

@@ -394,3 +394,19 @@ func TestScanDoesNotFollowSymlinks(t *testing.T) {
 		t.Fatalf("outside track: %+v", tracks)
 	}
 }
+
+func TestSourceTextEncodingValidation(t *testing.T) {
+	s, _ := newService(t, &fakeRunner{}, t.TempDir())
+	root := t.TempDir()
+	m, err := s.AddMount(AddMountRequest{Kind: "local", Path: root, TextEncoding: "gbk"})
+	if err != nil || m.TextEncoding != "gbk" {
+		t.Fatalf("encoding not stored: %+v %v", m, err)
+	}
+	if _, err := s.AddMount(AddMountRequest{Kind: "local", Path: t.TempDir(), TextEncoding: "koi8-r"}); err == nil {
+		t.Fatal("unsupported encoding accepted")
+	}
+	up, err := s.UpdateMount(m.ID, AddMountRequest{Kind: "local", Path: root})
+	if err != nil || up.TextEncoding != "gbk" {
+		t.Fatalf("encoding must be preserved when omitted: %+v %v", up, err)
+	}
+}

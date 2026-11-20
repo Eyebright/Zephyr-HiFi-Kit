@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 
+	"hifihub/server/internal/media"
 	"hifihub/server/internal/mount"
 )
 
@@ -57,8 +58,13 @@ func (s *Service) configuredMount(id string, req AddMountRequest) (Mount, error)
 	if kind == "" {
 		kind = "smb"
 	}
+	encoding, ok := media.NormalizeTextEncoding(req.TextEncoding)
+	if !ok {
+		return Mount{}, fmt.Errorf("不支持的标签/文件名编码：%s", req.TextEncoding)
+	}
 	m := Mount{ID: id, Kind: kind, Host: req.Host, Share: req.Share, Username: req.Username,
-		Password: req.Password, Domain: req.Domain, Version: req.Version, Writable: req.Writable}
+		Password: req.Password, Domain: req.Domain, Version: req.Version, TextEncoding: encoding,
+		Writable: req.Writable}
 	switch kind {
 	case "local":
 		p, err := localDirectory(req.Path)
@@ -115,6 +121,9 @@ func (s *Service) UpdateMount(id string, req AddMountRequest) (Mount, error) {
 	if req.Kind == "local" && req.Path == "" {
 		req.Path = old.Target
 	}
+	if req.TextEncoding == "" {
+		req.TextEncoding = old.TextEncoding
+	}
 	m, err := s.configuredMount(id, req)
 	if err != nil {
 		return Mount{}, err
@@ -126,8 +135,8 @@ func (s *Service) UpdateMount(id string, req AddMountRequest) (Mount, error) {
 		(m.Username != old.Username || m.Password != old.Password || m.Domain != old.Domain || m.Version != old.Version || m.Writable != old.Writable) {
 		return Mount{}, fmt.Errorf("请先卸载再修改 SMB 凭据或选项")
 	}
-	_, err = s.db.Exec(`UPDATE mounts SET host=?,share=?,username=?,password=?,domain=?,version=?,writable=? WHERE id=?`,
-		m.Host, m.Share, m.Username, m.Password, m.Domain, m.Version, boolInt(m.Writable), id)
+	_, err = s.db.Exec(`UPDATE mounts SET host=?,share=?,username=?,password=?,domain=?,version=?,text_encoding=?,writable=? WHERE id=?`,
+		m.Host, m.Share, m.Username, m.Password, m.Domain, m.Version, m.TextEncoding, boolInt(m.Writable), id)
 	if err != nil {
 		return Mount{}, err
 	}
