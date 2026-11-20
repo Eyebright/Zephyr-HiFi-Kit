@@ -1,6 +1,6 @@
 # Zephyr HiFi Kit · 和风HiFi音乐播放套件
 
-**版本 / Version: 0.53 · Git tag: `v0.53`**
+**版本 / Version: 0.54 · Git tag: `v0.54`**
 
 面向本地音乐库与网络播放终端的音乐播放及管理套件，提供内嵌 Web 控制台、音乐源管理、曲库浏览和 ZAT 音频推送。服务端支持 Linux 与 Windows；实际播放能力取决于解码后端、终端音频构建及设备。
 
