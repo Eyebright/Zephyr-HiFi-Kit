@@ -12,6 +12,11 @@
   var pick = function (a) { return a[(Math.random() * a.length) | 0]; };
   var reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+  /* ─────────── language ─────────── */
+  // English is the default/fallback; zh.html sets <html lang="zh-CN">.
+  var ZH = /^zh/i.test(document.documentElement.lang || "");
+  function T(en, zh) { return ZH ? zh : en; }
+
   var HUES = {
     amber: { key: "#f6a821", lit: "#ffd479", sig: "#ff8a3d" },
     cyan: { key: "#34d3eb", lit: "#a8e9f5", sig: "#4aa8ff" },
@@ -187,24 +192,24 @@
     var pending = Audio2.on && Audio2.blocked;
     sndBtn.classList.toggle("pending", pending);
     sndBtn.setAttribute("aria-pressed", (Audio2.on && !Audio2.blocked) ? "true" : "false");
-    if (sndTxt) sndTxt.textContent = !Audio2.on ? "声音 关" : (pending ? "点按播放" : "声音 开");
+    if (sndTxt) sndTxt.textContent = !Audio2.on ? T("Sound off", "声音 关") : (pending ? T("Tap to play", "点按播放") : T("Sound on", "声音 开"));
   }
   var bgmAnnounced = false, blockHinted = false;
   Audio2.onstate = function (running) {
     paintSnd();
     if (running && Audio2.on && !bgmAnnounced) {
       bgmAnnounced = true;
-      toast("背景音乐：《500 Miles》", "info");
+      toast(T("Background music: \u201c500 Miles\u201d", "背景音乐：《500 Miles》"), "info");
     }
     if (!running && Audio2.on && Audio2.blocked && !blockHinted) {
       blockHinted = true;
-      toast("浏览器限制自动播放 · 点按页面任意处即可出声", "info");
+      toast(T("Autoplay restricted by the browser · tap anywhere on the page to hear audio", "浏览器限制自动播放 · 点按页面任意处即可出声"), "info");
     }
   };
   if (sndBtn) sndBtn.addEventListener("click", function () {
     if (Audio2.on && Audio2.blocked) { Audio2.resume(); return; }
     Audio2.setOn(!Audio2.on); paintSnd();
-    toast(Audio2.on ? "声音已开启" : "全部声音已静音", Audio2.on ? "ok" : "info");
+    toast(Audio2.on ? T("Sound enabled", "声音已开启") : T("All sound muted", "全部声音已静音"), Audio2.on ? "ok" : "info");
   });
   paintSnd();
   var unlock = function () {
@@ -271,10 +276,10 @@
   } else $$(".rv").forEach(function (el) { el.classList.add("in"); });
 
   /* ─────────── marquee ─────────── */
-  var MQ = ["GPG 强制验签", "BOM 期望态", "灰度环推进", "播放门控 FR-3.10", "席位授权", "操作日志", "DAC 仲裁",
-    "一次性注册令牌", "systemd 白名单", "mDNS / SSDP 诊断", "版本历史回滚", "CSV / JSON 导出", "命令通道", "信任根分工",
-    "SMB 媒体库", "ZAT 推流协议", "libFLAC 解码", "ALSA 比特完美", "音频格式识别", "正在播放控制台",
-    "服务端自升级", "终端版本收敛", "SHA256 + GPG 校验", "原子置换重启", "失败退避重试"];
+  var MQ = [T("GPG enforced verification", "GPG 强制验签"), T("BOM desired state", "BOM 期望态"), T("Ring-based rollout", "灰度环推进"), T("Playback gate FR-3.10", "播放门控 FR-3.10"), T("Seat licensing", "席位授权"), T("Audit log", "操作日志"), T("DAC arbitration", "DAC 仲裁"),
+    T("One-time enrollment token", "一次性注册令牌"), T("systemd allowlist", "systemd 白名单"), T("mDNS / SSDP diagnostics", "mDNS / SSDP 诊断"), T("Version history rollback", "版本历史回滚"), T("CSV / JSON export", "CSV / JSON 导出"), T("Command channel", "命令通道"), T("Trust root separation", "信任根分工"),
+    T("SMB media library", "SMB 媒体库"), T("ZAT streaming protocol", "ZAT 推流协议"), T("libFLAC decoding", "libFLAC 解码"), T("ALSA bit-perfect", "ALSA 比特完美"), T("Audio format detection", "音频格式识别"), T("Now Playing console", "正在播放控制台"),
+    T("Server self-upgrade", "服务端自升级"), T("Terminal version convergence", "终端版本收敛"), T("SHA256 + GPG verification", "SHA256 + GPG 校验"), T("Atomic swap restart", "原子置换重启"), T("Backoff retry on failure", "失败退避重试")];
   var mq = $("#mq-track");
   if (mq) {
     var html = MQ.map(function (t) { return '<span class="mq-i"><b>' + t + "</b></span>"; }).join("");
@@ -321,9 +326,9 @@
   });
 
   /* ─────────── fleet simulation (shared state) ─────────── */
-  var ROOMS = ["客厅主力", "书房书架箱", "卧室床头", "厨房吸顶", "机柜核心", "实验室基准", "影音室前级", "阳台障板",
-    "茶室号角", "地下室低音", "阁楼监听", "走廊吸顶", "花园防水", "工作室近场", "琴房立式", "试听室旗舰",
-    "主卧落地", "儿童房书架", "餐厅嵌入", "门厅背景", "泳池户外", "车库工作", "客房床头", "画室障板"];
+  var ROOMS = [T("Living room main system", "客厅主力"), T("Study bookshelf", "书房书架箱"), T("Bedroom nightstand", "卧室床头"), T("Kitchen ceiling", "厨房吸顶"), T("Rack core", "机柜核心"), T("Lab reference", "实验室基准"), T("Media room preamp", "影音室前级"), T("Balcony baffle", "阳台障板"),
+    T("Tea room horn", "茶室号角"), T("Basement subwoofer", "地下室低音"), T("Attic monitors", "阁楼监听"), T("Hallway ceiling", "走廊吸顶"), T("Garden weatherproof", "花园防水"), T("Studio nearfield", "工作室近场"), T("Piano room upright", "琴房立式"), T("Listening room flagship", "试听室旗舰"),
+    T("Master bedroom floorstanders", "主卧落地"), T("Kids room bookshelf", "儿童房书架"), T("Dining room in-wall", "餐厅嵌入"), T("Foyer ambience", "门厅背景"), T("Poolside outdoor", "泳池户外"), T("Garage workshop", "车库工作"), T("Guest room nightstand", "客房床头"), T("Art studio baffle", "画室障板")];
   var ARCHES = ["arm64", "amd64", "armhf", "arm64", "amd64"];
   var BOMS = [["renderer-standard", 4], ["core-server", 1], ["renderer-hq", 1]];
   var DEFAULTS = {
@@ -339,7 +344,7 @@
     var b = pick(BOMS);
     return {
       id: "n-" + (1000 + i), alias: ROOMS[i % ROOMS.length] + (i >= ROOMS.length ? " " + (Math.floor(i / ROOMS.length) + 1) : ""),
-      group: pick(["住宅", "商用", "测试", "影音"]), arch: ARCHES[i % ARCHES.length],
+      group: pick([T("Residential", "住宅"), T("Commercial", "商用"), T("Test", "测试"), T("Media", "影音")]), arch: ARCHES[i % ARCHES.length],
       bom: b[0], ver: b[1], playing: Math.random() * 100 < F.p.play, status: "online",
       cpu: rnd(4, 46), mem: rnd(180, 1900), temp: rnd(38, 62), dac: Math.random() < 0.34,
       seen: performance.now(), phaseLeft: rnd(3000, 18000), targetVer: 0,
@@ -405,7 +410,7 @@
   bindRange("c-seats", "o-seats", "seats", function (v) { return v; }, function () {
     F.nodes.forEach(function (nd, i) { nd.authorized = i < F.p.seats; });
     paintStats();
-    if (F.p.count > F.p.seats) toast("超出授权席位 " + (F.p.count - F.p.seats) + " 台 · enforce 下将被门禁拦截", "warn");
+    if (F.p.count > F.p.seats) toast(T((F.p.count - F.p.seats) + " terminals over the licensed seats · blocked under enforce", "超出授权席位 " + (F.p.count - F.p.seats) + " 台 · enforce 下将被门禁拦截"), "warn");
   });
   bindRange("c-play", "o-play", "play", function (v) { return v + "%"; }, function () {
     F.nodes.forEach(function (n) { n.playing = Math.random() * 100 < F.p.play; }); paintStats();
@@ -416,7 +421,7 @@
   bindRange("c-glow", "o-glow", "glow", function (v) { return v; });
   bindRange("c-size", "o-size", "size", function (v) { return (v / 100).toFixed(1) + "×"; });
   bindRange("c-orbit", "o-orbit", "orbit", function (v) { return v; }, function () { F.nodes.forEach(function (n, i) { layout(n, i, F.nodes.length); }); });
-  bindRange("c-links", "o-links", "links", function (v) { return v ? "开" : "关"; });
+  bindRange("c-links", "o-links", "links", function (v) { return v ? T("On", "开") : T("Off", "关"); });
 
   var oRings = $("#o-rings");
   function paintRingCtl() {
@@ -427,7 +432,7 @@
   }
   function setRings(v) {
     F.p.rings = clamp(v, 1, 5); paintRingCtl();
-    if (F.running) { toast("灰度进行中，环数已锁定", "info"); return; }
+    if (F.running) { toast(T("Rollout in progress, ring count is locked", "灰度进行中，环数已锁定"), "info"); return; }
     F.ringIdx = -1; buildRings();
   }
   var rd = $("#ring-dec"), ru = $("#ring-inc");
@@ -443,7 +448,7 @@
     document.documentElement.style.setProperty("--amber", h.key);
     document.documentElement.style.setProperty("--gold", h.lit);
     document.documentElement.style.setProperty("--warm-3", h.sig);
-    toast("信号配色已切换：" + cTheme.selectedOptions[0].textContent, "ok");
+    toast(T("Signal palette switched to: ", "信号配色已切换：") + cTheme.selectedOptions[0].textContent, "ok");
   });
   ["playgate", "grid", "ghost"].forEach(function (k) {
     var el = $("#c-" + k);
@@ -452,15 +457,15 @@
 
   /* ── rollout ── */
   function startRollout() {
-    if (F.running) { toast("灰度已在进行中", "info"); return; }
+    if (F.running) { toast(T("Rollout already in progress", "灰度已在进行中"), "info"); return; }
     F.running = true; F.ringIdx = 0; F.jobs = []; F.delivered = 0; F.rejected = 0; F.failed = 0;
     F.ringPlan.forEach(function (r) { r.done = 0; r.rejected = 0; r.failed = 0; r.settled = 0; r.status = "pending"; });
     F.ringPlan[0].status = "running";
     enqueueRing(0);
     paintRings(); paintStats();
-    var run = $("#d-run"); if (run) { run.textContent = "灰度进行中…"; run.disabled = true; }
+    var run = $("#d-run"); if (run) { run.textContent = T("Rollout in progress…", "灰度进行中…"); run.disabled = true; }
     Audio2.blip(520, .22, "triangle", .13);
-    toast("灰度下发已启动 · " + F.ringPlan.length + " 环 · " + F.p.mode, "ok");
+    toast(T("Rollout started · " + F.ringPlan.length + " rings · " + F.p.mode, "灰度下发已启动 · " + F.ringPlan.length + " 环 · " + F.p.mode), "ok");
   }
   function settle(r, kind) {
     if (!r) return;
@@ -473,7 +478,7 @@
     r.nodes.forEach(function (nd) {
       if (F.p.mode === "enforce" && !nd.authorized) {
         F.rejected++;
-        pushJob(nd, "rejected", "授权门禁拦截");
+        pushJob(nd, "rejected", T("Blocked by license gate", "授权门禁拦截"));
         settle(r, "rejected");
         return;
       }
@@ -497,7 +502,7 @@
     if (st === "done" || st === "rejected" || st === "failed_rolledback") return;
     var r = F.ringPlan[F.ringIdx];
     if (j.node.status === "offline") {
-      j.state = "failed_rolledback"; j.p = 100; j.si = -1; j.note = "节点离线 · 已回滚";
+      j.state = "failed_rolledback"; j.p = 100; j.si = -1; j.note = T("Node offline · rolled back", "节点离线 · 已回滚");
       j.node.upd = 0; j.node.flash = 1; F.failed++;
       settle(r, "failed");
       Audio2.blip(190, .2, "sawtooth", .07);
@@ -510,7 +515,7 @@
       if (!F.p.playgate || !j.node.playing) {
         j.state = "downloading"; j.si = STATES.indexOf(j.state); j.t = 0; j.note = null;
       } else {
-        j.p = 22; j.note = "等待曲目结束 " + Math.max(1, Math.ceil(j.node.phaseLeft / 1000)) + "s";
+        j.p = 22; j.note = T("Waiting for track to end " + Math.max(1, Math.ceil(j.node.phaseLeft / 1000)) + "s", "等待曲目结束 " + Math.max(1, Math.ceil(j.node.phaseLeft / 1000)) + "s");
         return;
       }
     }
@@ -536,11 +541,11 @@
       F.ringPlan[F.ringIdx].status = "running";
       enqueueRing(F.ringIdx);
       Audio2.blip(660, .18, "triangle", .11);
-      toast("环 " + r.name + " 完成，推进到 " + F.ringPlan[F.ringIdx].name, "ok");
+      toast(T("Ring " + r.name + " complete, advancing to " + F.ringPlan[F.ringIdx].name, "环 " + r.name + " 完成，推进到 " + F.ringPlan[F.ringIdx].name), "ok");
     } else {
       F.running = false;
-      var run = $("#d-run"); if (run) { run.textContent = "开始灰度下发"; run.disabled = false; }
-      toast("灰度完成 · 成功 " + F.delivered + " · 拦截 " + F.rejected + " · 回滚 " + F.failed, "ok");
+      var run = $("#d-run"); if (run) { run.textContent = T("Start rollout", "开始灰度下发"); run.disabled = false; }
+      toast(T("Rollout complete · success " + F.delivered + " · blocked " + F.rejected + " · rolled back " + F.failed, "灰度完成 · 成功 " + F.delivered + " · 拦截 " + F.rejected + " · 回滚 " + F.failed), "ok");
       Audio2.blip(1046, .3, "sine", .12);
     }
     paintRings(); paintStats();
@@ -569,7 +574,7 @@
     document.documentElement.style.setProperty("--gold", h.lit);
     document.documentElement.style.setProperty("--warm-3", h.sig);
     Audio2.blip(700, .16, "triangle", .12);
-    toast("参数已随机化", "ok");
+    toast(T("Parameters randomized", "参数已随机化"), "ok");
   });
   var dReset = $("#d-reset");
   if (dReset) dReset.addEventListener("click", function () {
@@ -577,11 +582,11 @@
     F.delivered = 0; F.rejected = 0; F.failed = 0;
     F.nodes = []; F.packets = []; F.sel = null; closeDetail();
     syncControls(); rebuild(); paintRingCtl(); paintJobs();
-    var run = $("#d-run"); if (run) { run.textContent = "开始灰度下发"; run.disabled = false; }
+    var run = $("#d-run"); if (run) { run.textContent = T("Start rollout", "开始灰度下发"); run.disabled = false; }
     document.documentElement.style.setProperty("--amber", "#f6a821");
     document.documentElement.style.setProperty("--gold", "#ffd479");
     document.documentElement.style.setProperty("--warm-3", "#ff8a3d");
-    toast("已恢复默认参数", "info");
+    toast(T("Default parameters restored", "已恢复默认参数"), "info");
   });
   var dExport = $("#d-export");
   if (dExport) dExport.addEventListener("click", function () {
@@ -599,7 +604,7 @@
     a.href = URL.createObjectURL(blob); a.download = "Zephyr-HiFi-Kit-fleet-snapshot.json";
     document.body.appendChild(a); a.click();
     setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 400);
-    toast("机群快照已导出 JSON", "ok");
+    toast(T("Fleet snapshot exported as JSON", "机群快照已导出 JSON"), "ok");
   });
   function syncControls() {
     [["c-count", "count"], ["c-seats", "seats"], ["c-play", "play"], ["c-hb", "hb"], ["c-speed", "speed"], ["c-off", "off"],
@@ -624,11 +629,11 @@
       seatEl.textContent = used + "/" + F.p.seats;
       seatEl.className = F.nodes.length > F.p.seats ? "over" : "";
       seatEl.title = F.nodes.length > F.p.seats
-        ? "超出授权席位 " + (F.nodes.length - F.p.seats) + " 台 · enforce 模式下将被门禁拦截"
-        : "已授权 " + used + " 台 / 许可席位 " + F.p.seats;
+        ? T((F.nodes.length - F.p.seats) + " terminals over the licensed seats · blocked by the gate under enforce", "超出授权席位 " + (F.nodes.length - F.p.seats) + " 台 · enforce 模式下将被门禁拦截")
+        : T(used + " of " + F.p.seats + " seats licensed", "已授权 " + used + " 台 / 许可席位 " + F.p.seats);
     }
     var m = $("#ds-mode"); if (m) { m.textContent = F.p.mode; m.className = "pill " + (F.p.mode === "enforce" ? "" : "red"); }
-    var g = $("#ds-gate"); if (g) { g.textContent = F.p.playgate ? "门控开" : "门控关"; g.className = "pill " + (F.p.playgate ? "cyan" : "red"); }
+    var g = $("#ds-gate"); if (g) { g.textContent = F.p.playgate ? T("Gate on", "门控开") : T("Gate off", "门控关"); g.className = "pill " + (F.p.playgate ? "cyan" : "red"); }
     set("hp-online", on + " / " + F.nodes.length); set("hp-play", pl); set("hp-jobs", F.jobs.filter(function (j) { return j.state !== "done" && j.state !== "rejected"; }).length);
     paintHeroRows();
   }
@@ -637,18 +642,18 @@
     box.innerHTML = F.ringPlan.map(function (r, i) {
       var pct = r.nodes.length ? Math.round(r.settled / r.nodes.length * 100) : 0;
       var cls = r.status === "done" ? "done" : (i === F.ringIdx && F.running ? "active" : "");
-      var tail = r.done + "/" + r.nodes.length + " 终端";
-      if (r.rejected) tail += " · 拦截 " + r.rejected;
-      if (r.failed) tail += " · 回滚 " + r.failed;
+      var tail = T(r.done + "/" + r.nodes.length + " terminals", r.done + "/" + r.nodes.length + " 终端");
+      if (r.rejected) tail += T(" · blocked " + r.rejected, " · 拦截 " + r.rejected);
+      if (r.failed) tail += T(" · rolled back " + r.failed, " · 回滚 " + r.failed);
       return '<div class="ring ' + cls + '"><b>' + r.name + " · " + r.percent + '%</b><i style="--p:' + pct + '%"></i><span>' + tail + "</span></div>";
     }).join("");
   }
-  var SC = { precheck: ["预检", "cyan"], resolve_deps: ["解析依赖", "cyan"], waiting_idle: ["等待空闲", "amber"], downloading: ["下载", "cyan"], verifying: ["验签", "violet"], installing: ["安装", "amber"], rendering_config: ["渲染配置", "cyan"], enabling_units: ["启用单元", "cyan"], validating: ["验证", "violet"], done: ["完成", "green"], rejected: ["已拦截", "red"], failed_rolledback: ["已回滚", "red"] };
+  var SC = { precheck: [T("Precheck", "预检"), "cyan"], resolve_deps: [T("Resolve deps", "解析依赖"), "cyan"], waiting_idle: [T("Waiting for idle", "等待空闲"), "amber"], downloading: [T("Downloading", "下载"), "cyan"], verifying: [T("Verifying", "验签"), "violet"], installing: [T("Installing", "安装"), "amber"], rendering_config: [T("Rendering config", "渲染配置"), "cyan"], enabling_units: [T("Enabling units", "启用单元"), "cyan"], validating: [T("Validating", "验证"), "violet"], done: [T("Done", "完成"), "green"], rejected: [T("Blocked", "已拦截"), "red"], failed_rolledback: [T("Rolled back", "已回滚"), "red"] };
   var PC = { cyan: "rgba(52,211,235,.14);color:#34d3eb", amber: "rgba(246,168,33,.15);color:#f6a821", violet: "rgba(155,140,255,.15);color:#9b8cff", green: "rgba(70,224,138,.14);color:#46e08a", red: "rgba(255,107,107,.15);color:#ff6b6b" };
   function paintJobs() {
     var box = $("#dj-list"), cnt = $("#dj-count"); if (!box) return;
-    if (cnt) cnt.textContent = F.jobs.length + " 个任务";
-    if (!F.jobs.length) { box.innerHTML = '<div class="dj-empty">暂无任务 · 按「开始灰度下发」运行完整状态机</div>'; return; }
+    if (cnt) cnt.textContent = T(F.jobs.length + " jobs", F.jobs.length + " 个任务");
+    if (!F.jobs.length) { box.innerHTML = '<div class="dj-empty">' + esc(T("No jobs yet · press \u201cStart rollout\u201d to run the full state machine", "暂无任务 · 按「开始灰度下发」运行完整状态机")) + '</div>'; return; }
     box.innerHTML = F.jobs.slice(0, 14).map(function (j) {
       var s = SC[j.state] || [j.state, "cyan"];
       return '<div class="dj"><span class="dj-n">' + esc(j.node.alias) + "<em>" + j.id + "</em></span>" +
@@ -661,7 +666,7 @@
     var box = $("#hp-rows"); if (!box) return;
     box.innerHTML = F.nodes.slice(0, 6).map(function (n) {
       var col = n.status === "offline" ? C.off : n.playing ? C.play : C.online;
-      var st = n.status === "offline" ? ["离线", "rgba(255,107,107,.14);color:#ff6b6b"] : n.playing ? ["播放中", "rgba(246,168,33,.15);color:#f6a821"] : ["空闲", "rgba(70,224,138,.13);color:#46e08a"];
+      var st = n.status === "offline" ? [T("Offline", "离线"), "rgba(255,107,107,.14);color:#ff6b6b"] : n.playing ? [T("Playing", "播放中"), "rgba(246,168,33,.15);color:#f6a821"] : [T("Idle", "空闲"), "rgba(70,224,138,.13);color:#46e08a"];
       return '<div class="hp-row"><i style="background:' + col + ';box-shadow:0 0 8px ' + col + '"></i>' +
         '<span class="n">' + esc(n.alias) + '</span><span class="s">' + n.arch + '</span>' +
         '<span class="p" style="background:' + st[1] + '">' + st[0] + "</span></div>";
@@ -679,16 +684,16 @@
   }
   function paintDetail() {
     var n = F.sel; if (!n || !ddBody) return;
-    var st = n.status === "offline" ? "离线" : n.playing ? "播放中" : "空闲";
+    var st = n.status === "offline" ? T("Offline", "离线") : n.playing ? T("Playing", "播放中") : T("Idle", "空闲");
     ddBody.innerHTML =
-      row("节点 ID", n.id) + row("分组 / 架构", n.group + " · " + n.arch) +
-      row("状态", st) + row("期望 BOM", n.bom + "@" + n.ver) +
-      row("授权", n.authorized ? "已授权" : "未授权") +
-      row("DAC 占用", n.dac ? "持有" : "释放") +
-      row("当前任务", n.job ? (SC[n.job.state] || [n.job.state])[0] : "无") +
+      row(T("Node ID", "节点 ID"), n.id) + row(T("Group / arch", "分组 / 架构"), n.group + " · " + n.arch) +
+      row(T("Status", "状态"), st) + row(T("Expected BOM", "期望 BOM"), n.bom + "@" + n.ver) +
+      row(T("License", "授权"), n.authorized ? T("Licensed", "已授权") : T("Unlicensed", "未授权")) +
+      row(T("DAC in use", "DAC 占用"), n.dac ? T("Held", "持有") : T("Released", "释放")) +
+      row(T("Current job", "当前任务"), n.job ? (SC[n.job.state] || [n.job.state])[0] : T("None", "无")) +
       meter("CPU", n.cpu, 100, n.cpu.toFixed(0) + "%") +
-      meter("内存", n.mem, 2048, Math.round(n.mem) + " MB") +
-      meter("温度", n.temp, 85, n.temp.toFixed(1) + " °C");
+      meter(T("Memory", "内存"), n.mem, 2048, Math.round(n.mem) + " MB") +
+      meter(T("Temperature", "温度"), n.temp, 85, n.temp.toFixed(1) + " °C");
   }
   function row(k, v) { return '<div class="dd-r"><span>' + k + "</span><b>" + esc(v) + "</b></div>"; }
   function meter(k, v, max, label) {
@@ -799,7 +804,7 @@
         if (hover) {
           tip.hidden = false;
           tip.innerHTML = "<b>" + esc(hover.alias) + "</b><span>" + hover.arch + " · " + hover.bom + "@" + hover.ver +
-            "<br>" + (hover.status === "offline" ? "离线" : hover.playing ? "播放中" : "空闲") + " · CPU " + hover.cpu.toFixed(0) + "%</span>";
+            "<br>" + (hover.status === "offline" ? T("Offline", "离线") : hover.playing ? T("Playing", "播放中") : T("Idle", "空闲")) + " · CPU " + hover.cpu.toFixed(0) + "%</span>";
           var tw = 210;
           tip.style.left = clamp(mx + 14, 6, Math.max(6, r.width - tw)) + "px";
           tip.style.top = clamp(my - 10, 6, Math.max(6, r.height - 76)) + "px";
@@ -990,25 +995,25 @@
   var gSub = $("#gate-submit");
   if (gSub) gSub.addEventListener("click", function () {
     var out = $("#gate-out"), enf = gEnf.checked, sig = gSig.checked, tru = gTru.checked;
-    var L = [["in", "Zephyr HiFi Kit · 模拟入库 roonbridge_2.0.14_arm64.deb"]];
+    var L = [["in", T("Zephyr HiFi Kit · simulating ingest of roonbridge_2.0.14_arm64.deb", "Zephyr HiFi Kit · 模拟入库 roonbridge_2.0.14_arm64.deb")]];
     if (!enf) {
-      L.push(["wn", "signature_mode=dev · 跳过验签（仅限本地联调）"]);
-      L.push(["ok", "HTTP 201 · 制品已入库"]);
-      L.push(["wn", "生产环境必须切回 enforce"]);
+      L.push(["wn", T("signature_mode=dev · signature check skipped (local testing only)", "signature_mode=dev · 跳过验签（仅限本地联调）")]);
+      L.push(["ok", T("HTTP 201 · artifact ingested", "HTTP 201 · 制品已入库")]);
+      L.push(["wn", T("Production must switch back to enforce", "生产环境必须切回 enforce")]);
       Audio2.blip(300, .18, "sawtooth", .1);
     } else if (!sig) {
-      L.push(["no", "ERROR missing_signature: 未找到分离签名 .asc"]);
-      L.push(["no", "HTTP 422 · 拒绝入库（NFR-S2）"]);
+      L.push(["no", T("ERROR missing_signature: detached signature .asc not found", "ERROR missing_signature: 未找到分离签名 .asc")]);
+      L.push(["no", T("HTTP 422 · ingest rejected (NFR-S2)", "HTTP 422 · 拒绝入库（NFR-S2）")]);
       Audio2.blip(150, .26, "sawtooth", .13);
     } else if (!tru) {
-      L.push(["wn", "gpg: 签名存在，但签发者不在信任根中"]);
-      L.push(["no", "ERROR untrusted_signer: 未知签名子密钥"]);
-      L.push(["no", "HTTP 422 · 拒绝入库"]);
+      L.push(["wn", T("gpg: signature present, but signer is not in the trust root", "gpg: 签名存在，但签发者不在信任根中")]);
+      L.push(["no", T("ERROR untrusted_signer: unknown signing subkey", "ERROR untrusted_signer: 未知签名子密钥")]);
+      L.push(["no", T("HTTP 422 · ingest rejected", "HTTP 422 · 拒绝入库")]);
       Audio2.blip(150, .26, "sawtooth", .13);
     } else {
-      L.push(["ok", "gpg: Good signature · 签名子密钥已在信任根"]);
-      L.push(["ok", "sha256: 校验和匹配"]);
-      L.push(["ok", "HTTP 201 · 制品已入库，可用于 BOM 绑定"]);
+      L.push(["ok", T("gpg: Good signature · signing subkey is in the trust root", "gpg: Good signature · 签名子密钥已在信任根")]);
+      L.push(["ok", T("sha256: checksum matched", "sha256: 校验和匹配")]);
+      L.push(["ok", T("HTTP 201 · artifact ingested, available for BOM binding", "HTTP 201 · 制品已入库，可用于 BOM 绑定")]);
       Audio2.blip(760, .14, "sine", .11);
     }
     lines(out, L);
@@ -1017,7 +1022,7 @@
   function playPill() {
     var p = $("#gate-play-pill"); if (!p) return;
     var playing = gPlay && gPlay.checked;
-    p.textContent = playing ? "播放中" : "空闲";
+    p.textContent = playing ? T("Playing", "播放中") : T("Idle", "空闲");
     p.className = "pill " + (playing ? "" : "cyan");
   }
   if (gPlay) gPlay.addEventListener("change", playPill);
@@ -1027,17 +1032,17 @@
     var out = $("#gate-out2"), playing = gPlay.checked, pg = gPG.checked, auth = gAuth.checked;
     var L = [["in", "$ POST /api/v1/jobs  {node, bom_version}"]];
     if (!auth) {
-      L.push(["no", "ERROR unauthorized_node: 终端未授权或席位不足"]);
-      L.push(["no", "HTTP 403 · 下发前授权门禁拦截"]);
+      L.push(["no", T("ERROR unauthorized_node: terminal not licensed or out of seats", "ERROR unauthorized_node: 终端未授权或席位不足")]);
+      L.push(["no", T("HTTP 403 · blocked by license gate before delivery", "HTTP 403 · 下发前授权门禁拦截")]);
       Audio2.blip(150, .26, "sawtooth", .13);
     } else if (playing && pg) {
       L.push(["wn", "node.playing=true · play_protect=true"]);
-      L.push(["wn", "任务进入 waiting_idle，等待终端空闲"]);
-      L.push(["no", "系统升级 / 停服务 / 关机 → HTTP 409"]);
-      L.push(["ok", "播放不被中断（FR-3.10 双侧执行）"]);
+      L.push(["wn", T("Job entered waiting_idle, waiting for the terminal to be idle", "任务进入 waiting_idle，等待终端空闲")]);
+      L.push(["no", T("system upgrade / service stop / shutdown → HTTP 409", "系统升级 / 停服务 / 关机 → HTTP 409")]);
+      L.push(["ok", T("Playback is not interrupted (FR-3.10 enforced on both sides)", "播放不被中断（FR-3.10 双侧执行）")]);
       Audio2.blip(420, .2, "triangle", .11);
     } else {
-      if (playing && !pg) L.push(["wn", "播放门控已关闭 · 将中断播放（不建议）"]);
+      if (playing && !pg) L.push(["wn", T("Playback gate off · playback will be interrupted (not recommended)", "播放门控已关闭 · 将中断播放（不建议）")]);
       L.push(["ok", "precheck → resolve_deps → downloading"]);
       L.push(["ok", "verifying: Good signature"]);
       L.push(["ok", "installing → rendering_config → enabling_units"]);
@@ -1054,9 +1059,9 @@
     btn.addEventListener("click", function () {
       var txt = pre.textContent;
       var done = function () {
-        btn.textContent = "已复制"; btn.classList.add("ok");
-        toast("命令已复制到剪贴板", "ok");
-        setTimeout(function () { btn.textContent = "复制"; btn.classList.remove("ok"); }, 1900);
+        btn.textContent = T("Copied", "已复制"); btn.classList.add("ok");
+        toast(T("Command copied to clipboard", "命令已复制到剪贴板"), "ok");
+        setTimeout(function () { btn.textContent = T("Copy", "复制"); btn.classList.remove("ok"); }, 1900);
       };
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(txt).then(done).catch(function () { fallback(txt, done); });
@@ -1067,13 +1072,13 @@
     var ta = document.createElement("textarea");
     ta.value = txt; ta.setAttribute("readonly", ""); ta.style.cssText = "position:fixed;left:-9999px;top:0";
     document.body.appendChild(ta); ta.select();
-    try { document.execCommand("copy"); done(); } catch (e) { toast("复制失败，请手动选择命令", "err"); }
+    try { document.execCommand("copy"); done(); } catch (e) { toast(T("Copy failed, please select the command manually", "复制失败，请手动选择命令"), "err"); }
     ta.remove();
   }
   var DEBS = {
-    amd64: ["Zephyr-HiFi-Kit-terminal-0.50-linux-amd64.deb", "管理版 · x86_64 PC · 不含 ALSA 播放"],
-    arm64: ["Zephyr-HiFi-Kit-terminal-0.50-linux-arm64.deb", "管理版 · 树莓派 3/4/5 · 64 位 · 不含 ALSA 播放"],
-    armhf: ["Zephyr-HiFi-Kit-terminal-0.50-linux-armhf.deb", "管理版 · 树莓派 2/3/4 · 32 位 · 不含 ALSA 播放"]
+    amd64: ["Zephyr-HiFi-Kit-terminal-0.50-linux-amd64.deb", T("Management build · x86_64 PC · no ALSA playback", "管理版 · x86_64 PC · 不含 ALSA 播放")],
+    arm64: ["Zephyr-HiFi-Kit-terminal-0.50-linux-arm64.deb", T("Management build · Raspberry Pi 3/4/5 · 64-bit · no ALSA playback", "管理版 · 树莓派 3/4/5 · 64 位 · 不含 ALSA 播放")],
+    armhf: ["Zephyr-HiFi-Kit-terminal-0.50-linux-armhf.deb", T("Management build · Raspberry Pi 2/3/4 · 32-bit · no ALSA playback", "管理版 · 树莓派 2/3/4 · 32 位 · 不含 ALSA 播放")]
   };
   var archSel = $("#dl-arch");
   if (archSel) archSel.addEventListener("change", function () {
@@ -1082,6 +1087,13 @@
     var n = $("#dl-deb-name"), m = $("#dl-deb-meta");
     if (n) n.textContent = d[0]; if (m) m.textContent = d[1];
     Audio2.blip(560, .08, "sine", .08);
+  });
+
+  /* Language switch keeps the current section across the two pages. */
+  $$("[data-lang-switch]").forEach(function (a) {
+    a.addEventListener("click", function () {
+      if (location.hash) a.href = a.getAttribute("href").split("#")[0] + location.hash;
+    });
   });
 
   /* ─────────── boot ─────────── */

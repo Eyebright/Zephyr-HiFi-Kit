@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Zephyr HiFi Kit · 和风HiFi音乐播放套件 0.50 | 如沐和风，音乐随心而动</title>
+<meta name="description" content="Zephyr HiFi Kit（和风HiFi音乐播放套件）0.50：曲库、收藏与操作习惯只维护一份，音乐随心而动。提供 Linux 多架构与 Windows amd64 服务端、Linux 管理终端和音频终端、Android APK。统一编排 Roon / HQPlayer / 系统更新，自有 ZAT 协议音频推流；管理版终端不含 ALSA 播放，Linux 真实播放请选择音频版。发布与制品可用性以 v0.50 Release 的自动验证结果为准。">
+<meta name="keywords" content="Zephyr HiFi Kit,和风HiFi音乐播放套件,Hi-Fi 机群管理,Roon 多终端管理,HQPlayer NAA,听音室系统,音响展厅,多房间音频,一套曲库多处听音,音乐随心而动,树莓派 Hi-Fi 终端,Linux 音乐服务器,Windows 音乐服务器,灰度下发,播放门控,席位授权,ZAT 音频协议,SMB 媒体库,FLAC 解码,ALSA 比特完美">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+<meta name="theme-color" content="#07090d">
+<link rel="canonical" href="https://zephyr.hk/zh.html">
+<link rel="alternate" hreflang="zh-CN" href="https://zephyr.hk/zh.html">
+<link rel="alternate" hreflang="en" href="https://zephyr.hk/">
+<link rel="alternate" hreflang="x-default" href="https://zephyr.hk/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Zephyr HiFi Kit · 和风HiFi音乐播放套件">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:title" content="Zephyr HiFi Kit · 和风HiFi音乐播放套件 0.50">
+<meta property="og:description" content="和风HiFi音乐播放套件：曲库、收藏与操作习惯只维护一份，音乐随心而动。0.50 提供 Linux / Windows 服务端、Linux 管理版与音频版终端、Android APK；管理版终端不含 ALSA 播放。发布以 v0.50 自动验证结果为准。">
+<meta property="og:url" content="https://zephyr.hk/zh.html">
+<meta property="og:image" content="https://zephyr.hk/og.png">
+<meta property="og:image:width" content="1536">
+<meta property="og:image:height" content="1024">
+<meta property="og:image:alt" content="Zephyr HiFi Kit · 和风HiFi音乐播放套件 — Hi-Fi 机群唯一下发源">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Zephyr HiFi Kit · 和风HiFi音乐播放套件 0.50">
+<meta name="twitter:description" content="和风HiFi音乐播放套件：一套曲库，多处听音。Linux / Windows 服务端统一编排，ZAT 音频推流；Linux 真实播放选音频版，管理版 deb 不含 ALSA 播放。发布以 v0.50 自动验证结果为准。">
+<meta name="twitter:image" content="https://zephyr.hk/og.png">
+<meta name="twitter:image:alt" content="Zephyr HiFi Kit · 和风HiFi音乐播放套件 — Hi-Fi 机群唯一下发源">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "name": "Zephyr HiFi Kit",
+      "alternateName": "和风HiFi音乐播放套件",
+      "url": "https://zephyr.hk/",
+      "inLanguage": "zh-CN"
+    },
+    {
+      "@type": "SoftwareApplication",
+      "name": "Zephyr HiFi Kit",
+      "alternateName": "和风HiFi音乐播放套件",
+      "url": "https://zephyr.hk/",
+      "image": "https://zephyr.hk/og.png",
+      "screenshot": "https://zephyr.hk/og.png",
+      "description": "Zephyr HiFi Kit（和风HiFi音乐播放套件）0.50：曲库、收藏与操作习惯只维护一份，音乐随心而动。Linux / Windows 服务端统一编排 Roon / HQPlayer / 系统更新，支持签名制品、灰度下发、播放门控、席位授权及 ZAT 音频推流。Linux 管理版终端 deb 不含 ALSA 播放，真实播放需音频版；发布以 v0.50 自动验证结果为准。",
+      "applicationCategory": "MultimediaApplication",
+      "applicationSubCategory": "Hi-Fi 机群管理与制品下发",
+      "operatingSystem": "Linux 多架构服务端；Windows amd64 服务端；Linux 管理终端 amd64 / arm64 / armhf，音频终端 amd64 / arm64；Android 8.0+（arm64 / armv7）",
+      "softwareVersion": "0.50",
+      "license": "https://opensource.org/licenses/MIT",
+      "downloadUrl": "https://github.com/Eyebright/Zephyr-HiFi-Kit/releases/tag/v0.50",
+      "installUrl": "https://zephyr.hk/#install",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+      "featureList": [
+        "多终端 Hi-Fi 机群统一编排（Roon Bridge / HQPlayer NAA / 系统更新）",
+        "GPG 签名制品仓库与 BOM 期望态",
+        "灰度环下发与失败自动回滚",
+        "播放门控（服务端与终端双侧）",
+        "席位授权与离线许可证验签",
+        "操作日志与命令通道",
+        "SMB/CIFS 媒体库挂载与音频格式识别（WAV / FLAC）",
+        "自有 ZAT 协议推流、Linux 音频终端 ALSA 比特完美播放（管理版终端不含 ALSA 播放）",
+        "管理版纯 Go 单二进制、SQLite 单文件、可离线内网运行；音频版 CGO + libFLAC + ALSA"
+      ],
+      "audience": {
+        "@type": "Audience",
+        "audienceType": "Hi-Fi 机群运维、听音室、音响展厅、多房间音频集成商"
+      }
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        { "@type": "Question", "name": "服务端必须联网吗？", "acceptedAnswer": { "@type": "Answer", "text": "不需要。主密钥与许可证签发都可完全离线，整个链路可在隔离 LAN 内闭环运行；终端安装器从服务端 /dl/ 取包，不访问公网。" } },
+        { "@type": "Question", "name": "为什么不做在线构建和二进制补丁？", "acceptedAnswer": { "@type": "Answer", "text": "在线构建需内置交叉工具链，体积与攻击面不可接受；二进制补丁会破坏签名链。改为离线/CI 构建 → 签名 → 上传入库的可验证路径。" } },
+        { "@type": "Question", "name": "播放中的终端会被升级打断吗？", "acceptedAnswer": { "@type": "Answer", "text": "不会。播放门控在服务端与终端双侧执行，任务进入 waiting_idle 等待空闲；播放中系统升级、停服务与关机同样被拦截。" } },
+        { "@type": "Question", "name": "许可证是怎么工作的？", "acceptedAnswer": { "@type": "Answer", "text": "服务端内置 3 台终端授权；超出可由私有签发端离线签发许可证扩容，服务端使用签发公钥验签并统计席位占用；终端无需证书。" } },
+        { "@type": "Question", "name": "灰度发布怎么推进？", "acceptedAnswer": { "@type": "Answer", "text": "环百分比合计 100，绑定 BOM 版本必须已发布；当前环有未完成任务时推进返回 409，避免故障扩散；支持撤销恢复。" } },
+        { "@type": "Question", "name": "控制台的鉴权在哪里做？", "acceptedAnswer": { "@type": "Answer", "text": "控制台内置单管理员鉴权，首次引导设置管理员名字与密码。管理操作仅允许从服务端本机 localhost 或直连 HTTPS 访问；当前后端不信任反向代理的 TLS 转发头。" } },
+        { "@type": "Question", "name": "误删了 BOM 版本或终端怎么办？", "acceptedAnswer": { "@type": "Answer", "text": "BOM 保留完整版本历史可回滚；回滚生成新的已发布版本而非覆盖历史；终端注销支持撤销恢复。" } },
+        { "@type": "Question", "name": "支持哪些终端硬件？", "acceptedAnswer": { "@type": "Answer", "text": "Linux 安装器自动识别 amd64、arm64 与 armhf，覆盖 x86 小主机、树莓派 4/5（64 位）与树莓派 2/3（32 位）；另提供安卓终端 APK，支持 Android 8.0 及以上的 arm64 / armv7 设备，经 AAudio 比特完美出声。" } }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<a class="skip" href="#main">跳到主内容</a>
+
+<div class="bg-layer" aria-hidden="true">
+  <div class="aurora a1"></div>
+  <div class="aurora a2"></div>
+  <div class="aurora a3"></div>
+  <div class="beam"></div>
+  <div class="grain"></div>
+</div>
+
+<header class="nav" id="nav">
+  <div class="nav-in">
+    <a class="brand" href="#top" aria-label="Zephyr HiFi Kit 首页">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32" width="30" height="30"><defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffd479"/><stop offset="1" stop-color="#f6a821"/></linearGradient></defs><rect x="1.2" y="1.2" width="29.6" height="29.6" rx="9" fill="none" stroke="url(#bm)" stroke-width="1.6"/><path d="M7 20.5V11.5M11.5 23V9M16 25.5V6.5M20.5 23V9M25 20.5V11.5" stroke="url(#bm)" stroke-width="2.1" stroke-linecap="round"/></svg>
+      </span>
+      <span class="brand-txt">
+        <b>Zephyr HiFi Kit</b>
+        <i>和风HiFi音乐播放套件</i>
+      </span>
+    </a>
+    <nav class="links" id="nav-links" aria-label="页面导航">
+      <a href="#scenarios" data-spy="scenarios">场景</a>
+      <a href="#features" data-spy="features">能力</a>
+      <a href="#architecture" data-spy="architecture">架构</a>
+      <a href="#security" data-spy="security">安全</a>
+      <a href="#demo" data-spy="demo">演示</a>
+      <a href="#install" data-spy="install">安装</a>
+      <a href="#specs" data-spy="specs">规格</a>
+      <a href="#faq" data-spy="faq">FAQ</a>
+    </nav>
+    <div class="nav-act">
+      <a class="lang-switch" href="index.html" hreflang="en" lang="en" data-lang-switch title="Switch to English">EN</a>
+      <button class="snd" id="snd" type="button" aria-pressed="true" title="声音总开关：一键静音全部声音 · 背景音乐《500 Miles》">
+        <span class="snd-ico" aria-hidden="true"></span><span id="snd-txt">声音 开</span>
+      </button>
+      <a class="btn gold sm" href="https://github.com/Eyebright/Zephyr-HiFi-Kit" target="_blank" rel="noopener">
+        <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+        GitHub
+      </a>
+      <button class="burger" id="burger" type="button" aria-label="展开导航" aria-expanded="false"><span></span><span></span><span></span></button>
+    </div>
+  </div>
+  <div class="nav-prog" id="nav-prog" aria-hidden="true"></div>
+</header>
+
+<main id="main">
+
+<!-- ══════════ HERO ══════════ -->
+<section class="hero" id="top">
+  <canvas id="hero-cv" aria-hidden="true"></canvas>
+  <div class="hero-in">
+    <div class="hero-copy">
+      <div class="eyebrow rv" style="--d:0ms"><span class="dot"></span>MUSIC FOLLOWS YOUR HEART · 一套曲库 · 多处听音</div>
+      <h1 class="rv" style="--d:70ms">如沐和风，<br><span class="grad-warm">音乐随心而动</span></h1>
+      <p class="lede rv" style="--d:150ms">
+        客厅、书房、听音室、展厅——曲库、收藏与播放列表在服务端只维护一份，人在哪个听音环境，
+        音乐与操作习惯就跟到哪里；Roon / HQPlayer / 树莓派 / Android 终端共用同一套界面，
+        换房间不用重新扫库、重建列表、重学操作。一台 Linux 或 Windows 服务端统一收敛机群：签名制品、
+        灰度下发、播放门控、席位授权，并以自有 ZAT 协议把 SMB 媒体库音频
+        比特完美推送到终端出声。<b>管理版纯 Go、SQLite 单文件、控制台内嵌；音频版 CGO + libFLAC + ALSA。</b>
+      </p>
+      <div class="hero-cta rv" style="--d:230ms">
+        <a class="btn gold" href="#install">立即部署<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M3 8h10M9 4l4 4-4 4"/></svg></a>
+        <a class="btn line" href="#demo">操纵机群演示</a>
+        <a class="btn ghost" href="https://github.com/Eyebright/Zephyr-HiFi-Kit/releases/tag/v0.50" target="_blank" rel="noopener">v0.50 下载</a>
+      </div>
+      <ul class="hero-chips rv" style="--d:310ms">
+        <li><b>9</b>能力域</li>
+        <li><b>3</b>终端架构</li>
+        <li><b>0.50</b>发布以自动验证为准</li>
+        <li><b>MIT</b>开源许可</li>
+      </ul>
+    </div>
+    <aside class="hero-panel rv" style="--d:380ms" aria-label="实时机群概览">
+      <div class="hp-top">
+        <span class="hp-t">FLEET · 实时概览</span>
+        <span class="hp-live"><i></i>LIVE</span>
+      </div>
+      <div class="hp-kpis">
+        <div class="hp-k"><b id="hp-online">—</b><span>在线终端</span></div>
+        <div class="hp-k"><b id="hp-play">—</b><span>正在播放</span></div>
+        <div class="hp-k"><b id="hp-jobs">—</b><span>下发任务</span></div>
+      </div>
+      <div class="hp-spec" id="hp-spec" aria-hidden="true"></div>
+      <div class="hp-rows" id="hp-rows"></div>
+      <div class="hp-foot">交互演示 · 本地模拟数据，非真实机群</div>
+    </aside>
+  </div>
+  <a class="scroll-hint" href="#features" aria-label="向下滚动"><span></span></a>
+</section>
+
+<!-- ══════════ MARQUEE ══════════ -->
+<div class="marquee" aria-hidden="true">
+  <div class="mq-track" id="mq-track"></div>
+</div>
+
+<!-- ══════════ SCENARIOS / 适用范围 ══════════ -->
+<section class="sec alt" id="scenarios">
+  <div class="wrap">
+    <header class="sec-h rv">
+      <span class="kicker">SCENARIOS · 适用范围</span>
+      <h2>它管哪些机器，<span class="grad-warm">适合谁用</span></h2>
+      <p>从一间听音室到一片多终端 Hi-Fi 机群——Zephyr HiFi Kit 把 Roon / HQPlayer 播放终端、x86 小主机与树莓派 ARM 终端收敛到一台 Linux 或 Windows 服务端，统一编排、签名下发、灰度推进。下面这些场景，都是它的主场。</p>
+    </header>
+    <div class="bento">
+      <article class="cell rv" data-hue="amber">
+        <div class="cell-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div>
+        <h3>多终端 Hi-Fi 机群</h3>
+        <p>一台服务端统管多台播放终端，Roon Bridge、HQPlayer NAA 与系统更新走同一条 GPG 签名下发链，期望态一处定义、全机群收敛。</p>
+        <div class="agent-tags"><span>Roon Bridge</span><span>HQPlayer NAA</span><span>多终端编排</span></div>
+      </article>
+      <article class="cell rv" data-hue="cyan">
+        <div class="cell-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="2"/><circle cx="12" cy="14" r="3.4"/><circle cx="12" cy="6.5" r="1.4"/></svg></div>
+        <h3>听音室与音响展厅</h3>
+        <p>试听位与展示机群集中编排，按房间、别名分组管理；播放门控双侧拦截，升级与停服务绝不中断正在进行的试听。</p>
+        <div class="agent-tags"><span>听音室</span><span>音响展厅</span><span>播放门控</span></div>
+      </article>
+      <article class="cell rv" data-hue="green">
+        <div class="cell-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M9.5 21v-6h5v6"/></svg></div>
+        <h3>家庭多房间音频</h3>
+        <p>客厅、书房、卧室各一台树莓派或小主机，统一期望态、逐房间灰度升级；一条命令入网，误删可撤销恢复。</p>
+        <div class="agent-tags"><span>多房间</span><span>树莓派</span><span>分组灰度</span></div>
+      </article>
+      <article class="cell rv" data-hue="violet">
+        <div class="cell-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="8" cy="18" r="2"/></svg></div>
+        <h3>Roon / HQPlayer 重度用户</h3>
+        <p>已在跑 Roon Core / HQPlayer 的发烧友，把 NAA 终端与版本收敛到一个可回滚的下发源，BOM 历史完整保留、随时回退。</p>
+        <div class="agent-tags"><span>Roon Core</span><span>HQPlayer</span><span>版本回滚</span></div>
+      </article>
+      <article class="cell rv" data-hue="magenta">
+        <div class="cell-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="16" rx="2"/><path d="M6.5 9l3 3-3 3M12.5 15h5"/></svg></div>
+        <h3>运维与集成商</h3>
+        <p>为客户批量部署与远程运维：席位授权、灰度环推进、操作日志、独立命令通道与 mDNS / SSDP 网络诊断，一个控制台看全。</p>
+        <div class="agent-tags"><span>批量部署</span><span>席位授权</span><span>操作日志</span></div>
+      </article>
+      <article class="cell rv" data-hue="blue">
+        <div class="cell-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Z"/><path d="M9 12h6"/></svg></div>
+        <h3>离线 / 隔离内网</h3>
+        <p>主密钥与许可证离线签发，服务端只验签；纯 Go 单二进制、SQLite 单文件，整链路可在隔离 LAN 闭环运行，不访问公网。</p>
+        <div class="agent-tags"><span>离线签发</span><span>隔离 LAN</span><span>纯 Go</span></div>
+      </article>
+    </div>
+    <p class="scn-plat rv">服务端 <b>Linux 多架构 / Windows amd64</b> · 管理终端 <b>amd64 / arm64 / armhf</b> · Linux 音频终端 <b>amd64 / arm64</b>（x86 小主机 · 树莓派 4/5 · 树莓派 2/3）· 应用 <b>Roon Bridge / HQPlayer NAA / 系统更新</b></p>
+  </div>
+</section>
+
+<!-- ══════════ FEATURES ══════════ -->
+<section class="sec" id="features">
+  <div class="wrap">
+    <header class="sec-h rv">
+      <span class="kicker">01 · CAPABILITIES</span>
+      <h2>九个域，<span class="grad-cool">全部真实实现</span></h2>
+      <p>不是路线图，不是占位。以下每一项都在仓库里有对应的 Go 代码、API 路由与端到端冒烟断言。</p>
+    </header>
+    <div class="bento">
+      <article class="cell big rv" data-hue="amber">
+        <div class="cell-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2 3 6.5v11L12 22l9-4.5v-11L12 2Z"/><path d="M3 6.5 12 11l9-4.5M12 11v11"/></svg></div>
+        <h3>下发核心</h3>
+        <p>应用目录与多架构制品仓库，入库强制 GPG 验签。BOM 期望态支持草稿、校验、发布、导入、导出与历史回滚；任务状态机贯穿预检到验证，失败自动回滚。</p>
+        <ul class="ticks">
+          <li>制品入库 enforce 验签，未签名直接拒绝</li>
+          <li>BOM 版本历史完整保留，可回滚到任意已发布版本</li>
+          <li>播放门控：播放中绝不中断，等空闲再动服务</li>
+          <li>10 段任务状态机 + 失败回滚链</li>
+        </ul>
+        <div class="pipeline" id="feat-pipeline" aria-label="任务状态机"></div>
+      </article>
+      <article class="cell rv" data-hue="cyan">
+        <div class="cell-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4M7 8h6M7 11h10"/></svg></div>
+        <h3>终端生命周期</h3>
+        <p>一次性注册令牌（TTL 可选）、三步添加向导、终端配置面板，以及注销后的撤销恢复。</p>
+        <ul class="ticks"><li>别名 · 房间 · 期望 BOM · DAC 仲裁</li><li>播放保护 · 维护窗口 · 离线阈值</li><li>注销 + 撤销恢复，误操作可回退</li></ul>
+      </article>
+      <article class="cell rv" data-hue="magenta">
+        <div class="cell-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Z"/><path d="m9 12 2 2 4-4"/></svg></div>
+        <h3>授权与许可</h3>
+        <p>离线签名许可证激活，席位实时占用统计，逐终端授权与撤销。</p>
+        <ul class="ticks"><li>许可证离线签发，服务端只验签</li><li>下发前许可证 + 授权双门禁</li><li>席位占用可视化，超额即时拦截</li></ul>
+      </article>
+      <article class="cell rv" data-hue="green">
+        <div class="cell-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 18V9M9 18V5M14 18v-7M19 18v-4"/><path d="M2 21h20"/></svg></div>
+        <h3>运维与诊断</h3>
+        <p>远程 apt 检查与升级走独立命令通道；mDNS / SSDP / 多播网络诊断；内核待重启告警。</p>
+        <ul class="ticks"><li>灰度发布按环推进，环内未完成禁止推进</li><li>系统升级受播放保护双侧拦截</li><li>网络诊断定位发现协议故障</li></ul>
+      </article>
+      <article class="cell rv" data-hue="violet">
+        <div class="cell-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="8" cy="12" r="4"/><path d="M12 12h9M17 12v3M20 12v2"/></svg></div>
+        <h3>安全信任根</h3>
+        <p>离线主密钥、受控签名子密钥、服务端公钥信任根三层分工，密钥导入与信任根导出。</p>
+        <ul class="ticks"><li>服务端永不持有私钥</li><li>终端本地控制台变更需节点密钥</li><li>操作日志 + CSV / JSON 导出</li></ul>
+      </article>
+      <article class="cell rv" data-hue="blue">
+        <div class="cell-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></div>
+        <h3>音乐与终端中心</h3>
+        <p>从主页开始听音，全站播放栏随页可用；分类曲库与收藏便于选曲，终端中心集中管理播放设备。</p>
+        <ul class="ticks"><li>主页与全站播放栏</li><li>分类曲库与收藏</li><li>终端中心添加与管理终端</li></ul>
+      </article>
+      <article class="cell wide rv" data-hue="amber">
+        <div class="cell-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10v4M10 10v4M14 10v4M18 10v4"/></svg></div>
+        <h3>终端 Agent</h3>
+        <p>注册、心跳、快照；任务执行覆盖 apt、dpkg、配置渲染与 systemd 单元白名单；DAC 仲裁执行与播放保护本地门禁；自带本地控制台（服务、系统更新、网络诊断、电源）。以 root 运行，但每个动作都被白名单与开关约束。</p>
+        <div class="agent-tags"><span>amd64</span><span>arm64</span><span>armhf</span><span>systemd 白名单</span><span>ALLOW_POWER</span><span>ALLOW_LOCAL</span><span>节点密钥门禁</span></div>
+      </article>
+      <article class="cell wide rv" data-hue="cyan">
+        <div class="cell-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M2 12h3l3-7 4 15 3-10 2 4h5"/></svg></div>
+        <h3>音频解决方案 · 自有 ZAT 协议</h3>
+        <p>不止编排别人的播放终端——Zephyr HiFi Kit 自己就是一条完整音频链路：内核挂载 SMB/CIFS 媒体库、按文件头识别 WAV / FLAC 等格式、服务端 libFLAC 解码，经自有 ZAT 协议（采样时钟 PTS、节点密钥鉴权、授权门禁）推流到终端，ALSA 比特完美出声。终端「正在播放」控制台支持暂停、停止、seek、音量与输出设备切换，并与播放门控联动。真实出声需音频版（CGO）；管理版 ALSA 为占位。</p>
+        <ul class="ticks"><li>SMB/CIFS 内核挂载 + 媒体库扫描入库，凭据不上命令行</li><li>WAV / FLAC 格式识别，libFLAC 真实解码</li><li>ZAT 推流：采样时钟 PTS · 节点密钥鉴权 · 授权门禁</li><li>终端 ALSA 比特完美输出 + 正在播放控制台</li></ul>
+        <div class="agent-tags"><span>SMB / CIFS</span><span>WAV · FLAC</span><span>ZAT 协议</span><span>libFLAC</span><span>ALSA</span><span>比特完美</span><span>音频版 CGO</span></div>
+      </article>
+      <article class="cell wide rv" data-hue="green">
+        <div class="cell-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.6-6.3"/><path d="M21 3v6h-6"/><path d="M12 8v4l3 2"/></svg></div>
+        <h3>自动更新 · 服务端自升级 + 终端收敛</h3>
+        <p>服务端周期检测发布源最新版本，经 feed SHA256 摘要、可选 GPG 验签与包内 SHA256SUMS 三重校验后原子置换二进制并重启，同时刷新终端分发集。终端 Agent 版本恒跟随服务端：按灰度环逐批下发签名升级命令，下载、校验、dpkg、重启全自动，心跳确认版本后才判定收敛；失败退避重试、达上限挂起可一键重试，播放中的终端自动等待空闲。离线内网把发布源指向镜像即可闭环。</p>
+        <ul class="ticks"><li>三重校验 + 原子置换，崩溃不留半截二进制</li><li>灰度环整环对齐才推进，并行数与重试上限可调</li><li>播放保护双侧门禁，升级绝不中断出声</li><li>控制台实时状态：检查 · 升级 · 收敛 · 挂起重试</li></ul>
+        <div class="agent-tags"><span>发布源检测</span><span>SHA256 + GPG</span><span>原子置换</span><span>灰度环</span><span>退避重试</span><span>播放保护</span><span>离线镜像</span></div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ ARCHITECTURE ══════════ -->
+<section class="sec alt" id="architecture">
+  <div class="wrap">
+    <header class="sec-h rv">
+      <span class="kicker">02 · ARCHITECTURE</span>
+      <h2>签名链决定<span class="grad-warm">谁能下发</span></h2>
+      <p>制品从离线签名主机进入仓库，服务端只持公钥信任根，终端只接受通过验签的期望态。</p>
+    </header>
+    <div class="arch">
+      <div class="arch-sticky">
+        <div class="arch-card rv">
+          <svg class="arch-svg" viewBox="0 0 460 520" role="img" aria-label="签名与下发架构图">
+            <defs>
+              <linearGradient id="gA" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffd479"/><stop offset="1" stop-color="#f6a821"/></linearGradient>
+              <linearGradient id="gC" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#34d3eb"/><stop offset="1" stop-color="#9b8cff"/></linearGradient>
+              <linearGradient id="gG" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#46e08a"/><stop offset="1" stop-color="#34d3eb"/></linearGradient>
+              <filter id="glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+            </defs>
+            <g class="arch-node" data-step="0">
+              <rect x="130" y="14" width="200" height="62" rx="12"/>
+              <text x="230" y="40" class="an-t">离线主密钥</text>
+              <text x="230" y="60" class="an-s">OFFLINE MASTER · 永不联网</text>
+            </g>
+            <path class="arch-link" id="al0" d="M230 76 V116" />
+            <g class="arch-node" data-step="1">
+              <rect x="130" y="116" width="200" height="62" rx="12"/>
+              <text x="230" y="142" class="an-t">签名子密钥</text>
+              <text x="230" y="162" class="an-s">受控签名主机 · 离线/CI 构建</text>
+            </g>
+            <path class="arch-link" id="al1" d="M230 178 V218"/>
+            <g class="arch-node" data-step="2">
+              <rect x="106" y="218" width="248" height="70" rx="12"/>
+              <text x="230" y="245" class="an-t">服务端 · 公钥信任根</text>
+              <text x="230" y="266" class="an-s">制品仓库 + BOM + 任务 + 授权</text>
+            </g>
+            <path class="arch-link" id="al2" d="M230 288 V326"/>
+            <g class="arch-node" data-step="3">
+              <rect x="106" y="326" width="248" height="62" rx="12"/>
+              <text x="230" y="352" class="an-t">enforce 验签门禁</text>
+              <text x="230" y="372" class="an-s">未签名制品拒绝入库 / 拒绝下发</text>
+            </g>
+            <path class="arch-link" id="al3" d="M230 388 V414 M110 414 H350 M110 414 V440 M230 414 V440 M350 414 V440"/>
+            <g class="arch-node leaf" data-step="4">
+              <rect x="52" y="440" width="116" height="58" rx="11"/>
+              <text x="110" y="466" class="an-t">树莓派</text><text x="110" y="484" class="an-s">arm64 / armhf</text>
+            </g>
+            <g class="arch-node leaf" data-step="4">
+              <rect x="172" y="440" width="116" height="58" rx="11"/>
+              <text x="230" y="466" class="an-t">x86 小主机</text><text x="230" y="484" class="an-s">amd64</text>
+            </g>
+            <g class="arch-node leaf" data-step="4">
+              <rect x="292" y="440" width="116" height="58" rx="11"/>
+              <text x="350" y="466" class="an-t">播放终端</text><text x="350" y="484" class="an-s">DAC 仲裁</text>
+            </g>
+            <circle class="pkt" r="4"><animateMotion dur="2.6s" repeatCount="indefinite" keyPoints="0;1" keyTimes="0;1" calcMode="linear"><mpath href="#al0"/></animateMotion></circle>
+            <circle class="pkt c2" r="4"><animateMotion dur="2.6s" begin="0.5s" repeatCount="indefinite"><mpath href="#al1"/></animateMotion></circle>
+            <circle class="pkt c3" r="4"><animateMotion dur="2.2s" begin="1s" repeatCount="indefinite"><mpath href="#al2"/></animateMotion></circle>
+          </svg>
+        </div>
+      </div>
+      <ol class="arch-steps">
+        <li class="rv" data-astep="0"><span class="as-n">01</span><div><h4>主密钥离线</h4><p>主密钥保存在不联网的介质上，只用于签发子密钥与许可证。它从不进入服务端，也不进入 CI。</p></div></li>
+        <li class="rv" data-astep="1"><span class="as-n">02</span><div><h4>子密钥签名</h4><p>构建在离线主机或 CI 完成，签名子密钥对制品出具分离签名。服务端不做在线构建，也不做二进制补丁——那会破坏签名链。</p></div></li>
+        <li class="rv" data-astep="2"><span class="as-n">03</span><div><h4>服务端只持公钥</h4><p>服务端导入公钥作为信任根，负责仓库、BOM 期望态、任务编排、席位授权与操作日志。私钥泄露面被压缩到签名主机一处。</p></div></li>
+        <li class="rv" data-astep="3"><span class="as-n">04</span><div><h4>enforce 双门禁</h4><p>入库与下发都验签。生产必须 <code>enforce</code>；<code>dev</code> 仅用于本地联调。下发前还要过许可证与终端授权两道门。</p></div></li>
+        <li class="rv" data-astep="4"><span class="as-n">05</span><div><h4>终端受约束执行</h4><p>Agent 以 root 运行，但动作被 systemd 单元白名单、<code>ALLOW_POWER</code> / <code>ALLOW_LOCAL</code> 与节点密钥三重约束。播放保护在服务端与终端双侧执行。</p></div></li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ SECURITY ══════════ -->
+<section class="sec" id="security">
+  <div class="wrap">
+    <header class="sec-h rv">
+      <span class="kicker">03 · SECURITY</span>
+      <h2>把门禁<span class="grad-cool">亲手拨一遍</span></h2>
+      <p>下面是真实门禁逻辑的可交互复刻：切换签名模式与播放保护，看制品与任务如何被放行或拦截。</p>
+    </header>
+    <div class="gate-grid">
+      <div class="gate-card rv">
+        <div class="gc-h"><h3>制品入库门禁</h3><span class="pill" id="gate-mode-pill">enforce</span></div>
+        <div class="gc-ctrl">
+          <label class="sw"><input type="checkbox" id="gate-enforce" checked><span class="sw-t"></span><span class="sw-l">强制验签 <code>enforce</code></span></label>
+          <label class="sw"><input type="checkbox" id="gate-signed" checked><span class="sw-t"></span><span class="sw-l">制品带分离签名 <code>.asc</code></span></label>
+          <label class="sw"><input type="checkbox" id="gate-trusted" checked><span class="sw-t"></span><span class="sw-l">签名出自已导入信任根</span></label>
+        </div>
+        <button class="btn gold block" id="gate-submit" type="button">上传制品入库</button>
+        <div class="gate-out" id="gate-out" role="status" aria-live="polite"></div>
+      </div>
+      <div class="gate-card rv">
+        <div class="gc-h"><h3>下发播放门控</h3><span class="pill cyan" id="gate-play-pill">空闲</span></div>
+        <div class="gc-ctrl">
+          <label class="sw"><input type="checkbox" id="gate-playgate" checked><span class="sw-t"></span><span class="sw-l">播放门控 <code>PLAY_GATE</code></span></label>
+          <label class="sw"><input type="checkbox" id="gate-playing"><span class="sw-t"></span><span class="sw-l">终端正在播放</span></label>
+          <label class="sw"><input type="checkbox" id="gate-authorized" checked><span class="sw-t"></span><span class="sw-l">终端已授权且席位充足</span></label>
+        </div>
+        <button class="btn line block" id="gate-deliver" type="button">向该终端下发 BOM</button>
+        <div class="gate-out" id="gate-out2" role="status" aria-live="polite"></div>
+      </div>
+      <div class="gate-card facts rv">
+        <h3>不变量</h3>
+        <ul class="facts-list">
+          <li><b>服务端永不持有私钥</b><span>只导入公钥信任根；密钥导入接口拒绝 PRIVATE KEY BLOCK。</span></li>
+          <li><b>许可证离线签发</b><span>服务端只验签与统计席位，不生成许可证。</span></li>
+          <li><b>Agent 动作白名单</b><span>systemd 单元白名单 + ALLOW_POWER / ALLOW_LOCAL + 节点密钥。</span></li>
+          <li><b>播放保护双侧执行</b><span>服务端拦截下发与升级，终端本地控制台同样拦截停服务与关机。</span></li>
+          <li><b>操作日志</b><span>记录管理操作，支持 CSV / JSON 导出。</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ DEMO ══════════ -->
+<section class="sec alt" id="demo">
+  <div class="wrap">
+    <header class="sec-h rv">
+      <span class="kicker">04 · LIVE SIMULATION</span>
+      <h2>亲手操纵<span class="grad-warm">一整片机群</span></h2>
+      <p>下面这台机群完全由你驱动：改数量、改播放比例、改心跳与遥测、改灰度环、改签名模式与门控，画面立刻响应。点任意终端看详情，按「开始灰度下发」跑完整任务链。</p>
+    </header>
+    <div class="demo">
+      <div class="demo-ctrl" id="demo-ctrl" aria-label="机群参数控制台">
+        <div class="dc-h"><span class="dc-t">CONTROL DECK</span><span class="dc-sub">13 项实时参数</span></div>
+        <div class="dc-body">
+          <div class="ctl"><label for="c-count">终端数量 <output id="o-count">18</output></label><input type="range" id="c-count" min="4" max="48" step="1" value="18"></div>
+          <div class="ctl"><label for="c-seats">授权席位 <output id="o-seats">16</output></label><input type="range" id="c-seats" min="4" max="48" step="1" value="16"></div>
+          <div class="ctl"><label for="c-play">播放中占比 <output id="o-play">35%</output></label><input type="range" id="c-play" min="0" max="100" step="1" value="35"></div>
+          <div class="ctl"><label for="c-hb">心跳周期 <output id="o-hb">15s</output></label><input type="range" id="c-hb" min="5" max="60" step="1" value="15"></div>
+          <div class="ctl"><label for="c-speed">遥测速率 <output id="o-speed">1.0×</output></label><input type="range" id="c-speed" min="20" max="300" step="5" value="100"></div>
+          <div class="ctl"><label for="c-off">离线阈值 <output id="o-off">45s</output></label><input type="range" id="c-off" min="15" max="180" step="5" value="45"></div>
+          <div class="ctl"><label for="c-glow">辉光强度 <output id="o-glow">60</output></label><input type="range" id="c-glow" min="0" max="100" step="1" value="60"></div>
+          <div class="ctl"><label for="c-size">节点尺寸 <output id="o-size">1.0×</output></label><input type="range" id="c-size" min="60" max="180" step="5" value="100"></div>
+          <div class="ctl"><label for="c-orbit">轨道扩散 <output id="o-orbit">50</output></label><input type="range" id="c-orbit" min="0" max="100" step="1" value="50"></div>
+          <div class="ctl"><label for="c-links">链路显示 <output id="o-links">开</output></label><input type="range" id="c-links" min="0" max="1" step="1" value="1"></div>
+          <div class="ctl stepper"><label id="l-rings">灰度环数</label><div class="stp"><button type="button" id="ring-dec" aria-label="减少灰度环">−</button><output id="o-rings">3</output><button type="button" id="ring-inc" aria-label="增加灰度环">+</button></div></div>
+          <div class="ctl"><label for="c-mode">签名模式</label><select id="c-mode"><option value="enforce" selected>enforce · 强制验签</option><option value="dev">dev · 跳过验签</option></select></div>
+          <div class="ctl"><label for="c-theme">信号配色</label><select id="c-theme"><option value="amber" selected>琥珀 · 电子管暖光</option><option value="cyan">信号青 · 冷链路</option><option value="magenta">品红 · 母带室</option><option value="green">酸绿 · 监听台</option></select></div>
+          <div class="ctl toggles">
+            <label class="sw sm"><input type="checkbox" id="c-playgate" checked><span class="sw-t"></span><span class="sw-l">播放门控</span></label>
+            <label class="sw sm"><input type="checkbox" id="c-grid"><span class="sw-t"></span><span class="sw-l">参考网格</span></label>
+            <label class="sw sm"><input type="checkbox" id="c-ghost"><span class="sw-t"></span><span class="sw-l">幽灵离线节点</span></label>
+          </div>
+          <div class="dc-btns">
+            <button class="btn gold sm" id="d-run" type="button">开始灰度下发</button>
+            <button class="btn line sm" id="d-rand" type="button">随机化</button>
+            <button class="btn ghost sm" id="d-reset" type="button">重置</button>
+            <button class="btn ghost sm" id="d-export" type="button">导出 JSON</button>
+          </div>
+        </div>
+      </div>
+      <div class="demo-stage">
+        <div class="ds-bar">
+          <div class="ds-stat"><b id="ds-online">0</b><span>在线</span></div>
+          <div class="ds-stat"><b id="ds-play">0</b><span>播放中</span></div>
+          <div class="ds-stat"><b id="ds-off">0</b><span>离线</span></div>
+          <div class="ds-stat"><b id="ds-ring">—</b><span>当前环</span></div>
+          <div class="ds-stat"><b id="ds-seats">0/0</b><span>席位</span></div>
+          <div class="ds-mode"><span class="pill" id="ds-mode">enforce</span><span class="pill cyan" id="ds-gate">门控开</span></div>
+        </div>
+        <div class="ds-canvas-wrap">
+          <canvas id="fleet-cv"></canvas>
+          <div class="ds-hint" id="ds-hint">点击终端查看详情 · 拖动滑块实时改变机群</div>
+          <div class="ds-tip" id="ds-tip" hidden></div>
+        </div>
+        <div class="ds-rings" id="ds-rings" aria-label="灰度环推进"></div>
+        <div class="ds-jobs">
+          <div class="dj-h"><span>任务链 · 实时</span><span id="dj-count">0 个任务</span></div>
+          <div class="dj-list" id="dj-list"></div>
+        </div>
+      </div>
+      <aside class="demo-detail" id="demo-detail" aria-label="终端详情" hidden>
+        <div class="dd-h"><b id="dd-alias">—</b><button type="button" id="dd-close" aria-label="关闭详情">×</button></div>
+        <div class="dd-b" id="dd-body"></div>
+      </aside>
+    </div>
+    <p class="demo-note">本演示为浏览器内本地模拟，用于展示真实产品的状态机与门禁行为，不连接任何真实终端。真实控制台内嵌在服务端二进制中。</p>
+  </div>
+</section>
+
+<!-- ══════════ INSTALL ══════════ -->
+<section class="sec" id="install">
+  <div class="wrap">
+    <header class="sec-h rv">
+      <span class="kicker">05 · DEPLOY</span>
+      <h2>一条命令装机，<span class="grad-cool">一条命令入网</span></h2>
+      <p>服务端提供 Linux 多架构管理版、Linux amd64 / arm64 音频版和 Windows amd64 版。Linux 终端安装器自动识别 amd64 / arm64 / armhf，从服务端 <code>/dl/</code> 拉取对应 deb；管理版不含 ALSA 播放，真实播放请选择音频版。安卓终端安装 APK 后填服务端地址与令牌即可入网。</p>
+    </header>
+    <div class="inst">
+      <div class="inst-card rv">
+        <div class="ic-h"><span class="ic-n">A</span><h3>服务端 · Linux 多架构管理版</h3><span class="pill">systemd</span></div>
+        <div class="code" data-copy>
+          <button class="copy" type="button" aria-label="复制服务端安装命令">复制</button>
+<pre><code>sudo apt-get update &amp;&amp; sudo apt-get install -y gnupg
+tar -xzf Zephyr-HiFi-Kit-server-0.50.tar.gz
+cd Zephyr-HiFi-Kit-server-0.50/server
+sudo ./install.sh
+curl -s http://127.0.0.1:8080/api/v1/health</code></pre>
+        </div>
+        <p class="ic-p">安装器落地二进制、systemd 单元、配置、公钥信任根与 <code>/dl</code> 分发目录。建议在服务端本机打开 <code>http://localhost:8080/</code>，或经 SSH 隧道访问服务端 localhost，完成首次管理员初始化。远程安全部署须按实际 TLS 配置提供直连 HTTPS；仅在反向代理终止 TLS 不满足当前后端的管理操作门禁。</p>
+      </div>
+      <div class="inst-card rv">
+        <div class="ic-h"><span class="ic-n">B</span><h3>终端 · 每台一条命令</h3><span class="pill cyan">架构自动识别</span></div>
+        <p class="ic-p">完成初始化并登录控制台后，进入「终端中心 → 添加终端」，按向导生成一次性令牌与安装命令，再到目标终端执行。无需在此示例中填写管理员凭据。</p>
+        <div class="code" data-copy>
+          <button class="copy" type="button" aria-label="复制终端安装命令">复制</button>
+<pre><code>curl -fsSL http://&lt;服务端IP&gt;:8080/dl/agent-install.sh | \
+  sudo bash -s -- --server http://&lt;服务端IP&gt;:8080 \
+                  --token &lt;一次性令牌&gt;</code></pre>
+        </div>
+        <p class="ic-p">控制台「终端中心 → 添加终端」向导签发令牌后会给出同款命令。离线环境可直接 <code>dpkg -i</code> 包内 deb。注册成功后终端立即出现在控制台。</p>
+      </div>
+    </div>
+    <div class="inst-card rv" id="windows-server">
+      <div class="ic-h"><span class="ic-n">C</span><h3>服务端 · Windows amd64</h3><span class="pill cyan">PowerShell</span></div>
+      <div class="code" data-copy>
+        <button class="copy" type="button" aria-label="复制 Windows 服务端启动命令">复制</button>
+<pre><code>Expand-Archive -Path .\Zephyr-HiFi-Kit-server-0.50-windows-amd64.zip -DestinationPath .
+Set-Location .\Zephyr-HiFi-Kit-server-0.50-windows-amd64
+.\start.ps1</code></pre>
+      </div>
+      <p class="ic-p">ZIP 解压后的根目录为 <code>Zephyr-HiFi-Kit-server-0.50-windows-amd64/</code>，EXE、<code>start.ps1</code> 与 <code>dist/</code> 均在根目录，不进入 <code>server/</code>。<code>start.ps1</code> 默认仅监听 HTTP <code>127.0.0.1:8080</code>，ZAT 监听 <code>0.0.0.0:7800</code>。先在本机 <code>http://localhost:8080/</code> 设置管理员并登录。</p>
+      <p class="ic-p">需要局域网接入时，在启动前设置 <code>$env:HIFIHUB_LISTEN='0.0.0.0:8080'</code>，并按需配置防火墙，仅向可信终端开放所需端口。管理员设置及管理操作仍须通过本机 localhost 或直连 HTTPS，不能通过扩大监听范围或伪造代理头规避认证；勿公开密码、一次性令牌或节点密钥。远程管理可使用 SSH 隧道访问服务端 localhost。</p>
+      <p class="ic-p">Windows 本机已测试；v0.50 的发布与制品可用性以自动验证结果为准。Windows 纯 Go 服务端当前解码受支持的整数 PCM WAV，不会自动调用 <code>ffmpeg</code> 解码 FLAC；可自行转为 WAV 副本，或选择 Linux libFLAC 音频版。外部工具不随包捆绑，实际输出需搭配音频终端或 Android 终端。</p>
+      <a class="dl-item" href="https://github.com/Eyebright/Zephyr-HiFi-Kit/releases/download/v0.50/Zephyr-HiFi-Kit-server-0.50-windows-amd64.zip">
+        <span class="dl-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 19h16"/></svg></span>
+        <span class="dl-txt"><b>Zephyr-HiFi-Kit-server-0.50-windows-amd64.zip</b><i>Windows 服务端 · amd64 · PowerShell 启动</i></span>
+        <span class="dl-go">下载</span>
+      </a>
+    </div>
+    <div class="dl-lead rv">
+      <h3>安装包下载 · v0.50</h3>
+      <p>Zephyr HiFi Kit（和风HiFi音乐播放套件）0.50 按服务端与终端、管理版与音频版提供安装包。发布状态与制品可用性以 v0.50 Release 的自动验证结果为准，下载后核对 SHA256SUMS。</p>
+    </div>
+    <div class="dl-duo">
+      <div class="dl-card rv">
+        <div class="dl-h">
+          <h3>Linux 服务端 · 每台部署一份</h3>
+          <span class="pill">install.sh 一键装机</span>
+        </div>
+        <div class="dl-stack">
+          <a class="dl-item" href="https://github.com/Eyebright/Zephyr-HiFi-Kit/releases/download/v0.50/Zephyr-HiFi-Kit-server-0.50.tar.gz">
+            <span class="dl-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 19h16"/></svg></span>
+            <span class="dl-txt"><b>Zephyr-HiFi-Kit-server-0.50.tar.gz</b><i>Linux 多架构管理版：服务端 + 三架构管理终端 deb + 安装器</i></span>
+            <span class="dl-go">下载</span>
+          </a>
+          <div class="dl-sub">
+            <span class="dl-sub-t">Linux 音频版（服务端 libFLAC 解码 + 终端 ALSA 出声）</span>
+            <span class="dl-chips">
+              <a href="https://github.com/Eyebright/Zephyr-HiFi-Kit/releases/download/v0.50/Zephyr-HiFi-Kit-server-0.50-audio-amd64.tar.gz">x86_64</a>
+              <a href="https://github.com/Eyebright/Zephyr-HiFi-Kit/releases/download/v0.50/Zephyr-HiFi-Kit-server-0.50-audio-arm64.tar.gz">aarch64</a>
+            </span>
+          </div>
+        </div>
+        <div class="dl-note">管理版解压根目录为 <code>Zephyr-HiFi-Kit-server-0.50/</code>，进入 <code>server/</code> 执行安装。Linux 音频版采用 libFLAC 解码，<code>server/dist/</code> 内为音频 deb；音频终端才提供 ALSA 播放。NAS（威联通 / 群晖 / TrueNAS / Unraid）容器镜像为 <code>ghcr.io/eyebright/zephyr-hifi-kit-server:0.50</code>，部署步骤见 INSTALL.md；镜像与下载包以自动验证结果为准。</div>
+      </div>
+      <div class="dl-card rv">
+        <div class="dl-h">
+          <h3>终端 · 每台设备一份</h3>
+          <span class="pill cyan">Linux / Android</span>
+        </div>
+        <div class="dl-stack">
+          <div class="dl-os">
+            <span class="dl-os-t">Linux 管理终端 · Debian / 树莓派 OS</span>
+            <select id="dl-arch" class="dl-sel" aria-label="Linux 终端架构">
+              <option value="arm64" selected>ARM 64 位</option>
+              <option value="amd64">x86_64</option>
+              <option value="armhf">ARM 32 位</option>
+            </select>
+          </div>
+          <a class="dl-item" id="dl-deb" href="https://github.com/Eyebright/Zephyr-HiFi-Kit/releases/download/v0.50/Zephyr-HiFi-Kit-terminal-0.50-linux-arm64.deb">
+            <span class="dl-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 9h6v6H9z"/></svg></span>
+            <span class="dl-txt"><b id="dl-deb-name">Zephyr-HiFi-Kit-terminal-0.50-linux-arm64.deb</b><i id="dl-deb-meta">管理版 · 树莓派 3/4/5 · 64 位 · 不含 ALSA 播放</i></span>
+            <span class="dl-go">下载</span>
+          </a>
+          <div class="dl-sub">
+            <span class="dl-sub-t">Linux 真实播放 · 音频终端 tar.gz（ALSA）</span>
+            <span class="dl-chips">
+              <a href="https://github.com/Eyebright/Zephyr-HiFi-Kit/releases/download/v0.50/Zephyr-HiFi-Kit-terminal-0.50-audio-amd64.tar.gz">x86_64</a>
+              <a href="https://github.com/Eyebright/Zephyr-HiFi-Kit/releases/download/v0.50/Zephyr-HiFi-Kit-terminal-0.50-audio-arm64.tar.gz">aarch64</a>
+            </span>
+          </div>
+          <a class="dl-item" href="https://github.com/Eyebright/Zephyr-HiFi-Kit/releases/download/v0.50/Zephyr-HiFi-Kit-terminal-0.50.apk">
+            <span class="dl-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg></span>
+            <span class="dl-txt"><b>Zephyr-HiFi-Kit-terminal-0.50.apk</b><i>安卓终端 · Android 8.0+ · arm64 / armv7</i></span>
+            <span class="dl-go">下载</span>
+          </a>
+        </div>
+        <div class="dl-note">上方直接下载的 Linux deb 均为管理版，不含 ALSA 播放。真实播放请选择 amd64 / arm64 音频终端 tar.gz，解压后安装包内 deb；不提供 armhf 音频包。一键入网按架构获取服务端 <code>/dl/</code> 中的终端包，播放能力取决于服务端分发的是管理版还是音频版。请从已登录控制台获取安装命令与一次性令牌；离线安装可用 <code>dpkg -i</code>。安卓安装 APK 后填服务端地址与一次性令牌即入网。</div>
+      </div>
+    </div>
+    <div class="dl-docs">
+      <a class="dl-item rv" href="https://github.com/Eyebright/Zephyr-HiFi-Kit/releases/tag/v0.50" target="_blank" rel="noopener">
+        <span class="dl-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
+        <span class="dl-txt"><b>Release 说明与校验和</b><i>v0.50 发布以自动验证为准，下载后核对 SHA256SUMS</i></span>
+        <span class="dl-go">查看</span>
+      </a>
+      <a class="dl-item rv" href="https://github.com/Eyebright/Zephyr-HiFi-Kit/blob/main/INSTALL.md" target="_blank" rel="noopener">
+        <span class="dl-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
+        <span class="dl-txt"><b>部署说明 INSTALL.md</b><i>服务端装机 · 终端入网 · 安卓安装 · 自动更新</i></span>
+        <span class="dl-go">查看</span>
+      </a>
+      <a class="dl-item rv" href="https://github.com/Eyebright/Zephyr-HiFi-Kit/blob/main/README.cn.md" target="_blank" rel="noopener" hreflang="zh-CN">
+        <span class="dl-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
+        <span class="dl-txt"><b>中文 README</b><i>和风HiFi音乐播放套件 · README.cn.md</i></span>
+        <span class="dl-go">查看</span>
+      </a>
+      <a class="dl-item rv" href="https://github.com/Eyebright/Zephyr-HiFi-Kit/blob/main/README.en.md" target="_blank" rel="noopener" hreflang="en">
+        <span class="dl-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
+        <span class="dl-txt"><b>English README</b><i>Zephyr HiFi Kit · README.en.md</i></span>
+        <span class="dl-go">查看</span>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ SPECS ══════════ -->
+<section class="sec alt" id="specs">
+  <div class="wrap">
+    <header class="sec-h rv">
+      <span class="kicker">06 · SPECIFICATIONS</span>
+      <h2>技术规格</h2>
+      <p>没有隐藏运行时，没有外部数据库服务，没有容器编排依赖。</p>
+    </header>
+    <div class="spec-grid">
+      <div class="spec-card rv">
+        <h3>服务端</h3>
+        <table class="spec-t">
+          <tr><th>语言</th><td>Go 1.27+ · 管理版 <code>CGO_ENABLED=0</code></td></tr>
+          <tr><th>存储</th><td>SQLite 单文件（modernc.org/sqlite，纯 Go）</td></tr>
+          <tr><th>控制台</th><td><code>go:embed</code> 内嵌 SPA，随二进制分发</td></tr>
+          <tr><th>目标</th><td>Linux 多架构管理版 + systemd；Linux amd64 / arm64 音频版；Windows amd64 + PowerShell</td></tr>
+          <tr><th>监听</th><td>Linux 安装版 <code>0.0.0.0:8080</code>；Windows <code>start.ps1</code> 默认 HTTP <code>127.0.0.1:8080</code>、ZAT <code>0.0.0.0:7800</code>；管理操作仅本机 localhost 或直连 HTTPS</td></tr>
+          <tr><th>依赖</th><td>Linux：gnupg（验签）· cifs-utils（SMB 挂载）；Windows：按功能安装 GPG；ffmpeg 仅可用于外部转换，不会被服务端自动调用</td></tr>
+          <tr><th>音频版</th><td>Linux CGO + libFLAC 解码（另需 <code>libflac8</code> / <code>libflac12</code>）</td></tr>
+          <tr><th>许可</th><td>MIT</td></tr>
+        </table>
+      </div>
+      <div class="spec-card rv">
+        <h3>终端 Agent</h3>
+        <table class="spec-t">
+          <tr><th>模块</th><td>独立 Go module · 管理版仅标准库</td></tr>
+          <tr><th>架构</th><td>amd64 · arm64 · armhf（GOARM=7）</td></tr>
+          <tr><th>打包</th><td>内置 <code>debpack</code> 生成 deb，无需 dpkg-deb / 交叉 gcc</td></tr>
+          <tr><th>权限</th><td>root，受 systemd 单元白名单约束</td></tr>
+          <tr><th>开关</th><td><code>ALLOW_POWER</code> · <code>ALLOW_LOCAL</code></td></tr>
+          <tr><th>本地控制台</th><td>端口 8080，变更需节点密钥</td></tr>
+          <tr><th>心跳</th><td>默认 15s，离线阈值 = 3× 心跳</td></tr>
+          <tr><th>音频版</th><td>CGO + ALSA（<code>libasound2</code>）比特完美输出</td></tr>
+        </table>
+      </div>
+      <div class="spec-card rv">
+        <h3>验证项目</h3>
+        <div class="ver-list">
+          <div class="ver-i"><b>冒烟测试</b><span>验证 enforce 端到端流程与门禁行为</span></div>
+          <div class="ver-i"><b>构建检查</b><span>服务端与 Agent <code>go build / vet / test</code></span></div>
+          <div class="ver-i"><b>发布验证</b><span>v0.50 发布以 GitHub Actions 自动验证结果为准，不代表新 CI 已全部通过</span></div>
+          <div class="ver-i"><b>Windows</b><span>本机已测试；下载 ZIP 的验证状态以 v0.50 Release 为准</span></div>
+          <div class="ver-i"><b>制品校验</b><span>构建后核对安装包与 SHA256SUMS</span></div>
+          <div class="ver-i"><b>双视口</b><span>检查控制台桌面 1440 与移动 515 的溢出与裁剪</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ FAQ ══════════ -->
+<section class="sec" id="faq">
+  <div class="wrap narrow">
+    <header class="sec-h rv">
+      <span class="kicker">07 · FAQ</span>
+      <h2>常见问题</h2>
+    </header>
+    <div class="faq" id="faq-list">
+      <details class="rv"><summary>服务端必须联网吗？<span class="fq-i" aria-hidden="true"></span></summary><div class="fq-b"><p>不需要。主密钥与许可证签发都可以完全离线。服务端只在入库时验签、在下发时把制品推给终端，整个链路可以在隔离 LAN 内闭环运行。终端安装器从服务端 <code>/dl/</code> 取包，不访问公网。</p></div></details>
+      <details class="rv"><summary>为什么不做在线构建和二进制补丁？<span class="fq-i" aria-hidden="true"></span></summary><div class="fq-b"><p>在线构建要求服务端内置各应用的交叉工具链，体积与攻击面都不可接受；二进制补丁会破坏已签名制品的签名链。两者都被删除，改为「离线/CI 构建 → 签名 → 上传入库」这一条可验证的路径。</p></div></details>
+      <details class="rv"><summary>播放中的终端会被升级打断吗？<span class="fq-i" aria-hidden="true"></span></summary><div class="fq-b"><p>不会。播放门控（FR-3.10）在服务端与终端双侧执行：任务进入 <code>waiting_idle</code> 等待空闲，系统升级、停服务与关机在播放中同样被拦截。服务端返回 409，终端本地控制台也拒绝执行。</p></div></details>
+      <details class="rv"><summary>许可证是怎么工作的？<span class="fq-i" aria-hidden="true"></span></summary><div class="fq-b"><p>服务端内置 3 台终端授权；超出可由私有签发端离线签发许可证扩容，服务端使用签发公钥验签并统计席位占用；终端无需证书。</p></div></details>
+      <details class="rv"><summary>灰度发布怎么推进？<span class="fq-i" aria-hidden="true"></span></summary><div class="fq-b"><p>环的百分比必须合计 100，绑定的 BOM 版本必须已发布。当前环仍有未完成任务时推进一步会返回 409，避免把故障扩散到下一环。删除灰度不会撤销已下发的任务，且支持撤销恢复。</p></div></details>
+      <details class="rv"><summary>控制台的鉴权在哪里做？<span class="fq-i" aria-hidden="true"></span></summary><div class="fq-b"><p>控制台内置单管理员鉴权，首次引导设置管理员名字与密码。管理操作仅允许从服务端本机 localhost 或直连 HTTPS 访问；当前后端不信任反向代理的 TLS 转发头。</p></div></details>
+      <details class="rv"><summary>误删了 BOM 版本或终端怎么办？<span class="fq-i" aria-hidden="true"></span></summary><div class="fq-b"><p>BOM 保留完整版本历史，可回滚到任意已发布版本；回滚会生成一个新的已发布版本而不是覆盖历史。终端注销后支持撤销恢复。破坏性操作在控制台都带撤销入口。</p></div></details>
+      <details class="rv"><summary>支持哪些终端硬件？<span class="fq-i" aria-hidden="true"></span></summary><div class="fq-b"><p>安装器自动识别 amd64、arm64 与 armhf，覆盖 x86 小主机、树莓派 4/5（64 位）与树莓派 2/3（32 位）。管理版 Agent 仅依赖标准库，deb 由内置 debpack 生成，不需要目标机上有构建工具。</p></div></details>
+      <details class="rv"><summary>音频播放是真实的吗？管理版和音频版有什么区别？<span class="fq-i" aria-hidden="true"></span></summary><div class="fq-b"><p>真实。管理版纯 Go（<code>CGO_ENABLED=0</code>），ALSA 输出为占位，适用于无音频硬件的编排场景；音频版经 CGO + libFLAC 解码、终端 ALSA 比特完美出声，走自有 ZAT 协议推流。音频版验证包括 amd64 / arm64 构建、ALSA <code>null</code> 回环与 FLAC 解码往返（断言 PCM 逐比特一致），v0.50 结果以发布自动验证记录为准。两版引擎名、配置与 systemd 单元一致，可互相替换。</p></div></details>
+      <details class="rv"><summary>媒体库怎么接入？支持哪些音频格式？<span class="fq-i" aria-hidden="true"></span></summary><div class="fq-b"><p>Linux 服务端用内核 <code>mount.cifs</code> 挂载 SMB/CIFS 共享（需 <code>cifs-utils</code>），扫描媒体库并按文件头识别音频格式（WAV / FLAC 等），入库为可播放曲目。播放时服务端解码并经 ZAT 推流到已授权终端，终端 ALSA 输出。挂载凭据写入受限文件，绝不出现在命令行或 API 响应里。</p></div></details>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ CTA ══════════ -->
+<section class="cta">
+  <div class="wrap">
+    <div class="cta-in rv">
+      <span class="kicker">READY TO DEPLOY</span>
+      <h2>立刻尝试，让<span class="grad-warm">音乐随心而动</span></h2>
+      <p>选择 0.50 服务端与终端安装包，每台终端一条命令入网；发布状态以 v0.50 自动验证结果为准。</p>
+      <div class="cta-btns">
+        <a class="btn gold lg" href="https://github.com/Eyebright/Zephyr-HiFi-Kit/releases/download/v0.50/Zephyr-HiFi-Kit-server-0.50.tar.gz">下载 v0.50</a>
+        <a class="btn line lg" href="https://github.com/Eyebright/Zephyr-HiFi-Kit" target="_blank" rel="noopener">查看源码</a>
+        <a class="btn ghost lg" href="https://github.com/Eyebright/Zephyr-HiFi-Kit/blob/main/INSTALL.md" target="_blank" rel="noopener">部署文档</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <div class="foot-grid">
+      <div class="foot-brand">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" width="28" height="28"><rect x="1.2" y="1.2" width="29.6" height="29.6" rx="9" fill="none" stroke="#f6a821" stroke-width="1.6"/><path d="M7 20.5V11.5M11.5 23V9M16 25.5V6.5M20.5 23V9M25 20.5V11.5" stroke="#ffd479" stroke-width="2.1" stroke-linecap="round"/></svg></span>
+          <span class="brand-txt"><b>Zephyr HiFi Kit</b><i>和风HiFi音乐播放套件</i></span>
+        </div>
+        <p>面向家庭与小型商用 Hi-Fi 机群的音乐服务与终端推送平台：曲库与操作习惯只维护一份，自有 ZAT 协议比特完美推流，音乐随心而动。</p>
+        <div class="foot-eq" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+      </div>
+      <div class="foot-col"><h4>产品</h4><a href="#scenarios">适用范围</a><a href="#features">能力</a><a href="#architecture">架构</a><a href="#security">安全</a><a href="#demo">交互演示</a></div>
+      <div class="foot-col"><h4>资源</h4><a href="#install">安装</a><a href="#specs">规格</a><a href="#faq">FAQ</a><a href="https://github.com/Eyebright/Zephyr-HiFi-Kit/blob/main/INSTALL.md" target="_blank" rel="noopener">INSTALL.md</a><a href="https://github.com/Eyebright/Zephyr-HiFi-Kit/releases" target="_blank" rel="noopener">全部发布</a><a class="lang-switch" href="index.html" hreflang="en" lang="en" data-lang-switch title="Switch to English">English</a></div>
+      <div class="foot-col"><h4>联系</h4><a href="mailto:services@zephyr.hk">services@zephyr.hk</a><a href="https://www.zephyr.hk" target="_blank" rel="noopener">www.zephyr.hk</a><a href="https://github.com/Eyebright/Zephyr-HiFi-Kit" target="_blank" rel="noopener">GitHub 仓库</a><a href="https://github.com/Eyebright/Zephyr-HiFi-Kit/issues" target="_blank" rel="noopener">问题反馈</a></div>
+    </div>
+    <div class="foot-bar">
+      <span>© 2026 Zephyr HiFi Kit contributors · MIT License</span>
+      <span class="foot-ver">v0.50 · 管理版纯 Go · 音频版 CGO + libFLAC + ALSA · SQLite 单文件</span>
+    </div>
+  </div>
+</footer>
+
+<button class="totop" id="totop" type="button" aria-label="回到顶部" hidden>
+  <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" d="M8 13V3M4 7l4-4 4 4"/></svg>
+</button>
+<div class="toast-root" id="toast-root" aria-live="polite"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
