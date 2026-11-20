@@ -18,9 +18,9 @@ import (
 	"hifihub/zat"
 )
 
-// alsaPlayer renders PCM through libasound. It opens the device in blocking
-// mode with soft resampling disabled to keep the transport bit-perfect
-// (PROTOCOL.md §9); the device must support the negotiated rate.
+// alsaPlayer renders PCM through libasound. The strict hw: device is tried
+// first with soft resampling disabled; if it rejects the negotiated format, the
+// same card is reopened through ALSA's plug plugin so the device can convert.
 type alsaPlayer struct {
 	handle     *C.snd_pcm_t
 	frameBytes int
@@ -48,20 +48,33 @@ func (p *alsaPlayer) Open(format zat.Format, rate, channels int, device string) 
 	if p.handle != nil {
 		p.Close()
 	}
+	p.frameBytes = format.BytesPerSample() * channels
+	if err := p.openDevice(sf, rate, channels, device); err != nil {
+		if fallback, ok := plugDevice(device); ok {
+			if ferr := p.openDevice(sf, rate, channels, fallback); ferr != nil {
+				return fmt.Errorf("%w; fallback %s failed: %v", err, fallback, ferr)
+			}
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+func (p *alsaPlayer) openDevice(sf C.snd_pcm_format_t, rate, channels int, device string) error {
 	cdev := C.CString(device)
 	defer C.free(unsafe.Pointer(cdev))
 	var h *C.snd_pcm_t
 	if rc := C.snd_pcm_open(&h, cdev, C.SND_PCM_STREAM_PLAYBACK, 0); rc < 0 {
 		return fmt.Errorf("player: snd_pcm_open(%s): %s", device, alsaErr(rc))
 	}
-	// 500 ms target latency, no soft resample (bit-perfect).
+	// 500 ms target latency; the strict device path does no soft resampling.
 	if rc := C.snd_pcm_set_params(h, sf, C.SND_PCM_ACCESS_RW_INTERLEAVED,
 		C.uint(channels), C.uint(rate), 0, 500000); rc < 0 {
 		C.snd_pcm_close(h)
 		return fmt.Errorf("player: snd_pcm_set_params(%s): %s", device, alsaErr(rc))
 	}
 	p.handle = h
-	p.frameBytes = format.BytesPerSample() * channels
 	return nil
 }
 

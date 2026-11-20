@@ -3,6 +3,17 @@
 和风HiFi音乐播放套件。最新版本在前，版本号与 Git 标签、GitHub Releases 一致。
 Newest first; version numbers match Git tags and GitHub Releases.
 
+## 0.55 — 2026-11-20
+
+**中文**
+- 修复：部分终端输出设备只接受特定 PCM 格式（例如 `AUDIO` 仅接受 S32），`hw:X,Y` 打开失败时自动回退到 `plughw:X,Y`，由 ALSA 完成格式转换。
+- 行为：严格 `hw:` 设备仍优先；只有打开或参数设置失败时才使用 `plughw:`。回退路径可能进行格式转换，不再保证设备原生位完美。
+- 说明：该修复只影响终端 PCM 输出格式；Windows 管理版服务端仍不能解码 FLAC。
+
+**English**
+- Fix: when a terminal device rejects the negotiated PCM format, fall back from `hw:X,Y` to `plughw:X,Y` so ALSA can convert.
+- The strict hardware path remains preferred; the fallback may convert formats and is not guaranteed bit-perfect.
+
 ## 0.54 — 2026-11-20
 
 **中文**

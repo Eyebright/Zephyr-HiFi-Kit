@@ -17,7 +17,7 @@ set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$ROOT"
 
-VERSION="${VERSION:-0.54}"
+VERSION="${VERSION:-0.55}"
 case "$VERSION" in
   [0-9]*) ;;
   *) echo "version must start with a digit" >&2; exit 1 ;;

@@ -14,7 +14,7 @@ val keystoreProps = Properties().apply {
     if (hasKeystore) load(FileInputStream(keystorePropsFile))
 }
 
-val releaseVersion = providers.gradleProperty("zephyrVersion").orElse("0.54").get()
+val releaseVersion = providers.gradleProperty("zephyrVersion").orElse("0.55").get()
 val versionParts = releaseVersion.split('.').map { it.toInt() }
 require(versionParts.size in 2..3 && versionParts.all { it in 0..99 })
 val releaseVersionCode = versionParts[0] * 10000 + versionParts[1] * 100 + versionParts.getOrElse(2) { 0 }

@@ -49,7 +49,7 @@ jobs:
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             VERSION="${GITHUB_REF_NAME#v}"
           else
-            VERSION="0.54"
+            VERSION="0.55"
           fi
           VERSION="$VERSION" sh scripts/build-release.sh
 
@@ -112,7 +112,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.Substring(1) } else { '0.54' }
+          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.Substring(1) } else { '0.55' }
           $name = "Zephyr-HiFi-Kit-server-$version-windows-amd64"
           $zip = Join-Path $env:RUNNER_TEMP "management-artifact/$name.zip"
           if (-not (Test-Path -LiteralPath $zip -PathType Leaf)) { throw "Missing Windows release: $zip" }
@@ -228,7 +228,7 @@ jobs:
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             VERSION="${GITHUB_REF_NAME#v}"
           else
-            VERSION="0.54"
+            VERSION="0.55"
           fi
           TEST=1 AUDIO=1 VERSION="$VERSION" sh scripts/build-release.sh
 
@@ -316,7 +316,7 @@ jobs:
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             VERSION="${GITHUB_REF_NAME#v}"
           else
-            VERSION="0.54"
+            VERSION="0.55"
           fi
           VERSION="$VERSION" sh scripts/build-android.sh
 
@@ -439,7 +439,7 @@ jobs:
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             VERSION="${GITHUB_REF_NAME#v}"
           else
-            VERSION="0.54"
+            VERSION="0.55"
           fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
