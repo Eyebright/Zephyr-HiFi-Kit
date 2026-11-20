@@ -6,13 +6,13 @@
 #   2) docker compose up -d
 #
 # Offline / no-registry hosts:
-#   docker load -i Zephyr-HiFi-Kit-server-0.50-docker-<arch>.tar.gz
-# then change image: to zephyr-hifi-kit-server:0.50
+#   docker load -i Zephyr-HiFi-Kit-server-0.51-docker-<arch>.tar.gz
+# then change image: to zephyr-hifi-kit-server:0.51
 # Keep fleet updates disabled for management-only dist; consider enabling them
 # only after installing matching audio debs and SHA256SUMS in data/dist.
 services:
   zephyr-server:
-    image: ghcr.io/eyebright/zephyr-hifi-kit-server:0.50
+    image: ghcr.io/eyebright/zephyr-hifi-kit-server:0.51
     container_name: zephyr-server
     restart: unless-stopped
     ports:

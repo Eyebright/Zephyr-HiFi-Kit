@@ -940,7 +940,7 @@ async function deleteNodes(ids) {
 
 /* ================= ADD-NODE WIZARD ================= */
 const WZ = { step: 1, alias: "", group: "", arch: "amd64", distro: "debian", ttl: 1800, note: "", token: "", expiresAt: 0, nodeId: "", node: null };
-const ANDROID_APK = "https://github.com/Eyebright/Zephyr-HiFi-Kit/releases/download/v0.50/Zephyr-HiFi-Kit-terminal-0.50.apk";
+const ANDROID_APK = "https://github.com/Eyebright/Zephyr-HiFi-Kit/releases/download/v0.51/Zephyr-HiFi-Kit-terminal-0.51.apk";
 function installCmd() {
   if (WZ.arch === "android") return appT("m209", { id: ANDROID_APK, value: location.origin, value2: WZ.token });
   return `curl -fsSL ${location.origin}/dl/agent-install.sh | sudo bash -s -- --server ${location.origin} --token ${WZ.token}`;
