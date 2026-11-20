@@ -575,6 +575,14 @@ jobs:
               [ -s "$assets/$file" ] || { echo "Missing release asset: $file"; exit 1; }
             done
           done
+          # 0.4.3 clients resolve the legacy bundle name and root directory;
+          # repack the identical bytes under them so the fleet can converge.
+          legacy="zephyr-music-server-$VERSION"
+          mkdir -p "$assets/.legacy"
+          tar -xzf "$assets/Zephyr-HiFi-Kit-server-$VERSION.tar.gz" -C "$assets/.legacy"
+          mv "$assets/.legacy/Zephyr-HiFi-Kit-server-$VERSION" "$assets/.legacy/$legacy"
+          ( cd "$assets/.legacy" && tar -czf "$assets/$legacy.tar.gz" "$legacy" )
+          rm -rf "$assets/.legacy"
           # Hash every downloaded asset (including any additional release assets),
           # excluding only the aggregate manifest itself on a draft-job rerun.
           ( cd "$assets" && find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\0' \

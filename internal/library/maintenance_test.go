@@ -806,7 +806,13 @@ func TestCleanupScanRestoresPlaylistIdentityAndAddedTime(t *testing.T) {
 				// A distinct destination may contain stale identities. Restore must
 				// replace them atomically rather than merge conflicting IDs/paths.
 				s, _ = maintenanceTestService(t)
-				maintenanceExec(t, s.db, `INSERT INTO mounts(id,kind,host,share,target,version,created_at) VALUES(?,'local','localhost','Music',?,'',1)`, m.ID, root)
+				// The service stores local targets resolved (8.3 short names expanded
+				// on Windows); the destination row must use the same resolved form.
+				resolved, err := filepath.EvalSymlinks(root)
+				if err != nil {
+					t.Fatal(err)
+				}
+				maintenanceExec(t, s.db, `INSERT INTO mounts(id,kind,host,share,target,version,created_at) VALUES(?,'local','localhost','Music',?,'',1)`, m.ID, resolved)
 				maintenanceExec(t, s.db, `INSERT INTO track_identities(id,mount_id,rel_path,added_at) VALUES('stale',?,'song.wav',999),('extra',?,'extra.wav',999)`, m.ID, m.ID)
 				if err := s.RestoreLibrary(t.Context(), data); err != nil {
 					t.Fatal(err)
