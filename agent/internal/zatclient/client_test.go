@@ -135,7 +135,7 @@ func (f *fakeSource) close() {
 
 func newTestClient(addr string, fp *testPlayer) *Client {
 	c := New(addr, "test/0.1", func() (string, string) { return "n-1", "secret-1" },
-		func() []string { return []string{"hw:0,0", "null"} })
+		func() []zat.ALSADevice { return []zat.ALSADevice{{HW: "hw:0,0", Name: "DAC"}, {HW: "null"}} })
 	c.WithPlayerFactory(func() player.Player { return fp })
 	return c
 }
@@ -516,7 +516,7 @@ func TestPauseHoldsQueuedAudioThenResume(t *testing.T) {
 	src := newFakeSource(t)
 	defer src.close()
 	c := New(src.addr(), "test/0.1", func() (string, string) { return "n-1", "secret-1" },
-		func() []string { return []string{"null"} })
+		func() []zat.ALSADevice { return []zat.ALSADevice{{HW: "null"}} })
 	c.WithPlayerFactory(func() player.Player { return gp })
 	done := runClient(c)
 	src.accept()

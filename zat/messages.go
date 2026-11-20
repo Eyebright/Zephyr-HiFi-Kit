@@ -2,13 +2,22 @@ package zat
 
 import "encoding/json"
 
+// ALSADevice is a named ALSA playback device. Older sinks only report the HW
+// string in Caps.ALSADevices; ALSADeviceInfo carries the friendly card name
+// without breaking that field.
+type ALSADevice struct {
+	HW   string `json:"hw"`
+	Name string `json:"name,omitempty"`
+}
+
 // Caps describes an endpoint's or source's audio capabilities (PROTOCOL.md §6).
 type Caps struct {
-	Codecs      []string `json:"codecs"`
-	Formats     []Format `json:"formats,omitempty"`
-	Rates       []int    `json:"rates,omitempty"`
-	MaxChannels int      `json:"max_channels,omitempty"`
-	ALSADevices []string `json:"alsa_devices,omitempty"`
+	Codecs         []string     `json:"codecs"`
+	Formats        []Format     `json:"formats,omitempty"`
+	Rates          []int        `json:"rates,omitempty"`
+	MaxChannels    int          `json:"max_channels,omitempty"`
+	ALSADevices    []string     `json:"alsa_devices,omitempty"`
+	ALSADeviceInfo []ALSADevice `json:"alsa_device_info,omitempty"`
 }
 
 // Hello is sent sink→source to authenticate and declare capabilities.

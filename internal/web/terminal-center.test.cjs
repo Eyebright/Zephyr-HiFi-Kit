@@ -357,3 +357,12 @@ test("node table surfaces target version, build flavor and direct upgrade", () =
   assert.match(en, /Upgrade Agent/);
   assert.match(en, /0\.4\.3/);
 });
+
+test("server device selector shows ALSA card names with hardware ids", () => {
+  const h = harness();
+  const html = h.run(`nodePlayOpts(["default","hw:3,0"], "hw:3,0", new Map([["hw:3,0","AUDIO"]]))`);
+  assert.match(html, /AUDIO · hw:3,0/);
+  assert.match(html, /value="hw:3,0" selected/);
+  const dvHtml = h.run(`(() => { const dv = nodePlayDevs({devices:["hw:0,0"], device_info:[{hw:"hw:0,0", name:"b1"}], pref_device:"hw:0,0"}); return nodePlayOpts(dv.devs, dv.cur, dv.names); })()`);
+  assert.match(dvHtml, /b1 · hw:0,0/);
+});

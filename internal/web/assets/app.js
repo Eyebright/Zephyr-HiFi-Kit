@@ -807,7 +807,7 @@ function paintPlayerBar() {
   if (node) node.disabled = PB.dragging || PB.volDrag || !!(PB.seekPending || PB.volPending || PB.devicePending);
   const device = $("#pb-device"), dv = nodePlayDevs(p);
   if (device) {
-    if (!PB.devicePending) ovSyncSelect(device, nodePlayOpts(dv.devs, dv.cur), dv.cur);
+    if (!PB.devicePending) ovSyncSelect(device, nodePlayOpts(dv.devs, dv.cur, dv.names), dv.cur);
     device.disabled = !connected || !!PB.devicePending;
     device.title = (active && p.alsa_device ? appT("m184") + p.alsa_device + " · " : "") + appT("m185");
   }
@@ -1077,10 +1077,14 @@ function nodePlayDevs(p) {
   if (!devs.includes("default")) devs.unshift("default");
   const cur = p.pref_device || p.configured_device || "default";
   if (!devs.includes(cur)) devs.push(cur);
-  return { devs, cur };
+  const names = new Map((Array.isArray(p.device_info) ? p.device_info : []).filter(d => d && d.hw && d.name).map(d => [d.hw, d.name]));
+  return { devs, cur, names };
 }
-function nodePlayOpts(devs, cur) {
-  return devs.map(d => `<option value="${esc(d)}" ${d === cur ? "selected" : ""}>${esc(d === "default" ? appT("m262") : d)}</option>`).join("");
+function nodePlayOpts(devs, cur, names) {
+  return devs.map(d => {
+    const label = d === "default" ? appT("m262") : names?.get(d) ? names.get(d) + " · " + d : d;
+    return `<option value="${esc(d)}" ${d === cur ? "selected" : ""}>${esc(label)}</option>`;
+  }).join("");
 }
 
 /* ---- shared server-side playback queue actions ---- */
@@ -3188,7 +3192,7 @@ function playerShell() {
   const online = PB.nodes.filter(x => x.status === "online");
   const nodeList = online.some(x => x.node_id === id) ? online : online.concat(PB.nodes.filter(x => x.node_id === id));
   const nodeOpts = nodeList.map(x => `<option value="${esc(x.node_id)}" ${x.node_id === id ? "selected" : ""}>${esc(x.alias || shortId(x.node_id))}${x.ip ? " · " + esc(x.ip) : ""}</option>`).join("");
-  const { devs, cur } = nodePlayDevs(p);
+  const { devs, cur, names } = nodePlayDevs(p);
   const plOpts = `<option value="">${appH("m866")}</option>` + S.playlists.map(pl => `<option value="${esc(pl.id)}">${appH("m867", { name: pl.name, count: pl.count })}</option>`).join("");
   return `<div class="ply">
     <div class="ply-top">
@@ -3201,7 +3205,7 @@ function playerShell() {
         <div id="ply-badges"></div>
         <div class="ply-sel-row">
           <div class="field"><label>${appH("m164")}</label><select id="ply-node" class="inp" data-change="ply-node" data-sig="${esc(online.map(x => x.node_id).join("|"))}">${nodeOpts}</select></div>
-          <div class="field"><label>${appH("m166")}</label><select id="ply-dev" class="inp mono" data-change="ply-device" data-sig="${esc(devs.join("|"))}" ${p.connected ? "" : "disabled"}>${nodePlayOpts(devs, cur)}</select></div>
+          <div class="field"><label>${appH("m166")}</label><select id="ply-dev" class="inp mono" data-change="ply-device" data-sig="${esc(devs.join("|"))}" ${p.connected ? "" : "disabled"}>${nodePlayOpts(devs, cur, names)}</select></div>
         </div>
       </div>
     </div>
@@ -3299,7 +3303,7 @@ function paintPlayerLive() {
   if (dsel) {
     const dv = nodePlayDevs(p);
     const sig = dv.devs.join("|");
-    if (dsel.dataset.sig !== sig) { dsel.innerHTML = nodePlayOpts(dv.devs, dv.cur); dsel.dataset.sig = sig; }
+    if (dsel.dataset.sig !== sig) { dsel.innerHTML = nodePlayOpts(dv.devs, dv.cur, dv.names); dsel.dataset.sig = sig; }
     dsel.disabled = !connected;
     if (document.activeElement !== dsel && dsel.value !== dv.cur) dsel.value = dv.cur;
   }

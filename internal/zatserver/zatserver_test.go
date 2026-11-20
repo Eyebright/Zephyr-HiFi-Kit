@@ -406,7 +406,8 @@ func TestSetDeviceAndStatusReport(t *testing.T) {
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
 	hello := zat.Hello{NodeID: nodeID, SecretSHA256: hash(secret), AgentVersion: "test",
-		Caps: zat.Caps{MaxChannels: 2, ALSADevices: []string{"hw:0,0", "hw:1,0"}}}
+		Caps: zat.Caps{MaxChannels: 2, ALSADevices: []string{"hw:0,0", "hw:1,0"},
+			ALSADeviceInfo: []zat.ALSADevice{{HW: "hw:0,0", Name: "b1"}, {HW: "hw:1,0", Name: "AUDIO"}}}}
 	f, _ := zat.ControlFrame(zat.TypeHello, 1, hello)
 	if err := zat.WriteFrame(conn, f); err != nil {
 		t.Fatal(err)
@@ -422,6 +423,9 @@ func TestSetDeviceAndStatusReport(t *testing.T) {
 	}
 	if !st.Connected || len(st.Devices) != 2 || st.Devices[1] != "hw:1,0" {
 		t.Fatalf("device caps not reported: %+v", st)
+	}
+	if len(st.DeviceInfo) != 2 || st.DeviceInfo[1].Name != "AUDIO" || st.DeviceInfo[1].HW != "hw:1,0" {
+		t.Fatalf("device names not reported: %+v", st.DeviceInfo)
 	}
 	if err := h.srv.SetDevice(nodeID, "hw:9,9"); err != ErrUnknownDevice {
 		t.Fatalf("expected ErrUnknownDevice, got %v", err)

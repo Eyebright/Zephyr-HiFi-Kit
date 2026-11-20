@@ -23,6 +23,7 @@ import (
 	"hifihub/agent/internal/state"
 	"hifihub/agent/internal/sysinfo"
 	"hifihub/agent/internal/zatclient"
+	"hifihub/zat"
 )
 
 // Version is the Android terminal agent version (kept in step with the release).
@@ -105,7 +106,7 @@ func New(in Config) (*Core, error) {
 	}
 	c.zat = zatclient.New(cfg.ZATAddr, Version,
 		func() (string, string) { s := c.st.Snapshot(); return s.NodeID, s.Secret },
-		func() []string { return []string{"default"} })
+		func() []zat.ALSADevice { return []zat.ALSADevice{{HW: "default"}} })
 	return c, nil
 }
 

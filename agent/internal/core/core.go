@@ -27,6 +27,7 @@ import (
 	"hifihub/agent/internal/systemctrl"
 	"hifihub/agent/internal/ui"
 	"hifihub/agent/internal/zatclient"
+	"hifihub/zat"
 )
 
 // Core is the assembled terminal agent.
@@ -79,13 +80,13 @@ func New(cfg config.Config) (*Core, error) {
 	// credential getter reads live state so registration is picked up on reconnect.
 	c.zat = zatclient.New(cfg.ZATAddr, cfg.AgentVersion,
 		func() (string, string) { s := c.st.Snapshot(); return s.NodeID, s.Secret },
-		func() []string {
+		func() []zat.ALSADevice {
 			devs := c.Devices()
-			names := make([]string, 0, len(devs))
+			out := make([]zat.ALSADevice, 0, len(devs))
 			for _, d := range devs {
-				names = append(names, d.HW)
+				out = append(out, zat.ALSADevice{HW: d.HW, Name: d.Name})
 			}
-			return names
+			return out
 		})
 	return c, nil
 }

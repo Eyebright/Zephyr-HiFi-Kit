@@ -50,7 +50,7 @@ type Client struct {
 	addr      string
 	version   string
 	creds     func() (nodeID, secret string)
-	devices   func() []string
+	devices   func() []zat.ALSADevice
 	newPlayer func() player.Player
 
 	mu         sync.Mutex
@@ -63,7 +63,7 @@ type Client struct {
 // creds returns the current node id and secret (read fresh on each reconnect so
 // registration is picked up without restarting). devices lists ALSA playback
 // devices for HELLO caps.
-func New(addr, version string, creds func() (string, string), devices func() []string) *Client {
+func New(addr, version string, creds func() (string, string), devices func() []zat.ALSADevice) *Client {
 	return &Client{
 		addr: addr, version: version, creds: creds, devices: devices,
 		newPlayer: player.New,
@@ -197,12 +197,18 @@ func (c *Client) connectAndServe(ctx context.Context, nodeID, secret string) err
 	// HELLO -> HELLO_ACK (10s deadline, matching the source).
 	_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
 	devs := c.devices()
+	hws := make([]string, 0, len(devs))
+	info := make([]zat.ALSADevice, 0, len(devs))
+	for _, d := range devs {
+		hws = append(hws, d.HW)
+		info = append(info, d)
+	}
 	hello := zat.Hello{
 		NodeID: nodeID, SecretSHA256: secretHash(secret), AgentVersion: c.version,
 		Caps: zat.Caps{
 			Codecs: []string{"pcm"}, Formats: []zat.Format{zat.S16LE, zat.S24LE, zat.S32LE},
 			Rates: []int{44100, 48000, 88200, 96000, 176400, 192000}, MaxChannels: 2,
-			ALSADevices: devs,
+			ALSADevices: hws, ALSADeviceInfo: info,
 		},
 	}
 	if err := s.write(zat.TypeHello, hello); err != nil {

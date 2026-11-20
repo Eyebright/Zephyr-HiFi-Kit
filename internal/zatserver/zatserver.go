@@ -39,26 +39,27 @@ var ErrUnknownDevice = errors.New("终端未上报该 ALSA 输出设备")
 
 // PlayStatus is the live playback state of one terminal, for the console.
 type PlayStatus struct {
-	NodeID     string   `json:"node_id"`
-	Connected  bool     `json:"connected"`
-	SessionID  string   `json:"session_id"`
-	TrackID    string   `json:"track_id"`
-	Title      string   `json:"title"`
-	Artist     string   `json:"artist"`
-	Album      string   `json:"album"`
-	DurationMS int      `json:"duration_ms"`
-	Codec      string   `json:"codec"`
-	Rate       int      `json:"rate"`
-	Channels   int      `json:"channels"`
-	State      string   `json:"state"`
-	PTS        uint64   `json:"pts"`
-	BufferMS   int      `json:"buffer_ms"`
-	Underruns  int      `json:"underruns"`
-	Playing    bool     `json:"playing"`
-	Volume     int      `json:"volume"`
-	ALSADevice string   `json:"alsa_device"`
-	PrefDevice string   `json:"pref_device"`
-	Devices    []string `json:"devices"`
+	NodeID     string           `json:"node_id"`
+	Connected  bool             `json:"connected"`
+	SessionID  string           `json:"session_id"`
+	TrackID    string           `json:"track_id"`
+	Title      string           `json:"title"`
+	Artist     string           `json:"artist"`
+	Album      string           `json:"album"`
+	DurationMS int              `json:"duration_ms"`
+	Codec      string           `json:"codec"`
+	Rate       int              `json:"rate"`
+	Channels   int              `json:"channels"`
+	State      string           `json:"state"`
+	PTS        uint64           `json:"pts"`
+	BufferMS   int              `json:"buffer_ms"`
+	Underruns  int              `json:"underruns"`
+	Playing    bool             `json:"playing"`
+	Volume     int              `json:"volume"`
+	ALSADevice string           `json:"alsa_device"`
+	PrefDevice string           `json:"pref_device"`
+	Devices    []string         `json:"devices"`
+	DeviceInfo []zat.ALSADevice `json:"device_info,omitempty"`
 	// ConfiguredDevice is the server-side DAC suggestion (node.dac_device).
 	ConfiguredDevice string `json:"configured_device"`
 }
@@ -984,6 +985,9 @@ func (s *Server) Status(nodeID string) (PlayStatus, error) {
 	e.mu.Unlock()
 	if len(e.caps.ALSADevices) > 0 {
 		st.Devices = e.caps.ALSADevices
+	}
+	if len(e.caps.ALSADeviceInfo) > 0 {
+		st.DeviceInfo = e.caps.ALSADeviceInfo
 	}
 	return st, nil
 }
