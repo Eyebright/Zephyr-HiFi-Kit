@@ -335,18 +335,18 @@ test("node table surfaces target version, build flavor and direct upgrade", () =
   const h = harness();
   h.run(`S.nodes = [
     { node_id:'a', alias:'Pi', status:'online', arch:'arm64', distro:'debian', playing:false, authorized:true, agent_version:'0.4.3', build_flavor:'audio' },
-    { node_id:'b', alias:'Idle', status:'online', arch:'amd64', distro:'debian', playing:false, authorized:true, agent_version:'0.52', build_flavor:'management' },
+    { node_id:'b', alias:'Idle', status:'online', arch:'amd64', distro:'debian', playing:false, authorized:true, agent_version:'0.53', build_flavor:'management' },
     { node_id:'c', alias:'Playing', status:'online', arch:'arm64', distro:'debian', playing:true, play_protect:true, authorized:true, agent_version:'0.4.3', build_flavor:'audio' }
   ];
-  S.upd.fleet = { target:'0.52', nodes:[
-    { node_id:'a', current:'0.4.3', target:'0.52', state:'pending' },
-    { node_id:'b', current:'0.52', target:'0.52', state:'converged' },
-    { node_id:'c', current:'0.4.3', target:'0.52', state:'waiting_idle' }
+  S.upd.fleet = { target:'0.53', nodes:[
+    { node_id:'a', current:'0.4.3', target:'0.53', state:'pending' },
+    { node_id:'b', current:'0.53', target:'0.53', state:'converged' },
+    { node_id:'c', current:'0.4.3', target:'0.53', state:'waiting_idle' }
   ] };
   TC.admin = true; TC.loading = false; paintNodeTable();`);
   const html = h.elements.get("#nd-table").innerHTML;
   assert.match(html, /0\.4\.3/);
-  assert.match(html, /→ 0\.52/);
+  assert.match(html, /→ 0\.53/);
   assert.match(html, /音频版（ALSA 播放）/);
   assert.match(html, /管理版（不含 ALSA 播放）/);
   assert.match(html, /data-act="node-upgrade" data-id="a"/);

@@ -1,12 +1,12 @@
 #!/bin/sh
 # Zephyr HiFi Kit — pure-Go Linux management + Windows release builder.
 # Internal hifihub names are retained for the Linux installer and /dl/ clients.
-#   sh scripts/build-release.sh              # default version 0.52
-#   VERSION=0.52 sh scripts/build-release.sh
+#   sh scripts/build-release.sh              # default version 0.53
+#   VERSION=0.53 sh scripts/build-release.sh
 #   AUDIO=1 sh scripts/build-release.sh      # native Linux audio bundles
 set -eu
 
-VERSION="${VERSION:-0.52}"
+VERSION="${VERSION:-0.53}"
 case "$VERSION" in
   [0-9]*) ;;
   *) echo "version must start with a digit" >&2; exit 1 ;;

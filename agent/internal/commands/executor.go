@@ -263,15 +263,17 @@ func (e *Executor) agentUpgrade(ctx context.Context, p serverclient.CommandParam
 	log.WriteString("sha256 校验通过: " + got + "\n")
 	// Detach dpkg into a transient scope: the deb postinst restarts this very
 	// unit, so a same-cgroup install would be killed mid-transaction.
+	// Keep modified agent.env instead of prompting: unattended upgrades have no
+	// TTY, and a conffile prompt would abort the transaction.
 	if _, lpErr := exec.LookPath("systemd-run"); lpErr == nil {
-		out, rerr := e.run.Run(uctx, "systemd-run", "--scope", "--quiet", "dpkg", "-i", dest)
-		log.WriteString("$ systemd-run --scope --quiet dpkg -i " + dest + "\n" + out)
+		out, rerr := e.run.Run(uctx, "systemd-run", "--scope", "--quiet", "dpkg", "--force-confdef", "--force-confold", "-i", dest)
+		log.WriteString("$ systemd-run --scope --quiet dpkg --force-confdef --force-confold -i " + dest + "\n" + out)
 		if rerr != nil {
 			return fail(fmt.Sprintf("dpkg 安装失败: %v", rerr))
 		}
 	} else {
-		out, rerr := e.run.Run(uctx, "dpkg", "-i", dest)
-		log.WriteString("$ dpkg -i " + dest + "\n" + out)
+		out, rerr := e.run.Run(uctx, "dpkg", "--force-confdef", "--force-confold", "-i", dest)
+		log.WriteString("$ dpkg --force-confdef --force-confold -i " + dest + "\n" + out)
 		if rerr != nil {
 			return fail(fmt.Sprintf("dpkg 安装失败: %v", rerr))
 		}

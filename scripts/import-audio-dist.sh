@@ -3,7 +3,7 @@
 # terminals upgrade with the ALSA-capable deb. Management filenames stay
 # unchanged; the audio copy gets a _audio suffix.
 #   scripts/import-audio-dist.sh /var/lib/hifihub-server/dist \
-#       Zephyr-HiFi-Kit-terminal-0.52-audio-arm64.tar.gz
+#       Zephyr-HiFi-Kit-terminal-0.53-audio-arm64.tar.gz
 set -eu
 
 [ "$#" -eq 2 ] || { echo "usage: $0 <dist-dir> <terminal-audio-bundle.tar.gz>" >&2; exit 2; }
