@@ -75,7 +75,7 @@
       if (!AC) { this.on = false; return; }
       try { this.ctx = new AC(); } catch (e) { this.on = false; return; }
       this.master = this.ctx.createGain();
-      this.master.gain.value = this.on ? 0.57 : 0;
+      this.master.gain.value = this.on ? 0.58 : 0;
       this.analyser = this.ctx.createAnalyser();
       this.analyser.fftSize = 128;
       this.analyser.smoothingTimeConstant = 0.82;
@@ -166,7 +166,7 @@
       if (this.master && this.ctx) {
         var t = this.ctx.currentTime;
         this.master.gain.cancelScheduledValues(t);
-        this.master.gain.setTargetAtTime(v ? 0.57 : 0, t, 0.12);
+        this.master.gain.setTargetAtTime(v ? 0.58 : 0, t, 0.12);
       }
     },
     blip: function (freq, dur, type, vol) {
@@ -305,7 +305,7 @@
   var aSteps = $$(".arch-steps li[data-astep]"), aNodes = $$(".arch-node[data-step]");
   function paintArch() {
     if (!aSteps.length) return;
-    var mid = window.innerHeight * 0.57, best = null, bd = 1e9;
+    var mid = window.innerHeight * 0.58, best = null, bd = 1e9;
     aSteps.forEach(function (li) {
       var r = li.getBoundingClientRect(), d = Math.abs(r.top + r.height / 2 - mid);
       if (d < bd) { bd = d; best = li; }
@@ -741,7 +741,7 @@
       g.addColorStop(0, hue.lit); g.addColorStop(1, "rgba(246,168,33,0.03)");
       hctx.globalAlpha = 0.13 + gl * 0.3;
       hctx.fillStyle = g;
-      hctx.fillRect(i * bw + bw * 0.22, h - bh, bw * 0.57, bh);
+      hctx.fillRect(i * bw + bw * 0.22, h - bh, bw * 0.58, bh);
     }
     hctx.globalAlpha = 1;
     hctx.lineWidth = 1.5;
@@ -1076,14 +1076,14 @@
     ta.remove();
   }
   var DEBS = {
-    amd64: ["Zephyr-HiFi-Kit-terminal-0.57-linux-amd64.deb", T("Management build · x86_64 PC · no ALSA playback", "管理版 · x86_64 PC · 不含 ALSA 播放")],
-    arm64: ["Zephyr-HiFi-Kit-terminal-0.57-linux-arm64.deb", T("Management build · Raspberry Pi 3/4/5 · 64-bit · no ALSA playback", "管理版 · 树莓派 3/4/5 · 64 位 · 不含 ALSA 播放")],
-    armhf: ["Zephyr-HiFi-Kit-terminal-0.57-linux-armhf.deb", T("Management build · Raspberry Pi 2/3/4 · 32-bit · no ALSA playback", "管理版 · 树莓派 2/3/4 · 32 位 · 不含 ALSA 播放")]
+    amd64: ["Zephyr-HiFi-Kit-terminal-0.58-linux-amd64.deb", T("Management build · x86_64 PC · no ALSA playback", "管理版 · x86_64 PC · 不含 ALSA 播放")],
+    arm64: ["Zephyr-HiFi-Kit-terminal-0.58-linux-arm64.deb", T("Management build · Raspberry Pi 3/4/5 · 64-bit · no ALSA playback", "管理版 · 树莓派 3/4/5 · 64 位 · 不含 ALSA 播放")],
+    armhf: ["Zephyr-HiFi-Kit-terminal-0.58-linux-armhf.deb", T("Management build · Raspberry Pi 2/3/4 · 32-bit · no ALSA playback", "管理版 · 树莓派 2/3/4 · 32 位 · 不含 ALSA 播放")]
   };
   var archSel = $("#dl-arch");
   if (archSel) archSel.addEventListener("change", function () {
     var d = DEBS[archSel.value], link = $("#dl-deb");
-    if (link) link.href = "https://github.com/Eyebright/Zephyr-HiFi-Kit/releases/download/v0.57/" + d[0];
+    if (link) link.href = "https://github.com/Eyebright/Zephyr-HiFi-Kit/releases/download/v0.58/" + d[0];
     var n = $("#dl-deb-name"), m = $("#dl-deb-meta");
     if (n) n.textContent = d[0]; if (m) m.textContent = d[1];
     Audio2.blip(560, .08, "sine", .08);

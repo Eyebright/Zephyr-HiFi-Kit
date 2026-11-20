@@ -36,9 +36,9 @@ func addAudioDeb(t *testing.T, dir, ver, arch string) string {
 
 func TestUpgradeNodeUsesAudioPackage(t *testing.T) {
 	dir := t.TempDir()
-	writeDistSums(t, dir, "0.57", []string{"arm64"})
-	wantSHA := addAudioDeb(t, dir, "0.57", "arm64")
-	h := newHarness(t, stubFeed{rel: Release{Tag: "v0.57"}}, Options{Current: "0.57", DistDir: dir, FleetEnabled: true})
+	writeDistSums(t, dir, "0.58", []string{"arm64"})
+	wantSHA := addAudioDeb(t, dir, "0.58", "arm64")
+	h := newHarness(t, stubFeed{rel: Release{Tag: "v0.58"}}, Options{Current: "0.58", DistDir: dir, FleetEnabled: true})
 	h.insertNode(t, "n1", "arm64", domain.NodeOnline, "0.4.3", true, false, true)
 	setNodeFlavor(t, h, "n1", FlavorAudio)
 
@@ -46,7 +46,7 @@ func TestUpgradeNodeUsesAudioPackage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpgradeNode: %v", err)
 	}
-	if st.State != "upgrading" || st.Target != "0.57" || st.CommandID == "" {
+	if st.State != "upgrading" || st.Target != "0.58" || st.CommandID == "" {
 		t.Fatalf("state=%+v", st)
 	}
 	cmds, err := h.cmds.List("n1", "")
@@ -56,7 +56,7 @@ func TestUpgradeNodeUsesAudioPackage(t *testing.T) {
 	if len(cmds) != 1 || cmds[0].Type != domain.CommandAgentUpgrade {
 		t.Fatalf("commands=%+v", cmds)
 	}
-	if cmds[0].Params.URL != "/dl/hifihub-agent_0.57_arm64_audio.deb" || cmds[0].Params.SHA256 != wantSHA {
+	if cmds[0].Params.URL != "/dl/hifihub-agent_0.58_arm64_audio.deb" || cmds[0].Params.SHA256 != wantSHA {
 		t.Fatalf("params=%+v", cmds[0].Params)
 	}
 	if _, err := h.sv.UpgradeNode("n1"); !errors.Is(err, ErrUpgradeInFlight) {
@@ -66,8 +66,8 @@ func TestUpgradeNodeUsesAudioPackage(t *testing.T) {
 
 func TestUpgradeNodeWithoutAudioPackageRefuses(t *testing.T) {
 	dir := t.TempDir()
-	writeDistSums(t, dir, "0.57", []string{"arm64"})
-	h := newHarness(t, stubFeed{rel: Release{Tag: "v0.57"}}, Options{Current: "0.57", DistDir: dir, FleetEnabled: true})
+	writeDistSums(t, dir, "0.58", []string{"arm64"})
+	h := newHarness(t, stubFeed{rel: Release{Tag: "v0.58"}}, Options{Current: "0.58", DistDir: dir, FleetEnabled: true})
 	h.insertNode(t, "n1", "arm64", domain.NodeOnline, "0.4.3", true, false, true)
 	setNodeFlavor(t, h, "n1", FlavorAudio)
 
@@ -81,9 +81,9 @@ func TestUpgradeNodeWithoutAudioPackageRefuses(t *testing.T) {
 
 func TestUpgradeNodeRespectsPlayGate(t *testing.T) {
 	dir := t.TempDir()
-	writeDistSums(t, dir, "0.57", []string{"arm64"})
-	addAudioDeb(t, dir, "0.57", "arm64")
-	h := newHarness(t, stubFeed{rel: Release{Tag: "v0.57"}}, Options{Current: "0.57", DistDir: dir, FleetEnabled: true})
+	writeDistSums(t, dir, "0.58", []string{"arm64"})
+	addAudioDeb(t, dir, "0.58", "arm64")
+	h := newHarness(t, stubFeed{rel: Release{Tag: "v0.58"}}, Options{Current: "0.58", DistDir: dir, FleetEnabled: true})
 	h.insertNode(t, "n1", "arm64", domain.NodeOnline, "0.4.3", true, true, true)
 	setNodeFlavor(t, h, "n1", FlavorAudio)
 
@@ -98,9 +98,9 @@ func TestUpgradeNodeRespectsPlayGate(t *testing.T) {
 
 func TestUpgradeNodeRejectsConvergedAndOffline(t *testing.T) {
 	dir := t.TempDir()
-	writeDistSums(t, dir, "0.57", []string{"arm64"})
-	h := newHarness(t, stubFeed{rel: Release{Tag: "v0.57"}}, Options{Current: "0.57", DistDir: dir, FleetEnabled: true})
-	h.insertNode(t, "up", "arm64", domain.NodeOnline, "0.57", true, false, true)
+	writeDistSums(t, dir, "0.58", []string{"arm64"})
+	h := newHarness(t, stubFeed{rel: Release{Tag: "v0.58"}}, Options{Current: "0.58", DistDir: dir, FleetEnabled: true})
+	h.insertNode(t, "up", "arm64", domain.NodeOnline, "0.58", true, false, true)
 	h.insertNode(t, "off", "arm64", domain.NodeOffline, "0.4.3", true, false, true)
 
 	if _, err := h.sv.UpgradeNode("up"); !errors.Is(err, ErrNodeAlreadyConverged) {

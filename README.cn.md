@@ -1,6 +1,6 @@
 # Zephyr HiFi Kit · 和风HiFi音乐播放套件
 
-**版本 0.57 · 发布标签 `v0.57`**
+**版本 0.58 · 发布标签 `v0.58`**
 
 [语言入口](README.md) · [English](README.en.md) · [安装与部署](INSTALL.md) · [版本更新](CHANGELOG.md)
 
@@ -22,32 +22,32 @@ Zephyr HiFi Kit 把音乐文件、曲库和播放终端连接起来：服务端�
 | 软件与授权 | 签名制品、BOM 期望态、任务与灰度下发、审计；服务端内置 3 个终端席位，可导入离线签名许可证扩容 |
 | 备份与维护 | 音乐数据导出/恢复、清理；音乐数据导出不是包含密码、节点身份和原音频的整机备份 |
 
-这些是源码能力说明，不是全部平台的验收结论。Windows 服务端已有本机运行记录，但 **0.57 新认证下“初始化 → 添加源 → 扫描 → 注册授权 → 实际播放”的完整流程尚未实测验收**。不承诺全部音频格式、任意 DAC、所有 NAS 或多房间同步均已验证。
+这些是源码能力说明，不是全部平台的验收结论。Windows 服务端已有本机运行记录，但 **0.58 新认证下“初始化 → 添加源 → 扫描 → 注册授权 → 实际播放”的完整流程尚未实测验收**。不承诺全部音频格式、任意 DAC、所有 NAS 或多房间同步均已验证。
 
 ### 音频版本怎么选
 
-- **管理版服务端**：纯 Go 构建可处理受支持的整数 PCM WAV。Linux CGO 音频版额外使用真实的 libFLAC 解码器；不能把整个项目的 FLAC 支持称为占位。
+- **管理版服务端**：纯 Go 构建可解码 FLAC（16/24/32-bit）与受支持的整数 PCM WAV；Linux CGO 音频版继续使用 libFLAC。MQA 仅输出 core PCM，DSD 透传待后续版本。
 - **管理版 Linux 终端**：没有 ALSA 播放后端，用于管理与下发，不具备 ZAT 实际出声能力。真实播放须换装音频版终端。
 - **音频版 Linux 终端**：CGO + ALSA；输出能否保持原采样率/位深取决于 DAC、设备选择和音量等设置，不作无条件“比特完美”保证。
 - **Android**：AAudio 优先请求独占模式，失败时可回退共享模式；实际效果取决于设备和系统音频路径。
 - `ffmpeg`、`ffprobe`、GPG 均不随 Windows 包捆绑。其按功能安装的用途与当前解码限制见 [INSTALL.md](INSTALL.md)；不要假定安装外部工具便自动扩展所有播放能力。
 
-## 获取 0.57
+## 获取 0.58
 
-从[现有项目 Releases](https://github.com/Eyebright/Zephyr-HiFi-Kit/releases)选择 `v0.57`。包名与用途如下，下载后核对发布校验和；此表不表示资产已经上传。
+从[现有项目 Releases](https://github.com/Eyebright/Zephyr-HiFi-Kit/releases)选择 `v0.58`。包名与用途如下，下载后核对发布校验和；此表不表示资产已经上传。
 
 | 用途 | 发布资产 |
 |---|---|
-| Linux 多架构服务端管理包 | `Zephyr-HiFi-Kit-server-0.57.tar.gz` |
-| Linux 服务端音频包 | `Zephyr-HiFi-Kit-server-0.57-audio-amd64.tar.gz` / `Zephyr-HiFi-Kit-server-0.57-audio-arm64.tar.gz` |
-| Windows amd64 服务端 | `Zephyr-HiFi-Kit-server-0.57-windows-amd64.zip` |
-| Linux 终端管理 deb | `Zephyr-HiFi-Kit-terminal-0.57-linux-amd64.deb` / `Zephyr-HiFi-Kit-terminal-0.57-linux-arm64.deb` / `Zephyr-HiFi-Kit-terminal-0.57-linux-armhf.deb` |
-| Linux 终端管理合集 | `Zephyr-HiFi-Kit-terminal-0.57-linux.tar.gz` |
-| Linux 音频终端包 | `Zephyr-HiFi-Kit-terminal-0.57-audio-amd64.tar.gz` / `Zephyr-HiFi-Kit-terminal-0.57-audio-arm64.tar.gz` |
-| Android 终端 | `Zephyr-HiFi-Kit-terminal-0.57.apk` |
-| 容器镜像 | `ghcr.io/eyebright/zephyr-hifi-kit-server:0.57` |
+| Linux 多架构服务端管理包 | `Zephyr-HiFi-Kit-server-0.58.tar.gz` |
+| Linux 服务端音频包 | `Zephyr-HiFi-Kit-server-0.58-audio-amd64.tar.gz` / `Zephyr-HiFi-Kit-server-0.58-audio-arm64.tar.gz` |
+| Windows amd64 服务端 | `Zephyr-HiFi-Kit-server-0.58-windows-amd64.zip` |
+| Linux 终端管理 deb | `Zephyr-HiFi-Kit-terminal-0.58-linux-amd64.deb` / `Zephyr-HiFi-Kit-terminal-0.58-linux-arm64.deb` / `Zephyr-HiFi-Kit-terminal-0.58-linux-armhf.deb` |
+| Linux 终端管理合集 | `Zephyr-HiFi-Kit-terminal-0.58-linux.tar.gz` |
+| Linux 音频终端包 | `Zephyr-HiFi-Kit-terminal-0.58-audio-amd64.tar.gz` / `Zephyr-HiFi-Kit-terminal-0.58-audio-arm64.tar.gz` |
+| Android 终端 | `Zephyr-HiFi-Kit-terminal-0.58.apk` |
+| 容器镜像 | `ghcr.io/eyebright/zephyr-hifi-kit-server:0.58` |
 
-对外名称统一为 Zephyr HiFi Kit，**内部 `hifihub` 的服务名、目录、环境变量和 API 保持兼容**。终端 deb 的内部 `Package` 仍为 `hifihub-agent`，`/dl/` 分发集仍使用 `hifihub-agent_0.57_<arch>.deb`，不要仅为改名迁移现有配置。
+对外名称统一为 Zephyr HiFi Kit，**内部 `hifihub` 的服务名、目录、环境变量和 API 保持兼容**。终端 deb 的内部 `Package` 仍为 `hifihub-agent`，`/dl/` 分发集仍使用 `hifihub-agent_0.58_<arch>.deb`，不要仅为改名迁移现有配置。
 
 ## 快速开始
 
@@ -56,8 +56,8 @@ Zephyr HiFi Kit 把音乐文件、曲库和播放终端连接起来：服务端�
 解压 ZIP，在 PowerShell 中进入解压后的同名目录：
 
 ```powershell
-Expand-Archive -LiteralPath .\Zephyr-HiFi-Kit-server-0.57-windows-amd64.zip -DestinationPath .
-Set-Location .\Zephyr-HiFi-Kit-server-0.57-windows-amd64
+Expand-Archive -LiteralPath .\Zephyr-HiFi-Kit-server-0.58-windows-amd64.zip -DestinationPath .
+Set-Location .\Zephyr-HiFi-Kit-server-0.58-windows-amd64
 .\start.ps1
 ```
 
@@ -72,8 +72,8 @@ Set-Location .\Zephyr-HiFi-Kit-server-0.57-windows-amd64
 ```sh
 sudo apt-get update
 sudo apt-get install -y gnupg
-tar -xzf Zephyr-HiFi-Kit-server-0.57.tar.gz
-cd Zephyr-HiFi-Kit-server-0.57/server
+tar -xzf Zephyr-HiFi-Kit-server-0.58.tar.gz
+cd Zephyr-HiFi-Kit-server-0.58/server
 sudo ./install.sh
 curl -fsS http://127.0.0.1:8080/api/v1/health
 ```
@@ -100,7 +100,7 @@ Windows 包内 `dist/` 是管理版终端分发集。要实际出声，按 [INST
 
 ## 升级与安全
 
-- **从 0.4.3 升到 0.57 必须手动安装一次**：旧自动更新器硬编码旧包名，不能靠新版本修复旧进程的资产选择。
+- **从 0.4.3 升到 0.58 必须手动安装一次**：旧自动更新器硬编码旧包名，不能靠新版本修复旧进程的资产选择。
 - Windows 使用“停止进程 → 完整备份数据和配置 → 替换程序/分发集 → 保留原数据目录启动”的手动升级方式，不承诺自更新。容器通过更换镜像并保留数据卷升级。
 - Linux 自升级与终端版本收敛受启用状态、发布资产、校验、运行权限和播放保护约束，不保证所有安装环境无操作自动升级。
 - 生产保持 `HIFIHUB_SIGNATURE_MODE=enforce`；需要签名校验时安装 GPG 并导入可信公钥。私钥留在离线/受控签名端；发布包不包含私钥、密码或私人曲库。
@@ -113,7 +113,7 @@ Windows 包内 `dist/` 是管理版终端分发集。要实际出声，按 [INST
 使用满足 `go.mod` 的 Go 工具链（当前声明 `go 1.27.4`）。在仓库根目录运行：
 
 ```sh
-VERSION=0.57 sh scripts/build-release.sh
+VERSION=0.58 sh scripts/build-release.sh
 go test ./...
 go -C agent test ./...
 node --test internal/web/*.test.cjs

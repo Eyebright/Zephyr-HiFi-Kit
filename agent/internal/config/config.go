@@ -36,7 +36,7 @@ type Config struct {
 
 // BuildVersion is injected by release builds (-ldflags -X ...config.BuildVersion=x.y.z);
 // a stale value makes fleet upgrades reinstall the same deb on every restart.
-var BuildVersion = "0.57"
+var BuildVersion = "0.58"
 
 // BuildFlavor is injected for audio builds (-ldflags -X ...config.BuildFlavor=audio)
 // so the server can pick the matching terminal package during upgrades.

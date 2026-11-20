@@ -27,7 +27,7 @@ import (
 )
 
 // Version is the Android terminal agent version (kept in step with the release).
-var Version = "0.57"
+var Version = "0.58"
 
 // Config is the JSON configuration handed over by the Kotlin shell at startup.
 type Config struct {

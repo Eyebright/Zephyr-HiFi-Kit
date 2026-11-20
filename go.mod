@@ -14,10 +14,22 @@ replace hifihub/zat => ./zat
 
 require (
 	github.com/dustin/go-humanize v1.1.0 // indirect
+	github.com/icza/bitio v1.1.0
 	github.com/mattn/go-isatty v0.0.24 // indirect
+	github.com/mewkiz/flac v1.0.14
+	github.com/mewkiz/pkg v0.0.0-20250417130911-3f050ff8c56d
+	github.com/mewpkg/term v0.0.0-20241026122259-37a80af23985
 	github.com/ncruces/go-strftime v1.1.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	modernc.org/libc v1.80.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
 )
+
+replace github.com/mewkiz/flac => ./third_party/flac
+
+replace github.com/icza/bitio => ./third_party/bitio
+
+replace github.com/mewkiz/pkg => ./third_party/mewkiz-pkg
+
+replace github.com/mewpkg/term => ./third_party/mewpkg-term

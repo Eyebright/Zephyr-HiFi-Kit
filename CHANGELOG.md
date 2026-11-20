@@ -3,6 +3,18 @@
 和风HiFi音乐播放套件。最新版本在前，版本号与 Git 标签、GitHub Releases 一致。
 Newest first; version numbers match Git tags and GitHub Releases.
 
+## 0.58 — 2026-11-20
+
+**中文**
+- 新增：Windows / 非 CGO 构建接入纯 Go FLAC 解码（16/24/32-bit），不依赖 libFLAC 或外部程序，ZAT 仍推送 PCM。
+- 依赖：vendor 公共领域 FLAC/bitio/errutil 代码，离线可构建。
+- 说明：MQA 与 DSD 支持（P2/P3）尚未包含；MQA 仍只能输出 core PCM，DSD 透传待后续版本。
+
+**English**
+- The Windows / non-CGO server now decodes FLAC (16/24/32-bit) in pure Go and keeps streaming PCM over ZAT.
+- Public-domain FLAC/bitio/errutil sources are vendored for offline builds.
+- MQA unfolding and DSD passthrough remain for P2/P3.
+
 ## 0.57 — 2026-11-20
 
 **中文**
