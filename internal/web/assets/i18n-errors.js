@@ -154,6 +154,7 @@ I18n.register("errors", {
   update_policy_invalid: ["无法保存更新策略，请检查策略配置。", "無法儲存更新原則，請檢查原則設定。", "Unable to save the update policy. Check its configuration."],
   registration_token_not_found: ["注册令牌不存在。", "註冊權杖不存在。", "The registration token was not found."],
   node_update_failed: ["无法更新终端，请检查设置和诊断信息。", "無法更新終端，請檢查設定與診斷資訊。", "Unable to update the endpoint. Check the settings and diagnostics."],
+  node_upgrade_failed: ["无法下发终端升级，请检查终端状态与安装包。", "無法下發終端升級，請檢查終端狀態與安裝套件。", "Unable to start the terminal upgrade. Check the endpoint state and packages."],
   query_invalid: ["无效查询参数。", "無效的查詢參數。", "The query parameters are invalid."],
   query_unknown_or_duplicate: ["未知或重复查询参数：{field}", "未知或重複的查詢參數：{field}", "Unknown or duplicate query parameter: {field}"],
   query_duplicate: ["重复的查询参数：{field}", "重複的查詢參數：{field}", "Duplicate query parameter: {field}"],

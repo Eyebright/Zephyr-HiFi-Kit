@@ -474,7 +474,7 @@ func (c *Core) Heartbeat(ctx context.Context) error {
 		active = "zat"
 	}
 	p, err := c.client.Heartbeat(ctx, s.NodeID, serverclient.Heartbeat{
-		AgentVersion: c.cfg.AgentVersion, Playing: playing, ActiveProto: active,
+		AgentVersion: c.cfg.AgentVersion, BuildFlavor: c.cfg.BuildFlavor, Playing: playing, ActiveProto: active,
 		DacHolderPID: pid, CPU: m.CPUPercent, MemMB: m.MemUsedMB, TempC: m.TempC,
 	})
 	if err != nil {

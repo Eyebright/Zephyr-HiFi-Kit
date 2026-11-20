@@ -90,7 +90,7 @@ build_target() {
 
   echo "== $arch: audio agent (CC=$cc, alsa $(pkg-config --modversion alsa)) =="
   bin="$OUT/hifihub-agent-linux-$arch"
-  ( cd "$ROOT/agent" && go build -trimpath -ldflags "-s -w -X hifihub/agent/internal/config.BuildVersion=$VERSION" -o "$bin" ./cmd/hifihub-agent )
+  ( cd "$ROOT/agent" && go build -trimpath -ldflags "-s -w -X hifihub/agent/internal/config.BuildVersion=$VERSION -X hifihub/agent/internal/config.BuildFlavor=audio" -o "$bin" ./cmd/hifihub-agent )
   "$DEBPACK" -audio -bin "$bin" -arch "$arch" -version "$VERSION" \
     -pkgdir "$ROOT/agent/packaging" -out "$OUT/hifihub-agent_${VERSION}_${arch}.deb"
 

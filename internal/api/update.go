@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	"hifihub/server/internal/catalog"
 	"hifihub/server/internal/domain"
 	"hifihub/server/internal/update"
 )
@@ -102,6 +103,36 @@ func (a *API) updateFleetConverge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, a.upd.Converge(r.Context()))
+}
+
+// nodeUpgrade issues one direct agent upgrade for a terminal, independent of
+// the ring policy. Play protection and package availability are enforced by the
+// update service.
+func (a *API) nodeUpgrade(w http.ResponseWriter, r *http.Request) {
+	if a.upd == nil {
+		writeErrorCode(w, http.StatusServiceUnavailable, "update_unavailable", "更新服务未启用")
+		return
+	}
+	st, err := a.upd.UpgradeNode(r.PathValue("id"))
+	if err != nil {
+		status := http.StatusConflict
+		switch {
+		case errors.Is(err, catalog.ErrNotFound):
+			status = http.StatusNotFound
+		case errors.Is(err, update.ErrUpgradeUnavailable):
+			status = http.StatusServiceUnavailable
+		case errors.Is(err, update.ErrNodeOffline), errors.Is(err, update.ErrNodeUnauthorized),
+			errors.Is(err, update.ErrNodeArchUnsupported), errors.Is(err, update.ErrNodePackageMissing),
+			errors.Is(err, update.ErrNodePlaying), errors.Is(err, update.ErrUpgradeInFlight),
+			errors.Is(err, update.ErrNodeAlreadyConverged):
+			status = http.StatusConflict
+		default:
+			status = http.StatusBadRequest
+		}
+		writeErrorCode(w, status, "node_upgrade_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, st)
 }
 
 // updateFleetRetry clears a suspended terminal's failure counter.

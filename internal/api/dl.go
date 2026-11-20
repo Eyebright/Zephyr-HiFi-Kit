@@ -10,7 +10,7 @@ import (
 
 // distNameRE whitelists the exact distributable file names; anything else
 // (including path traversal attempts) is a 404.
-var distNameRE = regexp.MustCompile(`^(hifihub-agent_[0-9.]+_(amd64|arm64|armhf)\.deb|agent-install\.sh|SHA256SUMS)$`)
+var distNameRE = regexp.MustCompile(`^(hifihub-agent_[0-9.]+_(amd64|arm64|armhf)(_audio)?\.deb|agent-install\.sh|SHA256SUMS)$`)
 
 func (a *API) downloadDist(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")

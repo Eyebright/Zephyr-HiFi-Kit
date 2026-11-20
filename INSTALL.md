@@ -333,7 +333,32 @@ amd64 改用 `hifihub-agent_0.51_amd64.deb`。真实播放需要音频版的 ALS
 
 手动安装后需在 `/etc/hifihub/agent.env` 配置服务端 URL、一次性令牌和可选别名，再重启服务。该文件含注册信息，应限制为 root 可读。终端本地控制台以及 root 动作应仅限可信网络，按需要收紧 `HIFIHUB_AGENT_ALLOW_LOCAL`、`HIFIHUB_AGENT_ALLOW_POWER`；优先通过服务端受管理员保护的终端管理入口操作。
 
-### 6.3 Android
+### 6.3 Agent 版本检测与直接升级
+
+Agent 每次心跳都会上报版本、架构和构建类型（`audio` 或 `management`）。终端中心列表与详情会显示“当前版本 → 服务端目标版本”和构建类型；版本不一致时可直接点击“升级 Agent”或选择多台后批量升级。
+
+- 服务端按构建类型选择安装包：管理版为 `/dl/hifihub-agent_<版本>_<架构>.deb`，音频版为 `/dl/hifihub-agent_<版本>_<架构>_audio.deb`，不会把音频终端静默换成管理版。
+- 升级命令携带 SHA256，终端下载后校验再 dpkg 安装并重启；播放中的终端会等待空闲，播放保护不被绕过。
+- 升级保留 `/etc/hifihub/agent.env` 与注册信息；失败会显示原因，可重试或继续用 `dpkg -i` 手动安装。
+- 自动收敛策略仍位于“终端中心 → 高级维护”，手动升级不依赖该策略。
+
+要让服务端同时支持音频终端，需要把音频终端包导入分发目录（管理版文件名保持不变，音频版追加 `_audio`）：
+
+```sh
+# Linux 服务端
+scripts/import-audio-dist.sh /var/lib/hifihub-server/dist \
+  Zephyr-HiFi-Kit-terminal-0.51-audio-arm64.tar.gz
+```
+
+```powershell
+# Windows 服务端
+.\import-audio-dist.ps1 -DistDir C:\path\to\dist `
+  -Bundle C:\path\to\Zephyr-HiFi-Kit-terminal-0.51-audio-arm64.tar.gz
+```
+
+导入脚本会校验包内 SHA256SUMS 并重建分发目录的 SHA256SUMS。若终端提示“服务端分发缺少音频包”，先导入对应架构的音频终端包，再重试升级。不要为了省事把管理版 deb 推给需要 ALSA 播放的终端。
+
+### 6.4 Android
 
 安装 `Zephyr-HiFi-Kit-terminal-0.51.apk`，仅在信任安装包来源后允许系统安装未知应用。当前目标为 Android API 26+ 的 arm64-v8a / armeabi-v7a；填写服务端可达地址、一次性令牌与可选别名后启动，回到服务端确认在线并授权。
 

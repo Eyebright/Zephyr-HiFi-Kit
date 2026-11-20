@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -182,5 +183,48 @@ func TestUpdateFleetConvergeAndRetryRoute(t *testing.T) {
 	s, _ = doJSON(t, "POST", base+"/update/fleet/ghost/retry", map[string]any{})
 	if s != 404 {
 		t.Fatalf("retry unknown node should be 404, got %d", s)
+	}
+}
+
+func TestNodeUpgradeEndpoint(t *testing.T) {
+	dir := t.TempDir()
+	dist := filepath.Join(dir, "dist")
+	writeUpdDist(t, dist, "0.4.0", "amd64")
+	base, st := setupUpdate(t, offlineFeed{}, update.Options{
+		Current: "0.4.0", FleetEnabled: true, DistDir: dist,
+	})
+	insertUpdNode(t, st, "n1", "amd64", "0.3.0")
+	insertUpdNode(t, st, "playing", "amd64", "0.3.0")
+	if _, err := st.DB.Exec(`UPDATE nodes SET playing=1 WHERE node_id='playing'`); err != nil {
+		t.Fatal(err)
+	}
+	insertUpdNode(t, st, "audio", "amd64", "0.3.0")
+	if _, err := st.DB.Exec(`UPDATE nodes SET build_flavor='audio' WHERE node_id='audio'`); err != nil {
+		t.Fatal(err)
+	}
+
+	s, b := doJSON(t, "POST", base+"/nodes/n1/upgrade", map[string]any{})
+	if s != 200 {
+		t.Fatalf("upgrade: %d %s", s, b)
+	}
+	var got domain.NodeUpdateState
+	if err := json.Unmarshal(b, &got); err != nil || got.State != "upgrading" || got.Target != "0.4.0" {
+		t.Fatalf("state=%s err=%v", b, err)
+	}
+	s, b = doJSON(t, "POST", base+"/nodes/n1/upgrade", map[string]any{})
+	if s != 409 {
+		t.Fatalf("repeat upgrade: %d %s", s, b)
+	}
+	s, b = doJSON(t, "POST", base+"/nodes/playing/upgrade", map[string]any{})
+	if s != 409 {
+		t.Fatalf("playing upgrade: %d %s", s, b)
+	}
+	s, b = doJSON(t, "POST", base+"/nodes/audio/upgrade", map[string]any{})
+	if s != 409 || !strings.Contains(string(b), "音频包") {
+		t.Fatalf("audio without package: %d %s", s, b)
+	}
+	s, _ = doJSON(t, "POST", base+"/nodes/ghost/upgrade", map[string]any{})
+	if s != 404 {
+		t.Fatalf("unknown node: %d", s)
 	}
 }

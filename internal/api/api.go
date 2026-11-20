@@ -108,6 +108,7 @@ func (a *API) route(pattern string, h http.HandlerFunc) {
 		"POST /api/v1/nodes/token", "POST /api/v1/nodes/restore", "PATCH /api/v1/nodes/{id}", "DELETE /api/v1/nodes/{id}",
 		"POST /api/v1/nodes/{id}/authorize", "POST /api/v1/nodes/{id}/revoke",
 		"POST /api/v1/nodes/{id}/commands", "POST /api/v1/nodes/{id}/apt-sources/apply",
+		"POST /api/v1/nodes/{id}/upgrade",
 		"/api/v1/nodes/{id}/console/{rest...}", "/api/v1/nodes/{id}/local/api/{rest...}",
 		"POST /api/v1/boms", "POST /api/v1/boms/import", "POST /api/v1/boms/{id}/versions/{ver}/publish", "POST /api/v1/boms/{id}/rollback",
 		"POST /api/v1/jobs", "POST /api/v1/jobs/{id}/advance",
@@ -180,6 +181,7 @@ func (a *API) routes() {
 	a.route("POST /api/v1/nodes/{id}/heartbeat", a.heartbeat)
 	a.route("POST /api/v1/nodes/{id}/snapshot", a.snapshot)
 	a.route("POST /api/v1/nodes/{id}/commands", a.createCommand)
+	a.route("POST /api/v1/nodes/{id}/upgrade", a.nodeUpgrade)
 	a.route("POST /api/v1/nodes/{id}/apt-sources/apply", a.applyAptSources)
 	// GET node sub-resources are dispatched through one single-segment wildcard
 	// instead of separate literal routes: a literal "/nodes/token/{token}" would

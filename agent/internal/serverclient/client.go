@@ -172,6 +172,7 @@ type CommandResult struct {
 // Heartbeat is the periodic liveness report.
 type Heartbeat struct {
 	AgentVersion string  `json:"agent_version"`
+	BuildFlavor  string  `json:"build_flavor,omitempty"`
 	Playing      bool    `json:"playing"`
 	ActiveProto  string  `json:"active_proto"`
 	DacHolderPID int     `json:"dac_holder_pid"`

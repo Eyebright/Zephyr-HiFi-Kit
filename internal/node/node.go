@@ -49,6 +49,7 @@ type RegisterRequest struct {
 // Heartbeat is the periodic liveness/state report (doc 4.2).
 type Heartbeat struct {
 	AgentVersion string  `json:"agent_version"`
+	BuildFlavor  string  `json:"build_flavor"`
 	BomID        string  `json:"bom_id"`
 	BomVersion   int     `json:"bom_version"`
 	Playing      bool    `json:"playing"`
@@ -190,10 +191,10 @@ func newSecret() (string, error) {
 
 const insertNodeSQL = `INSERT INTO nodes
 	(node_id,alias,node_group,tags,arch,distro,kernel,status,last_seen,bom_id,bom_version,
-	 agent_version,playing,active_proto,dac_holder_pid,cert_fingerprint,registered_at,
+	 agent_version,build_flavor,playing,active_proto,dac_holder_pid,cert_fingerprint,registered_at,
 	 note,ip,authorized,authorized_at,play_protect,auto_os_update,os_window,offline_after,
 	 dac_arbitration,dac_device,secret)
-	VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+	VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
 
 func (s *Service) insertNode(n domain.Node) error {
 	if n.Tags == nil {
@@ -207,7 +208,7 @@ func (s *Service) insertNode(n domain.Node) error {
 	}
 	_, err := s.db.Exec(insertNodeSQL,
 		n.NodeID, n.Alias, n.Group, store.ToJSON(n.Tags), n.Arch, n.Distro, n.Kernel,
-		n.Status, n.LastSeen, n.BomID, n.BomVersion, n.AgentVersion, boolInt(n.Playing),
+		n.Status, n.LastSeen, n.BomID, n.BomVersion, n.AgentVersion, n.BuildFlavor, boolInt(n.Playing),
 		n.ActiveProto, n.DacHolderPID, n.CertFingerprint, n.RegisteredAt,
 		n.Note, n.IP, boolInt(n.Authorized), n.AuthorizedAt, boolInt(n.PlayProtect),
 		boolInt(n.AutoOSUpdate), n.OSWindow, n.OfflineAfter, n.DacArbitration, n.DacDevice, n.Secret)
@@ -218,9 +219,12 @@ func (s *Service) insertNode(n domain.Node) error {
 // should apply (play protection, OS-update window, DAC arbitration, etc.).
 func (s *Service) Heartbeat(nodeID string, hb Heartbeat) (HeartbeatResult, error) {
 	var res HeartbeatResult
-	r, err := s.db.Exec(`UPDATE nodes SET status=?,last_seen=?,agent_version=?,bom_id=?,bom_version=?,
-		playing=?,active_proto=?,dac_holder_pid=?,cpu=?,mem_mb=?,temp_c=? WHERE node_id=?`,
-		domain.NodeOnline, time.Now().Unix(), hb.AgentVersion, hb.BomID, hb.BomVersion,
+	// Older agents omit build_flavor; keep the last reported value instead of
+	// clearing it on every heartbeat.
+	r, err := s.db.Exec(`UPDATE nodes SET status=?,last_seen=?,agent_version=?,
+		build_flavor=CASE WHEN ? <> '' THEN ? ELSE build_flavor END,
+		bom_id=?,bom_version=?,playing=?,active_proto=?,dac_holder_pid=?,cpu=?,mem_mb=?,temp_c=? WHERE node_id=?`,
+		domain.NodeOnline, time.Now().Unix(), hb.AgentVersion, hb.BuildFlavor, hb.BuildFlavor, hb.BomID, hb.BomVersion,
 		boolInt(hb.Playing), hb.ActiveProto, hb.DacHolderPID, hb.CPU, hb.MemMB, hb.TempC, nodeID)
 	if err := affected(r, err); err != nil {
 		return res, err
@@ -296,7 +300,7 @@ func (s *Service) InstalledApps(nodeID string) ([]domain.InstalledApp, error) {
 
 const nodeCols = `node_id,COALESCE(alias,''),COALESCE(node_group,''),COALESCE(tags,'[]'),
 	COALESCE(arch,''),COALESCE(distro,''),COALESCE(kernel,''),status,COALESCE(last_seen,0),
-	COALESCE(bom_id,''),COALESCE(bom_version,0),COALESCE(agent_version,''),playing,
+	COALESCE(bom_id,''),COALESCE(bom_version,0),COALESCE(agent_version,''),COALESCE(build_flavor,''),playing,
 	COALESCE(active_proto,''),COALESCE(dac_holder_pid,0),COALESCE(cert_fingerprint,''),registered_at,
 	COALESCE(note,''),COALESCE(ip,''),authorized,COALESCE(authorized_at,0),play_protect,
 	auto_os_update,COALESCE(os_window,'23:00–07:00'),COALESCE(offline_after,90),
@@ -308,7 +312,7 @@ func scanNode(row interface{ Scan(...any) error }) (domain.Node, error) {
 	var tags string
 	var playing, authorized, playProtect, autoOS int
 	err := row.Scan(&n.NodeID, &n.Alias, &n.Group, &tags, &n.Arch, &n.Distro, &n.Kernel,
-		&n.Status, &n.LastSeen, &n.BomID, &n.BomVersion, &n.AgentVersion, &playing,
+		&n.Status, &n.LastSeen, &n.BomID, &n.BomVersion, &n.AgentVersion, &n.BuildFlavor, &playing,
 		&n.ActiveProto, &n.DacHolderPID, &n.CertFingerprint, &n.RegisteredAt,
 		&n.Note, &n.IP, &authorized, &n.AuthorizedAt, &playProtect, &autoOS,
 		&n.OSWindow, &n.OfflineAfter, &n.DacArbitration, &n.DacDevice, &n.Secret,

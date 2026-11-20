@@ -82,7 +82,7 @@ echo "== building audio-enabled server =="
 ( cd "$ROOT" && go build -trimpath -ldflags "-X hifihub/server/internal/metrics.Version=$VERSION" -o "$OUT/hifihub-server" ./cmd/hifihub-server )
 
 echo "== building audio-enabled agent =="
-( cd "$ROOT/agent" && go build -trimpath -ldflags "-X hifihub/agent/internal/config.BuildVersion=$VERSION" -o "$OUT/hifihub-agent" ./cmd/hifihub-agent )
+( cd "$ROOT/agent" && go build -trimpath -ldflags "-X hifihub/agent/internal/config.BuildVersion=$VERSION -X hifihub/agent/internal/config.BuildFlavor=audio" -o "$OUT/hifihub-agent" ./cmd/hifihub-agent )
 
 if [ "${TEST:-0}" = "1" ]; then
   echo "== CGO audio tests =="

@@ -330,3 +330,30 @@ test("pagination shows all matching stored task records without dropping older o
   assert.equal((h.elements.get("#tc-task-list").innerHTML.match(/data-act="tc-task-open"/g) || []).length, 6);
   assert.match(h.elements.get("#tc-task-pages").innerHTML, /31 条记录/);
 });
+
+test("node table surfaces target version, build flavor and direct upgrade", () => {
+  const h = harness();
+  h.run(`S.nodes = [
+    { node_id:'a', alias:'Pi', status:'online', arch:'arm64', distro:'debian', playing:false, authorized:true, agent_version:'0.4.3', build_flavor:'audio' },
+    { node_id:'b', alias:'Idle', status:'online', arch:'amd64', distro:'debian', playing:false, authorized:true, agent_version:'0.51', build_flavor:'management' },
+    { node_id:'c', alias:'Playing', status:'online', arch:'arm64', distro:'debian', playing:true, play_protect:true, authorized:true, agent_version:'0.4.3', build_flavor:'audio' }
+  ];
+  S.upd.fleet = { target:'0.51', nodes:[
+    { node_id:'a', current:'0.4.3', target:'0.51', state:'pending' },
+    { node_id:'b', current:'0.51', target:'0.51', state:'converged' },
+    { node_id:'c', current:'0.4.3', target:'0.51', state:'waiting_idle' }
+  ] };
+  TC.admin = true; TC.loading = false; paintNodeTable();`);
+  const html = h.elements.get("#nd-table").innerHTML;
+  assert.match(html, /0\.4\.3/);
+  assert.match(html, /→ 0\.51/);
+  assert.match(html, /音频版（ALSA 播放）/);
+  assert.match(html, /管理版（不含 ALSA 播放）/);
+  assert.match(html, /data-act="node-upgrade" data-id="a"/);
+  assert.match(html, /data-act="node-upgrade" data-id="c" disabled/);
+  h.run("I18n.setPreference('en'); paintNodeTable();");
+  const en = h.elements.get("#nd-table").innerHTML;
+  assert.match(en, /Audio build \(ALSA playback\)/);
+  assert.match(en, /Upgrade Agent/);
+  assert.match(en, /0\.4\.3/);
+});

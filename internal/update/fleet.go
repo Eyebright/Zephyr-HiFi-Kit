@@ -24,6 +24,20 @@ type FleetReport struct {
 
 var fleetArchs = map[string]bool{"amd64": true, "arm64": true, "armhf": true}
 
+const (
+	FlavorManagement = "management"
+	FlavorAudio      = "audio"
+)
+
+// debName keeps the historical management filename and adds an explicit audio
+// suffix so one /dl/ directory can serve both build flavors.
+func debName(version, arch, flavor string) string {
+	if flavor == FlavorAudio {
+		return fmt.Sprintf("hifihub-agent_%s_%s_audio.deb", version, arch)
+	}
+	return fmt.Sprintf("hifihub-agent_%s_%s.deb", version, arch)
+}
+
 // FleetStatus computes the convergence snapshot without issuing commands.
 func (s *Service) FleetStatus() FleetReport { return s.fleetTick(context.Background(), true, false) }
 
@@ -51,7 +65,7 @@ func (s *Service) fleetTick(ctx context.Context, dryRun, force bool) FleetReport
 		row.NodeID = n.NodeID
 		row.Current = n.AgentVersion
 		row.Target = target
-		deb := fmt.Sprintf("hifihub-agent_%s_%s.deb", target, n.Arch)
+		deb := debName(target, n.Arch, n.BuildFlavor)
 		switch {
 		case n.Status != domain.NodeOnline:
 			row.State = "offline"
@@ -69,7 +83,11 @@ func (s *Service) fleetTick(ctx context.Context, dryRun, force bool) FleetReport
 			row.Detail = "架构 " + n.Arch + " 不在自动更新范围（安卓经 APK 升级）"
 		case sums[deb] == "":
 			row.State = "unsupported"
-			row.Detail = "服务端 /dl/ 缺少 " + deb + "，请先自升级或补齐分发包"
+			if n.BuildFlavor == FlavorAudio {
+				row.Detail = "服务端分发缺少音频包 " + deb + "，请导入对应版本的音频终端包"
+			} else {
+				row.Detail = "服务端 /dl/ 缺少 " + deb + "，请先自升级或补齐分发包"
+			}
 		case n.Playing && n.PlayProtect:
 			row.State = "waiting_idle"
 			row.Detail = "FR-3.10：播放中，空闲后自动升级"
@@ -133,7 +151,7 @@ func (s *Service) fleetTick(ctx context.Context, dryRun, force bool) FleetReport
 		if err != nil {
 			continue
 		}
-		deb := fmt.Sprintf("hifihub-agent_%s_%s.deb", target, n.Arch)
+		deb := debName(target, n.Arch, n.BuildFlavor)
 		cmd, err := s.cmds.Create(n.NodeID, domain.CommandAgentUpgrade, domain.CommandParams{
 			Version: target, Arch: n.Arch, SHA256: sums[deb], URL: "/dl/" + deb,
 		})

@@ -127,6 +127,7 @@ type Node struct {
 	BomID           string   `json:"bom_id"`
 	BomVersion      int      `json:"bom_version"`
 	AgentVersion    string   `json:"agent_version"`
+	BuildFlavor     string   `json:"build_flavor,omitempty"`
 	Playing         bool     `json:"playing"`
 	ActiveProto     string   `json:"active_proto"`
 	DacHolderPID    int      `json:"dac_holder_pid"`

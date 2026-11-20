@@ -119,6 +119,8 @@ You can skip the welcome screen and resume from Settings → Administrator and p
 
 Sign in as administrator and open Terminal center → Add terminal to obtain the token and installation command. Use a server LAN address reachable from the terminal, not localhost. The Linux installer chooses the architecture automatically. On Android, install the APK and enter the server URL, token and optional alias. Enrollment, online status and authorization are separate states; the built-in three seats still require explicit per-terminal authorization.
 
+Terminal center shows each terminal's current version, the server target version and its build flavor (audio or management), with single and batch Agent upgrades. Upgrades verify SHA256, wait for playing terminals to become idle, and select the package matching the build flavor so an audio terminal is never replaced by a management build; see INSTALL.md 6.3 for importing audio packages.
+
 ## Upgrades and security
 
 - **Upgrade from 0.4.3 to 0.51 manually once.** The old updater hard-codes the former asset names; the new release cannot repair asset selection in the old running process.

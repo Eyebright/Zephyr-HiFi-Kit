@@ -31,11 +31,16 @@ type Config struct {
 	AllowPower   bool          // expose shutdown/reboot in the local UI
 	AllowLocal   bool          // allow local install/uninstall from the UI
 	AgentVersion string
+	BuildFlavor  string // management|audio; audio builds report ALSA playback capability
 }
 
 // BuildVersion is injected by release builds (-ldflags -X ...config.BuildVersion=x.y.z);
 // a stale value makes fleet upgrades reinstall the same deb on every restart.
 var BuildVersion = "0.51"
+
+// BuildFlavor is injected for audio builds (-ldflags -X ...config.BuildFlavor=audio)
+// so the server can pick the matching terminal package during upgrades.
+var BuildFlavor = "management"
 
 // Default returns the built-in defaults.
 func Default() Config {
@@ -50,6 +55,7 @@ func Default() Config {
 		AllowPower:   true,
 		AllowLocal:   true,
 		AgentVersion: BuildVersion,
+		BuildFlavor:  BuildFlavor,
 	}
 }
 

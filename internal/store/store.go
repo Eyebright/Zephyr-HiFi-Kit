@@ -60,6 +60,7 @@ func (s *Store) additiveMigrate() error {
 	type col struct{ table, name, decl string }
 	cols := []col{
 		// nodes: management + licensing + OS-update + console fields (FR-3/4/6).
+		{"nodes", "build_flavor", "TEXT NOT NULL DEFAULT ''"},
 		{"nodes", "note", "TEXT NOT NULL DEFAULT ''"},
 		{"nodes", "ip", "TEXT NOT NULL DEFAULT ''"},
 		{"nodes", "authorized", "INTEGER NOT NULL DEFAULT 0"},
@@ -246,6 +247,7 @@ CREATE TABLE IF NOT EXISTS nodes (
   bom_id           TEXT,
   bom_version      INTEGER,
   agent_version    TEXT,
+  build_flavor     TEXT NOT NULL DEFAULT '',
   playing          INTEGER NOT NULL DEFAULT 0,
   active_proto     TEXT,
   dac_holder_pid   INTEGER,

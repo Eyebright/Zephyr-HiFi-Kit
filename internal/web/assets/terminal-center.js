@@ -20,7 +20,7 @@ function tcRolloutLabel(state) {
   const key = { done: "done", failed: "failed", running: "active", pending: "tcAwaitingAdvance" }[state];
   return key ? tcT(key) : state || tcT("tcStateUnknown");
 }
-function cleanupTerminalCenter() { TC.epoch++; TC.busy = null; TC.loading = true; }
+function cleanupTerminalCenter() { TC.epoch++; TC.busy = null; TC.loading = true; stopPoll("tc:upgrades"); }
 function shellNodes() {
   return `<section id="terminal-center">
     <div class="tc-heading"><div><h1>${esc(tcT("tcTitle"))}</h1><p class="hint">${esc(tcT("tcSubtitle"))}</p></div>
@@ -40,7 +40,8 @@ function terminalCenterLanguageChanged() {
 }
 function tcWorkspace() {
   if (TC.tab === "tasks") return `<section class="card tc-tasks"><div class="tc-task-filters" id="tc-task-filters"></div><div id="tc-task-list"></div><div id="tc-task-pages" class="tc-pages"></div></section>`;
-  return `<section class="card"><div class="sec-head tc-node-head"><div class="chips" id="nd-chips"></div><div class="spacer"></div><span id="tc-seats" class="hint"></span><button class="btn primary sm" data-act="wz-open">${icon("plus", 14)} ${esc(tcT("tcAdd"))}</button></div><div id="nd-bulk"></div><div id="nd-table"></div></section>`;
+  const upgradable = S.nodes.filter(n => tcOutdated(n) && n.status === "online" && n.authorized !== false).length;
+  return `<section class="card"><div class="sec-head tc-node-head"><div class="chips" id="nd-chips"></div><div class="spacer"></div><span id="tc-seats" class="hint"></span>${TC.admin && upgradable ? `<button class="btn ghost sm" data-act="node-upgrade-all">${icon("refresh", 14)} ${esc(tcT("tcUpgradeAll"))} (${esc(I18n.number(upgradable))})</button>` : ""}<button class="btn primary sm" data-act="wz-open">${icon("plus", 14)} ${esc(tcT("tcAdd"))}</button></div><div id="nd-bulk"></div><div id="nd-table"></div></section>`;
 }
 function tcHere(root, epoch) { return S.view === "nodes" && $("#terminal-center") === root && TC.epoch === epoch; }
 async function refreshTerminalCenter() {
@@ -123,6 +124,16 @@ function showTerminalTasks(id = "") {
 }
 function paintTerminalSearch() { TC.page = 1; if (TC.tab === "tasks") paintTerminalTasks(); else { paintBulkBar(); paintNodeTable(); } }
 function tcNodeName(id) { const n = S.nodes.find(n => n.node_id === id); return n?.alias || shortId(id); }
+function tcFleetNode(n) { return S.upd.fleet?.nodes?.find(x => x.node_id === n.node_id); }
+function tcTargetVersion() { return S.upd.fleet?.target || ""; }
+function tcOutdated(n) { const target = tcTargetVersion(); return !!(target && n.agent_version && n.agent_version !== target); }
+function tcFlavorLabel(n) { return tcT(n.build_flavor === "audio" ? "tcFlavorAudio" : "tcFlavorManagement"); }
+function tcUpgradeBlocked(n) { return !TC.admin || n.status !== "online" || n.authorized === false || (n.playing && n.play_protect); }
+function tcUpgradeButton(n, cls = "primary sm") {
+  if (!tcOutdated(n)) return "";
+  const reason = !TC.admin ? tcT("tcReadOnly") : n.status !== "online" ? tcT("tcNodeNotOnline") : n.authorized === false ? tcT("unauthorized") : n.playing && n.play_protect ? tcT("tcUpgradePlaying") : "";
+  return `<button class="btn ${cls}" data-act="node-upgrade" data-id="${esc(n.node_id)}" ${tcUpgradeBlocked(n) ? "disabled" : ""} title="${esc(reason)}">${icon("refresh", 13)} ${esc(tcT("tcUpgrade"))}</button>`;
+}
 function filteredNodes() {
   let nodes = S.nodes.filter(n => S.nodeFilter === "all" || (S.nodeFilter === "playing" ? n.status === "online" && n.playing : n.status === S.nodeFilter));
   nodes = nodes.filter(n => hit(n.alias, n.node_id, n.group, n.ip, n.arch, n.distro, ...(S.nodeApps[n.node_id] || []).map(a => a.app_id)));
@@ -141,8 +152,10 @@ function paintBulkBar() {
   const el = $("#nd-bulk"); if (!el) return;
   if (!S.sel.size) { el.innerHTML = ""; return; }
   const visible = filteredNodes().filter(n => S.sel.has(n.node_id)).length;
+  const upgradable = S.nodes.filter(n => S.sel.has(n.node_id) && tcOutdated(n) && n.status === "online" && n.authorized !== false).length;
   el.innerHTML = `<div class="bulk-bar tc-bulk"><span class="b-cnt">${esc(tcT(visible < S.sel.size ? "tcSelectedHidden" : "tcSelected", { count: I18n.number(S.sel.size), hidden: I18n.number(S.sel.size - visible) }))}</span>
-    <button class="btn primary xs" data-act="tc-install">${icon("download", 13)} ${esc(tcT("installUpdateServices"))}</button>
+    ${upgradable ? `<button class="btn primary xs" data-act="node-upgrade-selected">${icon("refresh", 13)} ${esc(tcT("tcUpgradeSelected"))}</button>` : ""}
+    <button class="btn ${upgradable ? "ghost" : "primary"} xs" data-act="tc-install">${icon("download", 13)} ${esc(tcT("installUpdateServices"))}</button>
     <details class="tc-more"><summary>${esc(tcT("tcMore"))}</summary><div><button class="btn ghost xs" data-act="bulk-auth">${esc(tcT("tcBulkAuth"))}</button><button class="btn ghost xs" data-act="bulk-revoke">${esc(tcT("tcBulkRevoke"))}</button><button class="btn ghost danger xs" data-act="bulk-delete">${esc(tcT("tcBulkDelete"))}</button></div></details>
     <span class="spacer"></span><button class="btn xs ghost" data-act="nd-clear-sel">${esc(tcT("tcClearSelection"))}</button></div>`;
 }
@@ -168,15 +181,16 @@ function nodeRow(n) {
   return `<tr class="${S.sel.has(id) ? "selected" : ""}"><td><label class="check"><input type="checkbox" data-change="node-sel" data-id="${esc(id)}" aria-label="${esc(tcT("tcSelectNode", { name: n.alias || id }))}" ${S.sel.has(id) ? "checked" : ""}><span class="box"></span></label></td>
     <td><button class="tc-name" data-act="node-open" data-id="${esc(id)}">${esc(n.alias || shortId(id))}</button><div class="sub mono">${esc(n.ip || tcT("tcIPNotReported"))}</div><div class="sub">${esc([n.distro, n.arch].filter(Boolean).join(" · "))}</div></td>
     <td>${statusBadge(n.status)}<div class="sub">${n.status === "online" ? n.playing ? esc(tcT("playing")) + (n.active_proto ? " · " + esc(n.active_proto) : "") : esc(tcT("tcIdle")) : esc(tcT("tcPlaybackUnknown"))}</div></td>
+    <td><div class="mono">${esc(n.agent_version || tcT("unknown"))}</div>${tcOutdated(n) ? `<div class="sub">→ ${esc(tcTargetVersion())}</div>` : `<div class="sub">${esc(tcT("tcUpToDate"))}</div>`}<div class="sub">${esc(tcFlavorLabel(n))}</div></td>
     <td class="tc-service-cell">${tcServiceSummary(n)}</td><td>${tcNodeIndicator(n)}<div class="sub">${esc(tcT(n.authorized ? "authorized" : "unauthorized"))}</div></td>
-    <td><div class="acts"><button class="btn xs" data-act="tc-install" data-id="${esc(id)}">${esc(tcT("installUpdate"))}</button><button class="btn ghost xs" data-act="node-open" data-id="${esc(id)}">${esc(tcT("details"))}</button></div></td></tr>`;
+    <td><div class="acts">${tcUpgradeButton(n, "xs")}<button class="btn ghost xs" data-act="tc-install" data-id="${esc(id)}">${esc(tcT("installUpdate"))}</button><button class="btn ghost xs" data-act="node-open" data-id="${esc(id)}">${esc(tcT("details"))}</button></div></td></tr>`;
 }
 function paintNodeTable() {
   const el = $("#nd-table"); if (!el) return;
   const list = filteredNodes(), all = list.length > 0 && list.every(n => S.sel.has(n.node_id));
   if (TC.loading) { el.innerHTML = empty("refresh", tcT("tcLoadingNodes"), "", true); return; }
   if (!list.length) { el.innerHTML = empty("server", tcT(S.nodes.length ? "tcNoMatches" : TC.errors.length ? "tcNodesUnavailable" : "tcNoNodes"), "", true); return; }
-  el.innerHTML = `<div class="tbl-wrap"><table class="tbl tc-node-table"><thead><tr><th><label class="check"><input type="checkbox" data-change="node-sel-all" aria-label="${esc(tcT("tcSelectAll"))}" ${all ? "checked" : ""}><span class="box"></span></label></th><th><button class="tc-sort" data-act="nd-sort" data-key="alias">${esc(tcT("node"))} ${S.nodeSort.dir > 0 ? "↑" : "↓"}</button></th><th>${esc(tcT("tcConnectionPlayback"))}</th><th>${esc(tcT("installedServices"))}</th><th>${esc(tcT("tcTaskLicense"))}</th><th>${esc(tcT("tcActions"))}</th></tr></thead><tbody>${list.map(nodeRow).join("")}</tbody></table></div>`;
+  el.innerHTML = `<div class="tbl-wrap"><table class="tbl tc-node-table"><thead><tr><th><label class="check"><input type="checkbox" data-change="node-sel-all" aria-label="${esc(tcT("tcSelectAll"))}" ${all ? "checked" : ""}><span class="box"></span></label></th><th><button class="tc-sort" data-act="nd-sort" data-key="alias">${esc(tcT("node"))} ${S.nodeSort.dir > 0 ? "↑" : "↓"}</button></th><th>${esc(tcT("tcConnectionPlayback"))}</th><th>${esc(tcT("tcAgentVersion"))}</th><th>${esc(tcT("installedServices"))}</th><th>${esc(tcT("tcTaskLicense"))}</th><th>${esc(tcT("tcActions"))}</th></tr></thead><tbody>${list.map(nodeRow).join("")}</tbody></table></div>`;
   const select = $("[data-change=node-sel-all]"); if (select) select.indeterminate = !all && list.some(n => S.sel.has(n.node_id));
 }
 
@@ -282,10 +296,11 @@ function nodeDrawerBody(n, apps) {
     const p = S.nodePlay[id] || {}, { devs, cur } = nodePlayDevs(p);
     const arbitration = n.dac_arbitration === "auto" ? tcT("tcAuto") : n.dac_arbitration === "manual" ? tcT("tcManual") : n.dac_arbitration || tcT("unknown");
     return html + `<div class="d-sec"><span class="lbl">${esc(tcT("tcDevicesProtection"))}</span><div class="kv">${kvRow(tcT("tcDACArbitration"), esc(arbitration))}${kvRow(tcT("tcDACDevice"), esc(n.dac_device || tcT("notReported")))}${kvRow(tcT("tcDACHolder"), n.dac_holder_pid ? `PID ${Number(n.dac_holder_pid)}` : esc(tcT("tcNoHolder")))}${kvRow(tcT("tcProtection"), n.play_protect ? badge(tcT("tcEnabled"), "ok") : badge(tcT("tcDisabled"), "warn"))}</div><label class="field mt12">${esc(tcT("tcALSAOutput"))}<select id="node-play-dev" class="inp mono" data-change="node-device" data-id="${esc(id)}" ${p.connected && TC.admin ? "" : "disabled"}>${nodePlayOpts(devs, cur)}</select></label><p class="hint">${esc(tcT("tcOutputNote"))}</p><button class="btn ghost sm" data-act="node-config" data-id="${esc(id)}">${esc(tcT("tcEditConfig"))}</button></div>
-      <div class="d-sec"><span class="lbl">${esc(tcT("tcSystemMaintenance"))}</span><div class="kv">${kvRow(tcT("tcAutoOSUpdate"), esc(tcT(n.auto_os_update ? "tcOn" : "tcOff")))}${kvRow(tcT("tcOSWindow"), esc(n.os_window || tcT("tcNotSet")))}${kvRow(tcT("tcAgentVersion"), esc(n.agent_version || tcT("unknown")))}</div><p class="hint">${esc(tcT("tcUpdatesNote"))}</p><div class="acts"><button class="btn ghost sm" data-act="node-os" data-id="${esc(id)}">${esc(tcT("tcOSPackages"))}</button><button class="btn ghost sm" data-act="node-net" data-id="${esc(id)}">${esc(tcT("tcNetwork"))}</button></div></div>
+      <div class="d-sec"><span class="lbl">${esc(tcT("tcSystemMaintenance"))}</span><div class="kv">${kvRow(tcT("tcAutoOSUpdate"), esc(tcT(n.auto_os_update ? "tcOn" : "tcOff")))}${kvRow(tcT("tcOSWindow"), esc(n.os_window || tcT("tcNotSet")))}${kvRow(tcT("tcAgentVersion"), esc(n.agent_version || tcT("unknown")))}${kvRow(tcT("tcTargetVersion"), esc(tcTargetVersion() || tcT("unknown")))}${kvRow(tcT("tcBuildFlavor"), esc(tcFlavorLabel(n)))}</div><p class="hint">${esc(tcT("tcUpdatesNote"))}</p><div class="acts">${tcUpgradeButton(n, "sm")}<button class="btn ghost sm" data-act="node-os" data-id="${esc(id)}">${esc(tcT("tcOSPackages"))}</button><button class="btn ghost sm" data-act="node-net" data-id="${esc(id)}">${esc(tcT("tcNetwork"))}</button></div></div>
       <details class="tc-advanced-details"><summary>${esc(tcT("tcAdvancedActions"))}</summary><p class="hint">${esc(tcT("tcNativeNote"))}</p><div class="acts"><button class="btn ghost sm" data-act="node-console" data-id="${esc(id)}">${esc(tcT("tcNativeConsole"))}</button><button class="btn ghost sm" data-act="${n.authorized ? "node-revoke" : "node-auth"}" data-id="${esc(id)}">${esc(tcT(n.authorized ? "tcRevoke" : "tcAuthorize"))}</button></div></details>`;
   }
-  return html + `<div class="kv">${kvRow(tcT("tcConnection"), statusBadge(n.status))}${kvRow(tcT("tcAuthorization"), authBadge(n))}${kvRow("IP", esc(n.ip || tcT("notReported")))}${kvRow(tcT("tcSystemArch"), esc([n.distro, n.arch].filter(Boolean).join(" · ") || tcT("notReported")))}${kvRow(tcT("tcLastHeartbeat"), esc(tcTime(n.last_seen)))}${kvRow(tcT("tcDesiredTemplate"), n.bom_id ? esc(`${n.bom_id}@${n.bom_version}`) : esc(tcT("tcUnbound")))}${kvRow(tcT("tcGroup"), esc(n.group || tcT("tcUngrouped")))}${n.note ? kvRow(tcT("tcNote"), esc(n.note)) : ""}</div>
+  const fleet = tcFleetNode(n), target = tcTargetVersion(), outdated = tcOutdated(n);
+  return html + `<div class="d-sec"><span class="lbl">${esc(tcT("tcAgentVersion"))}</span><div class="kv">${kvRow(tcT("tcAgentVersion"), esc(n.agent_version || tcT("unknown")))}${kvRow(tcT("tcTargetVersion"), esc(target || tcT("unknown")))}${kvRow(tcT("tcBuildFlavor"), esc(tcFlavorLabel(n)))}${kvRow(tcT("status"), fleet ? fleetStateBadge(fleet.state) : badge(tcT(outdated ? "tcUpgrade" : "tcUpToDate"), outdated ? "info" : "ok"))}</div>${outdated ? `<div class="acts mt8">${tcUpgradeButton(n)}</div>` : ""}<p class="hint">${esc(tcT("tcUpgradeAgentNote"))}</p></div><div class="kv">${kvRow(tcT("tcConnection"), statusBadge(n.status))}${kvRow(tcT("tcAuthorization"), authBadge(n))}${kvRow("IP", esc(n.ip || tcT("notReported")))}${kvRow(tcT("tcSystemArch"), esc([n.distro, n.arch].filter(Boolean).join(" · ") || tcT("notReported")))}${kvRow(tcT("tcLastHeartbeat"), esc(tcTime(n.last_seen)))}${kvRow(tcT("tcDesiredTemplate"), n.bom_id ? esc(`${n.bom_id}@${n.bom_version}`) : esc(tcT("tcUnbound")))}${kvRow(tcT("tcGroup"), esc(n.group || tcT("tcUngrouped")))}${n.note ? kvRow(tcT("tcNote"), esc(n.note)) : ""}</div>
     <div class="d-sec"><span class="lbl">${esc(tcT("tcPlayback"))}</span><div id="tc-play-summary">${terminalPlaySummary(n, S.nodePlay[id])}</div><button class="btn ghost sm mt8" data-act="tc-player" data-id="${esc(id)}">${esc(tcT("tcOpenPlayer"))}</button></div>
     <div class="d-sec"><span class="lbl">${esc(tcT("tcResources"))}</span><div class="tc-resources"><div><span>CPU</span><strong>${esc(n.cpu == null ? tcT("unknown") : I18n.number(Number(n.cpu) / 100, { style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 1 }))}</strong></div><div><span>${esc(tcT("tcMemory"))}</span><strong>${esc(n.mem_mb == null ? tcT("unknown") : I18n.number(Number(n.mem_mb), { maximumFractionDigits: 0 }) + " MB")}</strong></div><div><span>${esc(tcT("tcTemperature"))}</span><strong>${esc(n.temp_c ? I18n.number(Number(n.temp_c), { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + " °C" : tcT("notReported"))}</strong></div></div></div>`;
 }
@@ -308,6 +323,39 @@ async function openTerminalAdvanced() {
   } catch (e) { if ($("#tc-advanced") === root) $("#dl-rollouts").innerHTML = `<div class="banner err">${esc(tcT("tcRolloutsFailed", { message: e.message }))}</div>`; }
   if ($("#tc-advanced") === root) poll("tc:advanced", refreshUpdateLive, 4000);
 }
+async function upgradeTerminalNodes(ids) {
+  if (!await terminalRequireAdmin()) return;
+  const target = tcTargetVersion();
+  const list = (ids || []).map(id => S.nodes.find(n => n.node_id === id)).filter(n => n && tcOutdated(n));
+  if (!list.length) { toast(tcT("tcUpToDate"), "info"); return; }
+  const names = list.map(n => n.alias || shortId(n.node_id)).join(" / ");
+  const flavors = [...new Set(list.map(tcFlavorLabel))].join(" / ");
+  const ok = await confirmDlg({
+    title: tcT("tcUpgrade"),
+    message: tcT("tcUpgradeConfirm", { name: names, current: list[0].agent_version || tcT("unknown"), target, flavor: flavors }),
+    okText: tcT("tcUpgrade"), danger: false
+  });
+  if (!ok) return;
+  for (const n of list) {
+    try {
+      await api("POST", `/nodes/${enc(n.node_id)}/upgrade`);
+      toast(tcT("tcUpgradeStarted", { name: n.alias || shortId(n.node_id), version: target }), "ok");
+    } catch (e) {
+      toast(tcT("tcUpgradeFailed", { message: e.message }), "err");
+    }
+  }
+  await refreshTerminalCenter();
+  tcWatchUpgrades();
+}
+function tcWatchUpgrades() {
+  stopPoll("tc:upgrades");
+  const pending = () => (S.upd.fleet?.nodes || []).some(r => ["upgrading", "pending"].includes(r.state));
+  if (!pending()) return;
+  poll("tc:upgrades", async () => {
+    await refreshTerminalCenter();
+    if (!pending()) stopPoll("tc:upgrades");
+  }, 4000);
+}
 async function terminalRequireAdmin() {
   try { const session = await api("GET", "/settings/session"); TC.admin = session.authenticated === true; }
   catch (e) { TC.admin = false; toast(tcT("tcSessionFailed", { message: e.message }), "err"); return false; }
@@ -320,6 +368,9 @@ Object.assign(ACT, {
   "tc-packages": () => openSettings("packages"),
   "tc-tab": ds => setTerminalTab(ds.tab),
   "tc-install": ds => openTerminalInstall(ds.id ? [ds.id] : Array.from(S.sel)),
+  "node-upgrade": ds => upgradeTerminalNodes([ds.id]),
+  "node-upgrade-selected": () => upgradeTerminalNodes(Array.from(S.sel)),
+  "node-upgrade-all": () => upgradeTerminalNodes(S.nodes.filter(n => tcOutdated(n) && n.status === "online" && n.authorized !== false).map(n => n.node_id)),
   "tc-tasks": ds => showTerminalTasks(ds.id || ""),
   "tc-page": ds => { TC.page = Math.max(1, TC.page + Number(ds.dir)); paintTerminalTasks(); },
   "tc-task-open": ds => openTerminalTask(ds.kind, ds.id),
