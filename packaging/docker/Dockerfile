@@ -5,11 +5,13 @@
 # syntax=docker/dockerfile:1
 FROM golang:1.27-bookworm AS build
 ARG TARGETARCH
-ARG VERSION=0.58
+ARG VERSION=0.62
 RUN apt-get update \
  && apt-get install -y --no-install-recommends pkg-config libflac-dev \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
+# Local replace targets must exist before `go mod download` resolves them.
+COPY third_party ./third_party/
 COPY go.mod go.sum ./
 COPY zat/go.mod ./zat/
 RUN go mod download
