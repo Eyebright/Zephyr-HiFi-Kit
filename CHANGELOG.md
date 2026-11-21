@@ -3,6 +3,28 @@
 和风HiFi音乐播放套件。最新版本在前，版本号与 Git 标签、GitHub Releases 一致。
 Newest first; version numbers match Git tags and GitHub Releases.
 
+## 0.63 — 2026-11-22
+
+**中文**
+- CUE：同目录 `.cue` 解析为独立曲目（WAV/FLAC 位完美样本切片），被引用的整轨隐藏；播放时长、进度与 seek 均按切片区间计算。
+- 标签修复：对写入为“?”的标签按文件名/上级目录回退修复，支持预览与一次性存量回填；无法恢复的艺术家显示为“未知艺术家”。
+- 专辑：卡片显示封面、艺术家、年份、风格与收藏心形，艺术家可点击；相似专辑只在专辑详情显示，列表页不再展示。
+- 音乐库：曲目统一为列表视图；艺术家/专辑/曲目保留服务端分页与跳页；侧栏“音乐库”“播放列表”二级菜单默认展开。
+- 播放列表：新增独立详情页（重命名/删除/推送、↑↓排序、单曲移除、添加曲目指引），侧栏直接列出各播放列表。
+- 播放控制台：搜索框语音输入（Web Speech），新增全套播放快捷键与 `?` 帮助浮层；修复 MQA/DSD 徽章错位。
+- 导航与设置：操作日志改为右侧抽屉（加宽并完整显示）；设置合并为单页（顶部锚点、滚动联动）；修正导航顺序、高亮联动与溢出遮挡。
+- 收藏：专辑批量收藏状态与心形即时切换，新增批量收藏键接口。
+
+**English**
+- CUE: cue sheets expand into virtual sample-window tracks (bit-perfect WAV/FLAC), the referenced image track is hidden, and duration/progress/seek use the window clock.
+- Tag repair: lossy "?" tags are rebuilt from file names and parent folders, with preview and a one-time stock backfill; unrecoverable artists fall back to Unknown artist.
+- Albums: cards show cover, artist, year, genre and a favorite heart with clickable artists; related albums appear on detail views only.
+- Library: one list layout for tracks, retained server paging/jump; the sidebar Library and Playlists groups start expanded.
+- Playlists: dedicated detail pages with rename/delete/push, reorder, per-track removal and add-track guidance.
+- Console: voice search, full playback hotkeys with a help overlay, and aligned MQA/DSD badges.
+- Navigation/settings: audit moved to a wider right drawer; settings merged into one anchored page with scroll sync; fixed nav order, highlighting and overflow.
+- Favorites: batch album favorite state with instant hearts and a batch keys endpoint.
+
 ## 0.62 — 2026-11-21
 
 **中文**
