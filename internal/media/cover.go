@@ -9,9 +9,11 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -108,39 +110,97 @@ func ReadFLACCover(path string) (Cover, error) {
 	return Cover{}, ErrNoCover
 }
 
-var sidecarBases = map[string]bool{"folder": true, "cover": true, "front": true, "album": true, "artwork": true}
+var sidecarBases = map[string]bool{"folder": true, "cover": true, "front": true, "album": true, "artwork": true, "albumart": true, "albumartsmall": true, "封面": true}
 var sidecarExts = map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".webp": true}
 
-// ReadSidecarCover looks for a conventional album image in dir (folder.jpg,
-// cover.png, front.webp, ...), choosing the largest valid candidate.
+// ReadSidecarCover looks for album art in dir: conventional names first
+// (folder.jpg, cover.png, 封面.jpg, ...), then an Artwork-style subfolder, then
+// any remaining image. WAV rips often keep scans only in such subfolders or
+// under arbitrary names, so a name-only lookup leaves them without covers.
 func ReadSidecarCover(dir string) (Cover, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return Cover{}, err
 	}
-	var best string
-	var bestSize int64
+	for _, p := range sidecarCandidates(dir, entries, false) {
+		if c, err := readCoverFile(p); err == nil {
+			return c, nil
+		}
+	}
+	for _, e := range entries {
+		if !e.IsDir() || !sidecarArtDirs[strings.ToLower(e.Name())] {
+			continue
+		}
+		sub := filepath.Join(dir, e.Name())
+		subEntries, err := os.ReadDir(sub)
+		if err != nil {
+			continue
+		}
+		for _, p := range sidecarCandidates(sub, subEntries, true) {
+			if c, err := readCoverFile(p); err == nil {
+				return c, nil
+			}
+		}
+	}
+	for _, p := range sidecarCandidates(dir, entries, true) {
+		if c, err := readCoverFile(p); err == nil {
+			return c, nil
+		}
+	}
+	return Cover{}, ErrNoCover
+}
+
+// sidecarArtDirs are subfolder names that hold album scans rather than audio.
+var sidecarArtDirs = map[string]bool{"artwork": true, "arwork": true, "art": true, "covers": true, "cover": true, "scans": true}
+
+// sidecarCandidates orders conventional names by size (largest first), then
+// remaining images by name so scan page 01 precedes later booklet pages.
+// includeAny=false restricts the list to conventional names.
+func sidecarCandidates(dir string, entries []fs.DirEntry, includeAny bool) []string {
+	type candidate struct {
+		path string
+		name string
+		size int64
+		conv bool
+	}
+	list := []candidate{}
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
 		}
 		name := strings.ToLower(e.Name())
 		ext := filepath.Ext(name)
-		if !sidecarExts[ext] || !sidecarBases[strings.TrimSuffix(name, ext)] {
+		if !sidecarExts[ext] {
+			continue
+		}
+		conv := sidecarBases[strings.TrimSuffix(name, ext)]
+		if !conv && !includeAny {
 			continue
 		}
 		info, err := e.Info()
 		if err != nil || info.Size() <= 0 || info.Size() > maxCoverBytes {
 			continue
 		}
-		if info.Size() > bestSize {
-			best, bestSize = filepath.Join(dir, e.Name()), info.Size()
+		list = append(list, candidate{filepath.Join(dir, e.Name()), name, info.Size(), conv})
+	}
+	sort.Slice(list, func(i, j int) bool {
+		if list[i].conv != list[j].conv {
+			return list[i].conv
 		}
+		if list[i].conv {
+			return list[i].size > list[j].size
+		}
+		return list[i].name < list[j].name
+	})
+	paths := make([]string, len(list))
+	for i, c := range list {
+		paths[i] = c.path
 	}
-	if best == "" {
-		return Cover{}, ErrNoCover
-	}
-	data, err := os.ReadFile(best)
+	return paths
+}
+
+func readCoverFile(p string) (Cover, error) {
+	data, err := os.ReadFile(p)
 	if err != nil {
 		return Cover{}, err
 	}

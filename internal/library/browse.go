@@ -50,6 +50,8 @@ type BrowseItem struct {
 	YearFrom   int    `json:"year_from,omitempty"`
 	YearTo     int    `json:"year_to,omitempty"`
 	CoverHash  string `json:"cover_hash"`
+	Genre      string `json:"genre,omitempty"`
+	Favorite   bool   `json:"favorite"`
 	TrackCount int    `json:"track_count"`
 	AlbumCount int    `json:"album_count"`
 	DurationMS int64  `json:"duration_ms"`
@@ -328,9 +330,9 @@ func browseSQL(q BrowseQuery, selecting bool) (string, []any) {
 	}
 	columns := `kind,name,value,entity_artist,entity_album,entity_mount,entity_dir,track_id`
 	// Common metadata columns allow source rows without tracks (zero aggregates).
-	metadata := `b.id,b.cover_hash,b.duration_ms,b.added_at,b.year,b.browse_artist,b.album`
+	metadata := `b.id,b.cover_hash,b.duration_ms,b.added_at,b.year,b.browse_artist,b.album,b.genre`
 	// SQLite column aliases are declared once on the raw CTE.
-	base += `raw(id,cover_hash,duration_ms,added_at,year,browse_artist,album,` + columns + `) AS (`
+	base += `raw(id,cover_hash,duration_ms,added_at,year,browse_artist,album,genre,` + columns + `) AS (`
 	raw := `SELECT ` + metadata + `,` + identity + ` FROM ` + from
 	if q.Category == "folders" && !sources {
 		raw += ` UNION ALL SELECT ` + metadata + `,'track',b.title,b.id,b.artist,b.album,b.mount_id,library_dir(b.rel_path),b.id FROM base b`
@@ -380,6 +382,7 @@ func browseSQL(q BrowseQuery, selecting bool) (string, []any) {
 	cte := base + raw + `), members AS (SELECT * FROM raw WHERE ` + strings.Join(memberWhere, " AND ") + `), entities AS (
 		SELECT kind,name,value,entity_artist,entity_album,entity_mount,entity_dir,track_id,
 		COALESCE(MAX(year),0) AS year,COALESCE(MAX(NULLIF(cover_hash,'')),'') AS cover_hash,
+		COALESCE(MAX(NULLIF(genre,'')),'') AS genre,
 		COUNT(id) AS track_count,COUNT(DISTINCT CASE WHEN id IS NOT NULL THEN json_array(browse_artist,album) END) AS album_count,
 		COALESCE(SUM(duration_ms),0) AS duration_ms,COALESCE(MAX(added_at),0) AS added_at
 		FROM members GROUP BY kind,name,value,entity_artist,entity_album,entity_mount,entity_dir,track_id)`
@@ -413,7 +416,9 @@ func (s *Service) Browse(query BrowseQuery) (BrowsePage, error) {
 		return page, err
 	}
 	pageArgs := append(append([]any{}, args...), q.PageSize, q.Offset)
-	rows, err := tx.Query(cte+` SELECT kind,name,value,entity_artist,entity_album,year,cover_hash,track_count,album_count,duration_ms,entity_mount,entity_dir,library_initial(name),track_id FROM entities ORDER BY `+entityOrder(q)+` LIMIT ? OFFSET ?`, pageArgs...)
+	rows, err := tx.Query(cte+` SELECT kind,name,value,entity_artist,entity_album,year,cover_hash,genre,track_count,album_count,duration_ms,entity_mount,entity_dir,library_initial(name),track_id,
+		CASE WHEN kind='album' THEN EXISTS(SELECT 1 FROM favorites f WHERE f.kind='album' AND f.artist=entity_artist AND f.album=entity_album) ELSE 0 END
+		FROM entities ORDER BY `+entityOrder(q)+` LIMIT ? OFFSET ?`, pageArgs...)
 	if err != nil {
 		return page, err
 	}
@@ -421,7 +426,7 @@ func (s *Service) Browse(query BrowseQuery) (BrowsePage, error) {
 	for rows.Next() {
 		var item BrowseItem
 		var trackID string
-		if err := rows.Scan(&item.Kind, &item.Name, &item.Value, &item.Artist, &item.Album, &item.Year, &item.CoverHash, &item.TrackCount, &item.AlbumCount, &item.DurationMS, &item.MountID, &item.Directory, &item.Initial, &trackID); err != nil {
+		if err := rows.Scan(&item.Kind, &item.Name, &item.Value, &item.Artist, &item.Album, &item.Year, &item.CoverHash, &item.Genre, &item.TrackCount, &item.AlbumCount, &item.DurationMS, &item.MountID, &item.Directory, &item.Initial, &trackID, &item.Favorite); err != nil {
 			rows.Close()
 			return page, err
 		}

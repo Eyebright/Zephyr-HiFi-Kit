@@ -1121,3 +1121,50 @@ func TestScanStoresSidecarCover(t *testing.T) {
 		t.Fatalf("cover mime=%q len=%d err=%v", mime, len(data), err)
 	}
 }
+
+func TestScanBackfillsCoversForUnchangedTracks(t *testing.T) {
+	s, _ := newService(t, &fakeRunner{}, t.TempDir())
+	root := t.TempDir()
+	buildWAV(t, filepath.Join(root, "a.wav"))
+	m, err := s.AddMount(AddMountRequest{Kind: "local", Path: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Mount(context.Background(), m.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ScanChanges(context.Background(), m.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	tracks, err := s.ListTracks(m.ID)
+	if err != nil || len(tracks) != 1 || tracks[0].CoverHash != "" {
+		t.Fatalf("initial tracks=%+v err=%v", tracks, err)
+	}
+	// Art arrives after the first scan; the audio file itself never changes.
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+		t.Fatal(err)
+	}
+	art := filepath.Join(root, "Artwork", "COVER.png")
+	if err := os.MkdirAll(filepath.Dir(art), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(art, buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, err := s.ScanChanges(context.Background(), m.ID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Unchanged != 1 || res.CoversFilled != 1 {
+		t.Fatalf("scan result = %+v", res)
+	}
+	tracks, err = s.ListTracks(m.ID)
+	if err != nil || len(tracks) != 1 || tracks[0].CoverHash == "" {
+		t.Fatalf("backfilled tracks=%+v err=%v", tracks, err)
+	}
+	res, err = s.ScanChanges(context.Background(), m.ID, false)
+	if err != nil || res.CoversFilled != 0 {
+		t.Fatalf("second scan result = %+v err=%v", res, err)
+	}
+}

@@ -4,7 +4,7 @@ const fvT = (key, params) => I18n.t("features." + key, params);
 ICONS.heart = '<path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 00-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 000-7.8z"/>';
 const FV = {
   kind: "track", previewKind: "track", preview: null, previewError: "", previewSeq: 0,
-  page: null, revision: 0, pending: new Set(), current: "", state: null, stateAt: 0, stateSeq: 0, stateBusy: false, stateError: ""
+  page: null, revision: 0, pending: new Set(), current: "", state: null, stateAt: 0, stateSeq: 0, stateBusy: false, stateError: "", albumSet: null
 };
 function favoriteIdentity(item) {
   return item.kind === "track" ? { kind: "track", track_id: item.track_id } : { kind: "album", artist: item.artist || "", album: item.album || "" };
@@ -73,6 +73,44 @@ async function changeFavorite(identity, saved) {
 function favoriteAlbumButton(artist, album) {
   return `<button class="btn ghost sm" data-act="favorite-album" data-artist="${esc(artist || "")}" data-album="${esc(album || "")}">${icon("heart", 14)} ${esc(fvT("favSaveAlbum"))}</button>`;
 }
+function favoriteAlbumPair(artist, album) { return (artist || "") + "\u0000" + (album || ""); }
+async function loadFavoriteAlbums() {
+  if (FV.albumSet) return FV.albumSet;
+  try {
+    const r = await api("GET", "/favorites/albums");
+    FV.albumSet = new Set((r && r.items || []).map(a => favoriteAlbumPair(a.artist, a.album)));
+  } catch (e) { FV.albumSet = new Set(); }
+  return FV.albumSet;
+}
+async function ensureAlbumFavorites() {
+  if (FV.albumSet) return;
+  await loadFavoriteAlbums();
+  document.querySelectorAll('[data-act="album-fav"]').forEach(applyAlbumHeart);
+}
+function albumFavoriteState(artist, album) { return !!(FV.albumSet && FV.albumSet.has(favoriteAlbumPair(artist, album))); }
+function applyAlbumHeart(button) {
+  const saved = albumFavoriteState(button.dataset.artist, button.dataset.album);
+  button.dataset.saved = String(saved);
+  button.setAttribute("aria-pressed", String(saved));
+  button.classList.toggle("is-favorite", saved);
+  button.title = fvT(saved ? "favRemoveAlbum" : "favSaveAlbum");
+  button.setAttribute("aria-label", button.title);
+}
+function favoriteAlbumHeart(artist, album, extra) {
+  const saved = albumFavoriteState(artist, album), label = fvT(saved ? "favRemoveAlbum" : "favSaveAlbum");
+  return `<button class="btn xs ghost fav-heart ${saved ? "is-favorite" : ""} ${extra || ""}" data-act="album-fav" data-artist="${esc(artist || "")}" data-album="${esc(album || "")}" data-saved="${saved}" aria-pressed="${saved}" aria-label="${esc(label)}" title="${esc(label)}">${icon("heart", 13)}</button>`;
+}
+async function toggleAlbumFavorite(artist, album, saved) {
+  if (albumFavoriteState(artist, album) === saved) return;
+  await changeFavorite({ kind: "album", artist: artist || "", album: album || "" }, saved);
+  if (FV.albumSet) {
+    const key = favoriteAlbumPair(artist, album);
+    if (saved) FV.albumSet.add(key); else FV.albumSet.delete(key);
+  }
+  document.querySelectorAll('[data-act="album-fav"]').forEach(b => {
+    if ((b.dataset.artist || "") === (artist || "") && (b.dataset.album || "") === (album || "")) applyAlbumHeart(b);
+  });
+}
 function favoriteGreeting() {
   const name = typeof XP !== "undefined" ? XP.profile?.display_name || "" : "";
   const hour = new Date().getHours(), hello = fvT(hour < 6 ? "favLateNight" : hour < 12 ? "favMorning" : hour < 18 ? "favAfternoon" : "favEvening");
@@ -127,7 +165,7 @@ async function refreshFavoriteLibrary(seq) {
 }
 function paintFavoriteLibrary() {
   const root = $("#lb-body"), p = FV.page; if (!root || !p) return;
-  root.innerHTML = `<div class="fav-heading">${favoriteTabs(FV.kind, "favorite-library-kind")}<label class="fav-query">${esc(fvT("favSearch"))}<input class="inp" type="search" id="fav-search" value="${esc(lbFrame().query.q)}" placeholder="${esc(fvT("favSearchPlaceholder"))}"></label><button class="btn sm" data-act="favorite-search">${esc(fvT("search"))}</button><span class="hint">${esc(fvT("favCount", { count: I18n.number(p.total) }))}</span></div>` +
+  root.innerHTML = `<div class="fav-heading">${favoriteTabs(FV.kind, "favorite-library-kind")}<label class="fav-query">${esc(fvT("favSearch"))}<input class="inp" type="search" id="fav-search" data-voice value="${esc(lbFrame().query.q)}" placeholder="${esc(fvT("favSearchPlaceholder"))}"></label><button class="btn sm" data-act="favorite-search">${esc(fvT("search"))}</button><span class="hint">${esc(fvT("favCount", { count: I18n.number(p.total) }))}</span></div>` +
     (p.items.length ? `<div class="fav-list">${p.items.map((item, index) => favoriteRow(item, index, "library")).join("")}</div>` : empty("heart", fvT(lbFrame().query.q ? "favNoMatches" : "favEmpty"), "", true));
   const pages = Math.max(1, Math.ceil(p.total / p.page_size));
   $("#lb-pages").innerHTML = `<div class="lb-pagination"><span>${esc(fvT("pageItems", { page: I18n.number(p.page), pages: I18n.number(pages), count: I18n.number(p.total) }))}</span><button class="btn sm" data-act="lb-page" data-page="${p.page - 1}" ${p.page <= 1 ? "disabled" : ""}>${esc(fvT("previousPage"))}</button><button class="btn sm" data-act="lb-page" data-page="${p.page + 1}" ${p.page >= pages ? "disabled" : ""}>${esc(fvT("nextPage"))}</button><label>${esc(fvT("perPage"))} <select class="inp" data-change="lb-size" aria-label="${esc(fvT("pageSize"))}">${lbOptions([24, 48, 96].map(n => [n, I18n.number(n)]), p.page_size)}</select></label></div>`;
@@ -160,6 +198,7 @@ Object.assign(ACT, {
     return changeFavorite({ kind: "album", artist: ds.artist || "", album: ds.album || "" }, ds.saved !== "true");
   },
   "favorite-album": ds => changeFavorite({ kind: "album", artist: ds.artist || "", album: ds.album || "" }, true),
+  "album-fav": ds => toggleAlbumFavorite(ds.artist || "", ds.album || "", ds.saved !== "true"),
   "favorite-remove": ds => { const item = favoriteRecord(ds); if (item) return changeFavorite(favoriteIdentity(item), false); },
   "favorite-play": ds => playFavorite(favoriteRecord(ds)),
   "favorite-album-open": ds => {

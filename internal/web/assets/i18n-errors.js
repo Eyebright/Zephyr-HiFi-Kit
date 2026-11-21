@@ -142,6 +142,8 @@ I18n.register("errors", {
   restore_seats_full: ["授权席位已满，无法恢复已授权终端。", "授權席位已滿，無法還原已授權的終端。", "All license seats are in use. The authorized endpoint cannot be restored."],
   volume_invalid: ["volume 须在 0..100。", "volume 須在 0..100。", "volume must be between 0 and 100."],
   positive_integer_required: ["{field} 必须为正整数。", "{field} 必須為正整數。", "{field} must be a positive integer."],
+  artist_required: ["艺术家不能为空", "藝術家不能為空", "Artist must not be empty"],
+  pairs_invalid: ["相似专辑参数无效（需 1–40 个专辑）", "相似專輯參數無效（需 1–40 個專輯）", "Invalid album batch (expected 1–40 albums)"],
   restore_confirmation_required: ["需要 RESTORE 确认和有效曲库备份（最大64MiB）。", "需要 RESTORE 確認與有效曲庫備份（最大64MiB）。", "RESTORE confirmation and a valid library backup (up to 64 MiB) are required."],
   builtin_seats_full: ["内置授权席位已满（{used}/{seats}），激活许可证可授权更多终端。", "內建授權席位已滿（{used}/{seats}），啟用授權憑證可授權更多終端。", "Built-in seats are full ({used}/{seats}). Activate a license to authorize more endpoints."],
   license_seats_full: ["许可证席位已满（{used}/{seats}），无法授权新终端。", "授權憑證席位已滿（{used}/{seats}），無法授權新終端。", "License seats are full ({used}/{seats}). No more endpoints can be authorized."],

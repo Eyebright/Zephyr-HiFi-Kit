@@ -63,11 +63,13 @@ type Mount struct {
 }
 
 type ScanResult struct {
-	Count     int `json:"count"`
-	Added     int `json:"added"`
-	Updated   int `json:"updated"`
-	Unchanged int `json:"unchanged"`
-	Removed   int `json:"removed"`
+	Count        int `json:"count"`
+	Added        int `json:"added"`
+	Updated      int `json:"updated"`
+	Unchanged    int `json:"unchanged"`
+	Removed      int `json:"removed"`
+	CoversFilled int `json:"covers_filled"`
+	TagsRepaired int `json:"tags_repaired"`
 }
 
 // AddMountRequest is the client-supplied share configuration.
@@ -110,6 +112,8 @@ type Track struct {
 	Decodable    bool   `json:"decodable"`
 	MQA          bool   `json:"mqa"`
 	MQAChecked   bool   `json:"-"`
+	CueStart     uint64 `json:"cue_start,omitempty"`
+	CueEnd       uint64 `json:"cue_end,omitempty"`
 	Size         int64  `json:"size"`
 	MtimeNS      int64  `json:"mtime_ns"`
 	ScannedAt    int64  `json:"scanned_at"`
@@ -417,12 +421,16 @@ func (s *Service) ScanChanges(ctx context.Context, id string, full bool) (ScanRe
 		return ScanResult{}, err
 	}
 	remaining := make(map[string]Track, len(previous))
+	prevByRel := make(map[string]Track, len(previous))
 	for _, t := range previous {
 		remaining[t.RelPath] = t
+		prevByRel[t.RelPath] = t
 	}
 	now := time.Now().Unix()
 	changed := []Track{}
+	backfill := []Track{}
 	seen := map[string]fs.FileInfo{}
+	cueJobs := []cueJob{}
 	coverCache := map[string]string{}
 	err = filepath.WalkDir(root, func(p string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -444,7 +452,20 @@ func (s *Service) ScanChanges(ctx context.Context, id string, full bool) (ScanRe
 			}
 			return nil
 		}
-		if d.IsDir() || !d.Type().IsRegular() || !audioExts[strings.ToLower(filepath.Ext(d.Name()))] {
+		if d.IsDir() || !d.Type().IsRegular() {
+			return nil
+		}
+		if strings.EqualFold(filepath.Ext(d.Name()), ".cue") {
+			info, ierr := d.Info()
+			if ierr != nil {
+				return ierr
+			}
+			if job, ok := newCueJob(root, p, info, m.TextEncoding); ok {
+				cueJobs = append(cueJobs, job)
+			}
+			return nil
+		}
+		if !audioExts[strings.ToLower(filepath.Ext(d.Name()))] {
 			return nil
 		}
 		info, err := d.Info()
@@ -462,6 +483,9 @@ func (s *Service) ScanChanges(ctx context.Context, id string, full bool) (ScanRe
 		result.Count++
 		if !full && live && oldTrack.MtimeNS != 0 && oldTrack.MtimeNS == info.ModTime().UnixNano() && oldTrack.Size == info.Size() {
 			result.Unchanged++
+			if oldTrack.CoverHash == "" {
+				backfill = append(backfill, oldTrack)
+			}
 			return nil
 		}
 		pr, err := media.ProbeFile(p)
@@ -492,10 +516,13 @@ func (s *Service) ScanChanges(ctx context.Context, id string, full bool) (ScanRe
 		if tags.Title != "" {
 			title = tags.Title
 		}
+		// Lossy taggers write '?' for non-ASCII text; recover what the path still
+		// carries instead of surfacing question marks in the library.
+		title, artist, album, albumArtist := repairTrackText(title, tags.Artist, tags.Album, tags.AlbumArtist, rel)
 		changed = append(changed, Track{
 			ID: trackID, MountID: id, Path: p, RelPath: rel, AddedAt: addedAt,
-			Title: title, Artist: tags.Artist, Album: tags.Album, Genre: tags.Genre,
-			AlbumArtist: tags.AlbumArtist, Composer: tags.Composer, Year: tags.Year,
+			Title: title, Artist: artist, Album: album, Genre: tags.Genre,
+			AlbumArtist: albumArtist, Composer: tags.Composer, Year: tags.Year,
 			DiscNumber: tags.DiscNumber, TrackNumber: tags.TrackNumber,
 			Codec: pr.Codec, Container: pr.Container, Rate: pr.Rate, Channels: pr.Channels,
 			Bits: pr.Bits, TotalSamples: pr.TotalSamples, DurationMS: pr.DurationMS,
@@ -511,6 +538,13 @@ func (s *Service) ScanChanges(ctx context.Context, id string, full bool) (ScanRe
 	if err != nil {
 		return ScanResult{}, err
 	}
+	changed, cueStats, err := expandCueJobs(ctx, root, id, cueJobs, changed, remaining, prevByRel, seen, now)
+	if err != nil {
+		return ScanResult{}, err
+	}
+	result.Added = max(0, result.Added+cueStats.added-cueStats.droppedAdded)
+	result.Updated = max(0, result.Updated+cueStats.updated-cueStats.droppedUpdated)
+	result.Unchanged += cueStats.unchanged
 	result.Removed = len(remaining)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -533,8 +567,8 @@ func (s *Service) ScanChanges(ctx context.Context, id string, full bool) (ScanRe
 		if _, err := tx.ExecContext(ctx, `INSERT INTO tracks
 			(id,mount_id,path,rel_path,title,artist,album,codec,container,rate,channels,bits,
 			 total_samples,duration_ms,decodable,mqa,mqa_checked,size,scanned_at,cover_hash,added_at,genre,
-			 album_artist,composer,year,disc_number,track_number,mtime_ns)
-			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+			 album_artist,composer,year,disc_number,track_number,mtime_ns,cue_start,cue_end)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 			ON CONFLICT(id) DO UPDATE SET path=excluded.path,title=excluded.title,artist=excluded.artist,
 			album=excluded.album,codec=excluded.codec,container=excluded.container,rate=excluded.rate,
 			channels=excluded.channels,bits=excluded.bits,total_samples=excluded.total_samples,
@@ -542,14 +576,45 @@ func (s *Service) ScanChanges(ctx context.Context, id string, full bool) (ScanRe
 			mqa_checked=excluded.mqa_checked,size=excluded.size,
 			scanned_at=excluded.scanned_at,cover_hash=excluded.cover_hash,genre=excluded.genre,
 			album_artist=excluded.album_artist,composer=excluded.composer,year=excluded.year,
-			disc_number=excluded.disc_number,track_number=excluded.track_number,mtime_ns=excluded.mtime_ns`,
+			disc_number=excluded.disc_number,track_number=excluded.track_number,mtime_ns=excluded.mtime_ns,
+			cue_start=excluded.cue_start,cue_end=excluded.cue_end`,
 			t.ID, t.MountID, t.Path, t.RelPath, t.Title, t.Artist, t.Album, t.Codec, t.Container,
 			t.Rate, t.Channels, t.Bits, t.TotalSamples, t.DurationMS, boolInt(t.Decodable), boolInt(t.MQA), boolInt(t.MQAChecked), t.Size,
 			t.ScannedAt, t.CoverHash, t.AddedAt, t.Genre, t.AlbumArtist, t.Composer,
-			t.Year, t.DiscNumber, t.TrackNumber, t.MtimeNS); err != nil {
+			t.Year, t.DiscNumber, t.TrackNumber, t.MtimeNS, t.CueStart, t.CueEnd); err != nil {
 			return ScanResult{}, err
 		}
 	}
+	// Unchanged tracks keep their tags, but art may have appeared (or become
+	// readable) since the last scan; fill only empty covers, sidecar-only so a
+	// routine sync never reopens every FLAC to re-check embedded pictures.
+	for _, t := range backfill {
+		dir := filepath.Dir(t.Path)
+		hash, ok := coverCache[dir]
+		if !ok {
+			if c, cerr := sidecarCover(dir, root); cerr == nil {
+				hash, err = coverBytes(ctx, tx, c, now)
+				if err != nil {
+					return ScanResult{}, err
+				}
+			}
+			coverCache[dir] = hash
+		}
+		if hash == "" {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE tracks SET cover_hash=? WHERE id=?`, hash, t.ID); err != nil {
+			return ScanResult{}, err
+		}
+		result.CoversFilled++
+	}
+	// Stock tracks written by lossy taggers keep '?'; the fallback only needs
+	// stored paths, so no file is reopened here.
+	repaired, err := s.repairStoredTags(ctx, tx)
+	if err != nil {
+		return ScanResult{}, err
+	}
+	result.TagsRepaired = repaired
 	if m.Kind != "local" {
 		if err := s.mounts.Check(ctx, m.Target); err != nil {
 			return ScanResult{}, err
@@ -587,7 +652,7 @@ func (s *Service) ScanChanges(ctx context.Context, id string, full bool) (ScanRe
 	if err := tx.Commit(); err != nil {
 		return ScanResult{}, err
 	}
-	if len(changed) > 0 || len(remaining) > 0 {
+	if len(changed) > 0 || len(remaining) > 0 || result.CoversFilled > 0 || result.TagsRepaired > 0 {
 		if err := s.RebuildArtistIndex(ctx); err != nil {
 			slog.Warn("rebuild artist index", "err", err)
 		}
@@ -711,7 +776,7 @@ func (s *Service) GetCover(hash string) (string, []byte, error) {
 
 const trackCols = `id,mount_id,path,rel_path,title,artist,album,codec,container,rate,channels,bits,
 	total_samples,duration_ms,decodable,mqa,mqa_checked,size,scanned_at,cover_hash,added_at,genre,
-	album_artist,composer,year,disc_number,track_number,mtime_ns`
+	album_artist,composer,year,disc_number,track_number,mtime_ns,cue_start,cue_end`
 
 func scanTrack(row interface{ Scan(...any) error }) (Track, error) {
 	var t Track
@@ -719,7 +784,7 @@ func scanTrack(row interface{ Scan(...any) error }) (Track, error) {
 	err := row.Scan(&t.ID, &t.MountID, &t.Path, &t.RelPath, &t.Title, &t.Artist, &t.Album,
 		&t.Codec, &t.Container, &t.Rate, &t.Channels, &t.Bits, &t.TotalSamples, &t.DurationMS,
 		&decodable, &mqa, &checked, &t.Size, &t.ScannedAt, &t.CoverHash, &t.AddedAt, &t.Genre,
-		&t.AlbumArtist, &t.Composer, &t.Year, &t.DiscNumber, &t.TrackNumber, &t.MtimeNS)
+		&t.AlbumArtist, &t.Composer, &t.Year, &t.DiscNumber, &t.TrackNumber, &t.MtimeNS, &t.CueStart, &t.CueEnd)
 	t.Decodable = decodable == 1
 	t.MQA = mqa == 1
 	t.MQAChecked = checked == 1

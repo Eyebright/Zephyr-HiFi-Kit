@@ -3,7 +3,7 @@
 const XP = {
   profile: null, active: false, stage: "welcome", dismissed: false, loading: false, error: "", busy: null,
   epoch: 0, profileSeq: 0, bootstrapSeq: 0, summarySeq: 0, summary: null,
-  authenticated: false, settingsOpen: false, mobileOpen: false,
+  authenticated: false, settingsOpen: false, libraryOpen: true, playlistsOpen: true, mobileOpen: false,
   route: "", navEpoch: 0, initialized: false, media: null,
   languageSeq: 0, languageEditSeq: 0, languageBusy: false, languageLoading: false,
   languageLoaded: false, languageDraft: null, languageDirty: false, languageNotice: "", languageNoticeKind: "info",
@@ -19,26 +19,57 @@ Object.assign(ICONS, {
   settings: '<path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/>'
 });
 
+const NAV_LIB_TABS = [
+  ["artists", "navCatArtists", "music"],
+  ["albums", "navCatAlbums", "disc"],
+  ["tracks", "navCatTracks", "wave"],
+  ["genres", "navCatGenres", "sliders"],
+  ["years", "navCatYears", "clock"],
+  ["composers", "navCatComposers", "edit"],
+  ["folders", "navCatFolders", "folder"]
+];
 function renderSidebarNav(languageOnly = false) {
-  const route = S.view + (S.view === "settings" ? ":" + SETTINGS.section : "");
+  const route = S.view + (S.view === "settings" ? ":" + SETTINGS.section : S.view === "library" ? ":" + (S.libTab || "albums") : "");
   const changed = !languageOnly && route !== XP.route;
   if (changed) {
     XP.route = route; XP.navEpoch++;
-    if (S.view === "settings") XP.settingsOpen = true;
+    if (S.view === "library" && S.libTab !== "favorites" && S.libTab !== "playlists") XP.libraryOpen = true;
     if (XP.mobileOpen) toggleExperienceNav(false);
   }
   const nav = $("#nav"); if (!nav) return;
   const focused = nav.contains(document.activeElement) ? { ...document.activeElement.dataset } : null;
-  const items = [...NAV.filter(n => n.id !== "settings"), ...NAV.filter(n => n.id === "settings")];
-  nav.innerHTML = items.map(n => {
-    const active = S.view === n.id;
-    if (n.id !== "settings") return settingsHTML`<button type="button" class="nav-item${active ? " active" : ""}" data-act="nav" data-view="${esc(n.id)}"${active ? ' aria-current="page"' : ""}>${icon(n.icon, 17)}<span>${esc(n.name)}</span></button>`;
-    return settingsHTML`<div class="xp-settings-group"><button type="button" class="nav-item xp-settings-toggle${active ? " active" : ""}" data-act="xp-settings-toggle" data-view="settings" aria-expanded="${XP.settingsOpen}" aria-controls="sidebar-settings">${icon(n.icon, 17)}<span>${esc(n.name)}</span>${icon("chevR", 14, "xp-chevron")}</button><div id="sidebar-settings" class="xp-settings-children"${XP.settingsOpen ? "" : " hidden"}>${SETTINGS_SECTIONS.map(([id, name, ic]) => settingsHTML`<button type="button" class="xp-settings-link${active && SETTINGS.section === id ? " active" : ""}" data-act="settings-open" data-section="${esc(id)}"${active && SETTINGS.section === id ? ' aria-current="page"' : ""}>${icon(ic, 15)}<span>${esc(name)}</span></button>`).join("")}</div></div>`;
-  }).join("");
-  if (focused) Array.from(nav.querySelectorAll("button")).find(el => el.dataset.act === focused.act && el.dataset.view === focused.view && el.dataset.section === focused.section)?.focus();
+  const libTab = S.libTab || "albums";
+  const auxTab = S.view === "library" && (libTab === "favorites" || libTab === "playlists");
+  const libCategory = S.view === "library" && !auxTab;
+  const item = n => settingsHTML`<button type="button" class="nav-item${S.view === n.id ? " active" : ""}" data-act="nav" data-view="${esc(n.id)}"${S.view === n.id ? ' aria-current="page"' : ""}>${icon(n.icon, 17)}<span>${esc(n.name)}</span></button>`;
+  const aux = (id, name, ic) => settingsHTML`<button type="button" class="nav-item${auxTab && libTab === id ? " active" : ""}" data-act="xp-lib-tab" data-tab="${id}"${auxTab && libTab === id ? ' aria-current="page"' : ""}>${icon(ic, 17)}<span>${esc(name)}</span></button>`;
+  const detailId = (typeof PLD !== "undefined" && S.view === "library") ? PLD.id : "";
+  const playlistChildren = (S.playlists || []).map(p => settingsHTML`<button type="button" class="xp-settings-link${detailId === p.id ? " active" : ""}" data-act="xp-open-playlist" data-id="${esc(p.id)}" title="${esc(p.name)}"${detailId === p.id ? ' aria-current="page"' : ""}>${icon("music", 15)}<span class="truncate">${esc(p.name)}</span><span class="xp-pl-count">${esc(I18n.number(p.count || 0))}</span></button>`).join("");
+  const playlists = settingsHTML`<div class="xp-settings-group"><button type="button" class="nav-item xp-settings-toggle${auxTab && libTab === "playlists" ? " active" : ""}" data-act="xp-playlists-toggle" aria-expanded="${XP.playlistsOpen}" aria-controls="sidebar-playlists">${icon("layers", 17)}<span>${esc(appT("navPlaylists"))}</span>${icon("chevR", 14, "xp-chevron")}</button><div id="sidebar-playlists" class="xp-settings-children xp-playlist-children"${XP.playlistsOpen ? "" : " hidden"}>${playlistChildren || settingsHTML`<div class="xp-settings-empty">${esc(appT("navNoPlaylists"))}</div>`}<button type="button" class="xp-settings-link" data-act="xp-new-playlist">${icon("plus", 15)}<span>${esc(appT("navNewPlaylist"))}</span></button></div></div>`;
+  const library = settingsHTML`<div class="xp-settings-group"><button type="button" class="nav-item xp-settings-toggle${libCategory ? " active" : ""}" data-act="xp-library-toggle" aria-expanded="${XP.libraryOpen}" aria-controls="sidebar-library">${icon("library", 17)}<span>${esc(appT("m066"))}</span>${icon("chevR", 14, "xp-chevron")}</button><div id="sidebar-library" class="xp-settings-children"${XP.libraryOpen ? "" : " hidden"}>${NAV_LIB_TABS.map(([tab, key, ic]) => settingsHTML`<button type="button" class="xp-settings-link${libCategory && libTab === tab ? " active" : ""}" data-act="xp-lib-tab" data-tab="${esc(tab)}"${libCategory && libTab === tab ? ' aria-current="page"' : ""}>${icon(ic, 15)}<span>${esc(appT(key))}</span></button>`).join("")}</div></div>`;
+  const settings = NAV.find(n => n.id === "settings");
+  const settingsActive = S.view === "settings";
+  const settingsGroup = settingsHTML`<div class="nav-bottom"><button type="button" class="nav-item${settingsActive ? " active" : ""}" data-act="settings-open" data-section="profile"${settingsActive ? ' aria-current="page"' : ""}>${icon(settings.icon, 17)}<span>${esc(settings.name)}</span></button></div>`;
+  const nodes = NAV.find(n => n.id === "nodes");
+  nav.innerHTML = [item(NAV[0]), library, aux("favorites", appT("navFavorites"), "heart"), playlists, item(nodes), settingsGroup].join("");
+  const audit = $("#top-audit");
+  if (audit) {
+    const auditOpen = S.view === "audit" || (typeof drawerCtx !== "undefined" && drawerCtx && drawerCtx.kind === "audit");
+    audit.classList.toggle("active", !!auditOpen);
+    audit.setAttribute("aria-current", auditOpen ? "page" : "false");
+  }
+  if (focused) Array.from(nav.querySelectorAll("button")).find(el => el.dataset.act === focused.act && el.dataset.view === focused.view && el.dataset.section === focused.section && el.dataset.tab === focused.tab)?.focus();
   if (changed) experiencePaintOnboarding();
 }
 function experienceOpenSettings() { XP.settingsOpen = true; toggleExperienceNav(false); }
+let sidebarPlaylistSig = "";
+// refreshSidebarPlaylists re-renders only when playlist names or counts change.
+function refreshSidebarPlaylists() {
+  const sig = JSON.stringify((S.playlists || []).map(p => [p.id, p.name, p.count]));
+  if (sig === sidebarPlaylistSig) return;
+  sidebarPlaylistSig = sig;
+  renderSidebarNav(true);
+}
 function toggleExperienceNav(open = !XP.mobileOpen) {
   XP.mobileOpen = !!open && !!XP.media?.matches;
   document.body.classList.toggle("xp-nav-open", XP.mobileOpen);
@@ -509,7 +540,19 @@ Object.assign(CHG, {
 Object.assign(ACT, {
   "xp-language-save": () => experienceSaveLanguage(),
   "xp-language-refresh": () => experienceRefreshLanguage(),
-  "xp-settings-toggle": () => { XP.settingsOpen = !XP.settingsOpen; renderSidebarNav(); },
+  "xp-library-toggle": () => {
+    XP.libraryOpen = !XP.libraryOpen;
+    if (XP.libraryOpen && S.view !== "library" && typeof openLibraryTab === "function") return openLibraryTab(S.libTab || "albums");
+    renderSidebarNav();
+  },
+  "xp-playlists-toggle": () => {
+    XP.playlistsOpen = !XP.playlistsOpen;
+    if (XP.playlistsOpen && !(S.view === "library" && S.libTab === "playlists")) { if (typeof openLibraryTab === "function") return openLibraryTab("playlists"); }
+    renderSidebarNav();
+  },
+  "xp-open-playlist": ds => { toggleExperienceNav(false); if (typeof openPlaylistPage === "function") return openPlaylistPage(ds.id); },
+  "xp-new-playlist": () => { toggleExperienceNav(false); if (typeof openPlNew === "function") openPlNew([]); },
+  "xp-lib-tab": ds => { toggleExperienceNav(false); if (typeof openLibraryTab === "function") return openLibraryTab(ds.tab || "albums"); },
   "xp-nav-toggle": () => toggleExperienceNav(),
   "xp-nav-close": () => toggleExperienceNav(false),
   "xp-retry": () => bootstrapExperience(),

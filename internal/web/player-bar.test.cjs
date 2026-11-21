@@ -721,6 +721,8 @@ test("mode icon menu reflects and updates the per-terminal mode; codec badge onl
   const badge = h.el("pb-mqa"), wrap = h.el("pb-mode");
   assert.equal(badge.hidden, false);
   assert.match(badge.innerHTML, /MQA/);
+  assert.equal(badge.classList.contains("codec-icon"), false, "wrapper must not carry badge styling");
+  assert.equal(badge.querySelectorAll(".codec-icon").length, 1, "exactly one framed badge");
   assert.equal(wrap.dataset.disabled, "0");
   assert.match(h.el("pb-mode-btn").getAttribute("aria-label"), /列表循环/);
   assert.equal(wrap.querySelectorAll("[data-mode]").length, 4);

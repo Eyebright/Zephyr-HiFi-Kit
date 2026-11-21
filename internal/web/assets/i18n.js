@@ -106,6 +106,7 @@ const I18n = (() => {
     profile: ["管理员与偏好", "管理員與偏好設定", "Administrator & preferences"],
     administrator: ["管理员", "管理員", "Administrator"],
     alerts: ["告警中心", "警示中心", "Alerts"],
+    operationLog: ["操作日志", "操作記錄", "Activity"],
     requestFailed: ["请求失败", "請求失敗", "Request failed"],
     diagnostic: ["原始诊断：{detail}", "原始診斷：{detail}", "Original diagnostic: {detail}"]
   });

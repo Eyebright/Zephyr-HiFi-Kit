@@ -69,7 +69,9 @@ const SETTINGS_LEGACY_MANAGE = new Set([
 ]);
 
 function settingsAdmin() { return SETTINGS.session?.authenticated === true; }
-function settingsHere(section) { return S.view === "settings" && !!$("#settings-page") && (!section || SETTINGS.section === section); }
+// Settings renders every section on one page; any section guard only requires
+// the page to be mounted.
+function settingsHere() { return S.view === "settings" && !!$("#settings-page"); }
 function settingsNote(text, kind = "info") { return settingsHTML`<div class="settings-note ${esc(kind)}">${icon(kind === "err" || kind === "warn" ? "alert" : "info", 16)}<span data-settings-message="${esc(encodeURIComponent(text))}">${esc(settingsT(text))}</span></div>`; }
 function settingsError(id, message) { const el = $("#" + id); if (el) el.innerHTML = message ? settingsNote(message, "err") : ""; }
 function settingsButton(action, label, opts = {}) {
@@ -118,12 +120,14 @@ function shellSettings(languageOnly = false) {
   if (!languageOnly) SETTINGS.epoch++;
   const section = SETTINGS_SECTIONS.find(x => x[0] === SETTINGS.section) || SETTINGS_SECTIONS[0];
   SETTINGS.section = section[0];
+  const anchors = `<nav class="settings-anchors" aria-label="${esc(settingsT("设置分区"))}">${SETTINGS_SECTIONS.map(([id, name]) => `<button class="chip ${id === section[0] ? "active" : ""}" data-act="settings-anchor" data-anchor="${esc(id)}" aria-pressed="${id === section[0]}">${esc(name)}</button>`).join("")}</nav>`;
+  const blocks = SETTINGS_SECTIONS.map(([id, name, ic, desc]) => settingsHTML`<section class="settings-block" id="settings-block-${id}"><header class="settings-section-heading"><h2>${icon(ic, 20)}${esc(name)}</h2><p>${esc(desc)}</p></header><div id="settings-content-${id}">${settingsSectionShell(id)}</div></section>`).join("");
   return settingsHTML`<div id="settings-page" class="settings-page">
     <header class="settings-heading"><div><span class="settings-eyebrow">Zephyr HiFi Kit / 设置</span><h1>设置</h1><p>音乐来源、播放能力与服务端管理，集中在这里。</p></div>${settingsButton("settings-refresh", "刷新状态", { icon: "refresh" })}</header>
     <div class="settings-layout"><div class="settings-main"><section id="settings-admin" class="card settings-admin" aria-label="管理员解锁">${settingsNote("正在检查管理员会话…")}</section>
-      <header class="settings-section-heading"><h2>${icon(section[2], 20)}${esc(section[1])}</h2><p>${esc(section[3])}</p></header>
+      ${anchors}
       <div id="settings-section-error" role="status" aria-live="polite"></div>
-      <div id="settings-content">${settingsSectionShell()}</div>
+      ${blocks}
     </div></div></div>`;
 }
 function openSettings(section = "profile") {
@@ -131,9 +135,54 @@ function openSettings(section = "profile") {
   if (typeof experienceOpenSettings === "function") experienceOpenSettings();
   setView("settings");
   if (typeof renderSidebarNav === "function") renderSidebarNav();
+  if (SETTINGS.section !== "profile") {
+    const jump = () => settingsAnchorsJump(SETTINGS.section);
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(jump); else jump();
+  }
 }
-function settingsSectionShell() {
-  switch (SETTINGS.section) {
+function settingsAnchorsJump(id) {
+  if (!SETTINGS_SECTIONS.some(x => x[0] === id)) return;
+  SETTINGS.section = id;
+  document.querySelectorAll("#settings-page .settings-anchors .chip").forEach(chip => {
+    const active = chip.dataset.anchor === id;
+    chip.classList.toggle("active", active);
+    chip.setAttribute("aria-pressed", String(active));
+  });
+  const el = $("#settings-block-" + id);
+  if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+// Scroll-spy keeps the anchor bar in sync while the single settings page scrolls.
+let settingsSpyBound = false;
+function settingsInitSpy() {
+  if (settingsSpyBound) return;
+  if (typeof window === "undefined" || typeof window.addEventListener !== "function") return;
+  settingsSpyBound = true;
+  let queued = false;
+  window.addEventListener("scroll", () => {
+    if (!settingsHere() || queued) return;
+    queued = true;
+    const run = () => { queued = false; settingsSyncSpy(); };
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(run); else setTimeout(run, 16);
+  }, { passive: true });
+}
+function settingsSyncSpy() {
+  if (!settingsHere()) return;
+  const blocks = SETTINGS_SECTIONS.map(([id]) => [id, $("#settings-block-" + id)]).filter(([, el]) => el && el.getBoundingClientRect);
+  if (!blocks.length) return;
+  let current = blocks[0][0];
+  for (const [id, el] of blocks) {
+    if (el.getBoundingClientRect().top <= 170) current = id;
+  }
+  if (current === SETTINGS.section) return;
+  SETTINGS.section = current;
+  document.querySelectorAll("#settings-page .settings-anchors .chip").forEach(chip => {
+    const active = chip.dataset.anchor === current;
+    chip.classList.toggle("active", active);
+    chip.setAttribute("aria-pressed", String(active));
+  });
+}
+function settingsSectionShell(id = SETTINGS.section) {
+  switch (id) {
     case "profile": return typeof experienceProfileShell === "function" ? experienceProfileShell() : settingsNote("管理员资料界面尚未加载，请刷新页面。", "warn");
     case "authorization": return settingsNote("服务端内置 3 台终端席位，可用许可证扩容。管理员登录与许可证授权相互独立；这里只导入验证用公钥，不生成、上传或导出签发私钥。") + shellKeys();
     case "packages": return settingsNote("这里只维护应用版本、软件包、签名与安装源；安装执行请前往终端中心。当前交付支持 Linux DEB、APT 与受支持的 Linux 归档包，架构相同不代表操作系统兼容：Windows/macOS 文件不能当作 Linux 可安装包。") + settingsHTML`<section class="card mb12"><div class="settings-card-head"><h3>${icon("globe", 17)} 安装源管理</h3>${settingsButton("apt-sources", "安装源管理", { icon: "globe" })}</div><p>可只读浏览 APT 安装源，添加或删除源需解锁管理员。应用名仍打开原版本与入库流程；BOM 高级管理保留在下方，不在这里执行终端安装。</p></section>` + shellCatalog();
@@ -260,25 +309,26 @@ async function settingsFailure(e, target) {
 async function refreshSettings() {
   if (!settingsHere()) return;
   settingsObserve();
-  const epoch = SETTINGS.epoch, seq = ++SETTINGS.refreshSeq, section = SETTINGS.section;
-  const current = () => settingsHere(section) && epoch === SETTINGS.epoch && seq === SETTINGS.refreshSeq;
+  settingsInitSpy();
+  const epoch = SETTINGS.epoch, seq = ++SETTINGS.refreshSeq;
+  const current = () => settingsHere() && epoch === SETTINGS.epoch && seq === SETTINGS.refreshSeq;
   await settingsRefreshSession();
   if (!current()) return;
   settingsError("settings-section-error", "");
-  try {
-    if (section === "profile" && typeof refreshExperienceProfile === "function") await refreshExperienceProfile(current);
-    else if (section === "authorization") await refreshKeys();
-    else if (section === "packages") await refreshCatalog();
-    else if (section === "about") await settingsRefreshAbout(current);
-    else if (section === "folders") await settingsRefreshFolders(current);
-    else if (section === "maintenance") {
-      // Register before awaiting so a late response cannot restart a stopped view poll.
-      poll("view:server-update", () => { if (settingsHere("maintenance")) return refreshUpdateLive(); }, 4000);
-      await Promise.all([settingsRefreshMaintenance(current), refreshUpdate()]);
-    }
-  } catch (e) {
-    if (current()) await settingsFailure(e, "settings-section-error");
-  }
+  // Register before awaiting so a late response cannot restart a stopped view poll.
+  poll("view:server-update", () => { if (settingsHere()) return refreshUpdateLive(); }, 4000);
+  const loaders = [
+    () => typeof refreshExperienceProfile === "function" ? refreshExperienceProfile(current) : null,
+    () => refreshKeys(),
+    () => refreshCatalog(),
+    () => settingsRefreshAbout(current),
+    () => settingsRefreshFolders(current),
+    () => Promise.all([settingsRefreshMaintenance(current), refreshUpdate()])
+  ];
+  const results = await Promise.allSettled(loaders.map(async run => run()));
+  if (!current()) return;
+  const failed = results.find(r => r.status === "rejected");
+  if (failed) await settingsFailure(failed.reason, "settings-section-error");
   if (current()) settingsApplyAccess();
 }
 
@@ -453,6 +503,7 @@ async function settingsRefreshAbout(current) {
 function settingsMaintenanceShell() {
   return settingsHTML`<section class="card" aria-label="服务端自升级"><p>这里只管理服务端自升级；检查、应用更新与自动升级开关均需管理员解锁。终端 Agent 升级策略请前往终端中心的高级维护。</p><div id="upd-body" data-update-scope="server"><div id="upd-server"></div></div></section>
     <section class="card"><h3>音乐数据概况</h3><div id="settings-maintenance-counts" class="settings-count-grid">${settingsNote("解锁管理员后读取维护统计。")}</div></section>
+    <section class="card"><h3>${icon("edit", 17)} 标签编码修复</h3><p>自动用文件名与上级目录修复被写成 “?” 的标题、艺术家与专辑，先预览影响数量再修复。原始音频与曲目 ID 不变。</p><div class="settings-maintenance-row"><div><strong>乱码标签回填</strong><p>仅修改损坏字段；无文件名/目录可依据的字段保持原样。</p></div><span class="acts">${settingsButton("text-repair-preview", "预览乱码修复", { icon: "eye" })}${settingsButton("text-repair-apply", "修复乱码标签…", { admin: true, task: "maintenance", className: "danger sm" })}</span></div><div id="text-repair-note" class="settings-small" role="status"></div></section>
     <div id="settings-maintenance-error" role="status" aria-live="polite"></div>
     <section class="card"><h3>${icon("download", 17)} 音乐数据备份</h3><p>下载音乐 JSON：包括源的非凭据配置、曲库、封面、播放列表与播放历史。不包含账号凭据、终端身份、许可证、签发私钥或原音频。</p><p class="settings-small">备份中可能包含音乐目录、曲目及收听记录，请妥善保管。</p>${settingsButton("settings-backup", "下载音乐 JSON 备份", { admin: true, task: "maintenance", icon: "download", className: "primary" })}</section>
     <section class="card settings-danger-zone"><h3>${icon("upload", 17)} 从备份恢复</h3><p>恢复会覆盖当前音乐数据。建议先下载备份；不会恢复凭据或原音频，恢复后请检查目录路径、NAS 凭据并按需重扫。恢复前请停止播放并卸载所有 SMB 共享。</p><fieldset data-settings-admin data-settings-task="maintenance" ${settingsAdmin() ? "" : "disabled"}><label class="field" for="settings-restore-file"><span>选择音乐 JSON 备份（最大 64 MiB）</span><input id="settings-restore-file" class="inp" type="file" accept=".json,application/json" data-change="settings-restore-file"></label><p id="settings-restore-file-note" class="settings-small" role="status">只在你选择文件并点击恢复后读取内容。</p>${settingsButton("settings-restore", "恢复并覆盖音乐数据…", { admin: true, task: "maintenance", className: "danger" })}</fieldset></section>
@@ -524,6 +575,36 @@ async function settingsRestore() {
   } catch (e) { await settingsFailure(e, "settings-maintenance-error"); }
   finally { backup = null; SETTINGS.busy.delete("maintenance"); settingsApplyAccess(); }
 }
+async function settingsTextRepairPreview() {
+  const note = $("#text-repair-note");
+  if (note) note.innerHTML = settingsNote("正在预览…");
+  try {
+    const p = await api("GET", "/settings/maintenance/text-preview");
+    if (!note) return;
+    if (!p || !p.count) { note.innerHTML = settingsNote("没有需要修复的乱码标签。"); return; }
+    const samples = (p.samples || []).slice(0, 3).map(s => settingsT("{path} → {title}", { path: s.rel_path, title: s.new_title || s.new_artist || s.new_album })).join("；");
+    note.innerHTML = settingsNote(settingsT("发现 {count} 首需要修复；示例：{samples}", { count: settingsNumber(p.count), samples }));
+  } catch (e) {
+    if (note) note.innerHTML = settingsNote(e.message, "err");
+  }
+}
+async function settingsTextRepairApply() {
+  if (!settingsRequireAdmin()) return;
+  const note = $("#text-repair-note");
+  try {
+    const p = await api("GET", "/settings/maintenance/text-preview");
+    if (!p || !p.count) { if (note) note.innerHTML = settingsNote("没有需要修复的乱码标签。"); return; }
+    const ok = await confirmDlg({ title: settingsT("标签编码修复"), message: settingsT("将修复 {count} 首曲目的标题/艺术家/专辑，使用文件名与目录回退值。原始音频不变。", { count: settingsNumber(p.count) }), okText: settingsT("开始修复") });
+    if (!ok) { if (note) note.innerHTML = settingsNote("未执行修复。", "warn"); return; }
+    const r = await api("POST", "/settings/maintenance/text-repair");
+    settingsToast(settingsT("已修复 {count} 首", { count: settingsNumber(r?.updated || 0) }), "ok");
+    if (note) note.innerHTML = "";
+    await refreshSettings();
+  } catch (e) {
+    if (note) note.innerHTML = settingsNote(e.message, "err");
+  }
+}
+
 async function settingsCleanup(kind) {
   if (!["orphan-covers", "catalog", "audit"].includes(kind) || SETTINGS.busy.has("maintenance") || !settingsRequireAdmin()) return;
   let before = 0, date = "";
@@ -555,44 +636,51 @@ async function settingsCleanup(kind) {
 function settingsLanguageChanged() {
   if (!settingsHere()) return;
   const next = document.createElement("div"); next.innerHTML = shellSettings(true);
-  for (const selector of [".settings-heading", ".settings-section-heading"]) {
-    const current = $("#settings-page " + selector), replacement = next.querySelector(selector);
-    if (current && replacement) current.replaceWith(replacement);
-  }
+  const swap = (selector) => {
+    const olds = Array.from(document.querySelectorAll("#settings-page " + selector));
+    const fresh = Array.from(next.querySelectorAll(selector));
+    olds.forEach((old, i) => { if (fresh[i]) old.replaceWith(fresh[i]); });
+  };
+  [".settings-heading", ".settings-section-heading", ".settings-anchors"].forEach(swap);
   const admin = $("#settings-admin");
   if (admin) { admin.setAttribute("aria-label", settingsT("管理员解锁")); delete admin.dataset.signature; settingsPaintSession(); }
-  const content = $("#settings-content"), replacement = next.querySelector("#settings-content");
-  if (!content || !replacement) return;
-  if (SETTINGS.section === "authorization" || SETTINGS.section === "packages") {
-    // Retain embedded roots so pending responses can still update them.
-    const count = SETTINGS.section === "packages" ? 2 : 1;
-    for (let i = 0; i < count; i++) {
-      const old = content.children[i], fresh = replacement.children[0];
-      if (old && fresh) old.replaceWith(fresh);
-    }
-    if (SETTINGS.section === "authorization") { paintLicense(); paintKeys(); }
-    else {
-      for (const id of ["cat-apps", "cat-boms"]) {
-        const old = $("#" + id)?.parentElement.querySelector(".sec-head");
-        const fresh = replacement.querySelector("#" + id)?.parentElement.querySelector(".sec-head");
-        if (old && fresh) old.replaceWith(fresh);
+  for (const [id] of SETTINGS_SECTIONS) {
+    const old = $("#settings-content-" + id), fresh = next.querySelector("#settings-content-" + id);
+    if (!old || !fresh) continue;
+    if (id === "authorization" || id === "packages") {
+      // Retain embedded roots so pending responses can still update them.
+      const count = id === "packages" ? 2 : 1;
+      for (let i = 0; i < count; i++) {
+        const o = old.children[i], f = fresh.children[0];
+        if (o && f) o.replaceWith(f);
       }
-      paintApps(); paintBoms();
-    }
-  } else {
-    const update = $("#upd-body"), version = $("#settings-about-version")?.dataset.version;
-    const editor = $("#settings-folder-editor [data-settings-form='settings-mount-save']")?.dataset.id;
-    const countNote = $("#settings-count-note");
-    content.replaceChildren(...replacement.childNodes);
-    if (SETTINGS.section === "folders") {
+      if (id === "authorization") { paintLicense(); paintKeys(); }
+      else {
+        for (const cid of ["cat-apps", "cat-boms"]) {
+          const o = $("#" + cid)?.parentElement.querySelector(".sec-head");
+          const f = fresh.querySelector("#" + cid)?.parentElement.querySelector(".sec-head");
+          if (o && f) o.replaceWith(f);
+        }
+        paintApps(); paintBoms();
+      }
+    } else if (id === "maintenance") {
+      const update = $("#upd-body");
+      old.replaceChildren(...fresh.childNodes);
+      if (update) $("#upd-body")?.replaceWith(update);
+      paintUpdateServer(); settingsPaintMaintenance();
+    } else if (id === "folders") {
+      const editor = $("#settings-folder-editor [data-settings-form='settings-mount-save']")?.dataset.id;
+      const countNote = $("#settings-count-note");
+      old.replaceChildren(...fresh.childNodes);
       settingsPaintSources();
       if (editor) settingsEditMount(editor, true);
       if (countNote) $("#settings-count-note")?.replaceWith(countNote);
-    } else if (SETTINGS.section === "maintenance") {
-      if (update) $("#upd-body")?.replaceWith(update);
-      paintUpdateServer(); settingsPaintMaintenance();
-    } else if (SETTINGS.section === "about" && version) {
-      const target = $("#settings-about-version"); if (target) { target.textContent = version; target.dataset.version = version; }
+    } else if (id === "about") {
+      const version = $("#settings-about-version")?.dataset.version;
+      old.replaceChildren(...fresh.childNodes);
+      if (version) { const t = $("#settings-about-version"); if (t) { t.textContent = version; t.dataset.version = version; } }
+    } else {
+      old.replaceChildren(...fresh.childNodes);
     }
   }
   settingsObserve();
@@ -600,6 +688,7 @@ function settingsLanguageChanged() {
 
 Object.assign(ACT, {
   "settings-open": ds => openSettings(ds.section || "profile"),
+  "settings-anchor": ds => settingsAnchorsJump(ds.anchor || "profile"),
   "settings-refresh": () => refreshSettings(),
   "settings-session-refresh": () => settingsRefreshSession(),
   "settings-auth-submit": () => settingsAuthenticate(),
@@ -613,7 +702,9 @@ Object.assign(ACT, {
   "settings-mount-save": ds => settingsSaveMount(ds.id),
   "settings-backup": () => settingsBackup(),
   "settings-restore": () => settingsRestore(),
-  "settings-cleanup": ds => settingsCleanup(ds.kind)
+  "settings-cleanup": ds => settingsCleanup(ds.kind),
+  "text-repair-preview": () => settingsTextRepairPreview(),
+  "text-repair-apply": () => settingsTextRepairApply()
 });
 Object.assign(CHG, {
   "settings-restore-file": el => settingsRestoreFileChanged(el)

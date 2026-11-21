@@ -154,30 +154,31 @@ function assertThreeSteps(html, done = false) {
 test("navigation and page headings use home and operation log labels without changing routes", () => {
   const h = harness();
   assert.equal(h.run("NAV.find(n => n.id === 'overview').name"), "主页");
-  assert.equal(h.run("NAV.find(n => n.id === 'audit').name"), "操作日志");
+  assert.equal(h.run("NAV.some(n => n.id === 'audit')"), false);
   assert.match(h.run("shellOverview()"), /id="ov-greeting">主页<\/h1>/);
   assert.match(h.run("shellAudit()"), /操作日志/);
   assert.doesNotMatch(h.elements.get("#nav").innerHTML, /听歌首页|审计/);
+  assert.doesNotMatch(h.elements.get("#nav").innerHTML, /data-view="audit"/);
 });
 
-test("settings is last, collapses independently, and openSettings expands/activates its child", () => {
+test("settings is one pinned nav item and renders every section on a single page", () => {
   const h = harness();
   assert.equal(h.run("SETTINGS_SECTIONS[0][0]"), "profile");
-  assert.match(h.elements.get("#nav").innerHTML, /aria-expanded="false"/);
-  h.run("ACT['xp-settings-toggle']()"); assert.equal(h.run("XP.settingsOpen"), true);
-  h.run("ACT['xp-settings-toggle']()"); assert.equal(h.run("XP.settingsOpen"), false);
-  h.run("openSettings('folders')");
   const html = h.elements.get("#nav").innerHTML;
-  assert.ok(html.indexOf('data-view="settings"') > html.indexOf('data-view="audit"'));
-  assert.match(html, /data-section="folders" aria-current="page"/);
-  assert.equal(h.run("XP.settingsOpen"), true);
-  h.run("ACT['xp-settings-toggle']()"); assert.equal(h.run("XP.settingsOpen"), false);
-  assert.doesNotMatch(h.run("shellSettings()"), /<nav|settings-nav-item/);
+  assert.match(html, /class="nav-bottom"/);
+  assert.ok(html.indexOf('data-act="settings-open"') > html.indexOf('data-tab="playlists"'));
+  assert.doesNotMatch(html, /sidebar-settings/);
+  h.run("openSettings('folders')");
+  const after = h.elements.get("#nav").innerHTML;
+  assert.match(after, /class="nav-item active" data-act="settings-open"/);
+  const shell = h.run("shellSettings()");
+  assert.match(shell, /settings-anchors/);
+  for (const id of ["profile", "authorization", "folders", "packages", "maintenance", "about"]) assert.ok(shell.includes("settings-block-" + id), id);
   assert.equal(h.run("SETTINGS_SECTIONS.at(-1)[0]"), "about");
-  assert.doesNotMatch(html, /data-section="(?:accounts|protocols)"|音乐服务账号|协议说明/);
+  assert.doesNotMatch(after, /data-section="(?:accounts|protocols)"|音乐服务账号|协议说明/);
   h.run("openSettings('about')");
-  assert.match(h.elements.get("#nav").innerHTML, /data-section="about" aria-current="page"[^>]*>[\s\S]*?关于我们/);
-  assert.match(h.elements.get("#view").innerHTML, /Zephyr HiFi Kit/);
+  assert.equal(h.run("SETTINGS.section"), "about");
+  assert.match(h.run("shellSettings()"), /Zephyr HiFi Kit/);
 });
 
 test("mobile drawer toggles aria, inert state, overlay and Escape without changing ordinary nav", () => {
@@ -439,14 +440,14 @@ test("bootstrap read failure exposes retry without creating an admin or completi
   assert.ok(h.calls.every(c => c.method === "GET"));
 });
 
-test("collapsing settings preserves typed onboarding fields and keyboard focus", async () => {
+test("collapsing playlists preserves typed onboarding fields and keyboard focus", async () => {
   const h = harness(); await h.run("bootstrapExperience()"); await h.run("ACT['xp-resume']()");
   const name = h.input("onboarding-name", "尚未提交的姓名");
-  const toggle = h.elements.get("#nav").children.find(el => el.dataset.act === "xp-settings-toggle");
-  toggle.focus(); h.run("ACT['xp-settings-toggle']()");
+  const toggle = h.elements.get("#nav").children.find(el => el.dataset.act === "xp-playlists-toggle");
+  toggle.focus(); h.run("ACT['xp-playlists-toggle']()");
   assert.equal(h.elements.get("#onboarding-name"), name);
   assert.equal(name.value, "尚未提交的姓名");
-  assert.equal(h.document.activeElement.dataset.act, "xp-settings-toggle");
+  assert.equal(h.document.activeElement.dataset.act, "xp-playlists-toggle");
 });
 
 test("selecting the current ordinary mobile route still closes the drawer", () => {
@@ -1387,7 +1388,11 @@ function languageTree(selector, children = []) {
   const node = { selector, children: [], dataset: {}, innerHTML: "", textContent: "",
     get childNodes() { return this.children; },
     querySelector(s) { return this.children.find(child => child.selector === s) || this.children.map(child => child.querySelector(s)).find(Boolean) || null; },
-    querySelectorAll() { return []; },
+    querySelectorAll(s) {
+      const out = [];
+      const walk = n => { for (const child of n.children) { if (child.selector === s) out.push(child); walk(child); } };
+      walk(this); return out;
+    },
     setAttribute(name, value) { this[name] = value; },
     replaceWith(next) {
       assert.ok(next, "replacement must exist");
@@ -1419,24 +1424,26 @@ test("settings translation retains embedded async roots and repaints cached auth
       const content = section === "authorization" ? [languageTree("note"), languageTree("grid", [languageTree("#lic-card"), languageTree("#gpg-card")]), languageTree("banner")]
         : section === "packages" ? [languageTree("note"), languageTree("sources"), languageTree("apps", [languageTree(".sec-head"), languageTree("#cat-apps")]), languageTree("#bom-report"), languageTree("boms", [languageTree(".sec-head"), languageTree("#cat-boms")])]
           : [languageTree("update", [languageTree("#upd-body", [languageTree("#upd-server")])]), languageTree("#settings-maintenance-counts")];
-      return languageTree("#settings-page", [languageTree(".settings-heading"), languageTree("#settings-admin"), languageTree(".settings-section-heading"), languageTree("#settings-content", content)]);
+      return languageTree("#settings-page", [languageTree(".settings-heading"), languageTree("#settings-admin"), languageTree(".settings-anchors"), languageTree(".settings-section-heading"), languageTree("#settings-content-" + section, content)]);
     };
-    const page = fixture(), query = h.document.querySelector;
-    h.document.querySelector = selector => selector === "#settings-page" ? page : page.querySelector(selector.replace(/^#settings-page /, "")) || query(selector);
+    const page = fixture(), query = h.document.querySelector, queryAll = h.document.querySelectorAll;
+    const strip = selector => selector.startsWith("#settings-page ") ? selector.slice("#settings-page ".length) : null;
+    h.document.querySelector = selector => { if (selector === "#settings-page") return page; return page.querySelector(selector.replace(/^#settings-page /, "")) || query(selector); };
+    h.document.querySelectorAll = selector => { const inner = strip(selector); if (inner === null) return queryAll(selector); const node = page.querySelector(inner); return node ? [node] : []; };
     const retainedIDs = section === "authorization" ? ["#lic-card", "#gpg-card"] : section === "packages" ? ["#cat-apps", "#cat-boms", "#bom-report"] : ["#upd-body", "#upd-server"];
     const retained = retainedIDs.map(id => page.querySelector(id));
-    const admin = page.querySelector("#settings-admin"), content = page.querySelector("#settings-content");
+    const admin = page.querySelector("#settings-admin"), content = page.querySelector("#settings-content-" + section);
     const snapshot = h.run("JSON.stringify([S,SETTINGS.epoch,SETTINGS.refreshSeq,SETTINGS.session,Array.from(SETTINGS.busy),SETTINGS.maintenance])");
     for (const locale of ["en", "zh-TW", "zh-CN"]) {
-      const oldHeading = page.querySelector(".settings-heading"), oldIntro = content.children[0];
+      const oldHeading = page.querySelector(".settings-heading"), oldSectionHeading = page.querySelector(".settings-section-heading");
       const oldPackageHeads = section === "packages" ? retained.slice(0, 2).map(node => node.parentElement.querySelector(".sec-head")) : [];
       let next;
       h.document.createElement = tag => { assert.equal(tag, "div"); next = fixture(); return next; };
       h.run(`I18n.setPreference(${JSON.stringify(locale)})`);
       assert.ok(next.innerHTML.includes(h.run("settingsT('刷新状态')")), "real shell is generated in the selected language");
       assert.notEqual(page.querySelector(".settings-heading"), oldHeading);
-      assert.notEqual(content.children[0], oldIntro);
-      assert.equal(page.querySelector("#settings-content"), content);
+      assert.notEqual(page.querySelector(".settings-section-heading"), oldSectionHeading);
+      assert.equal(page.querySelector("#settings-content-" + section), content);
       assert.equal(page.querySelector("#settings-admin"), admin);
       assert.equal(admin["aria-label"], h.run("settingsT('管理员解锁')"));
       for (const [index, id] of retainedIDs.entries()) assert.equal(page.querySelector(id), retained[index], id + " must survive a language repaint");

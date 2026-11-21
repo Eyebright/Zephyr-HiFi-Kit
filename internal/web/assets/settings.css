@@ -5,6 +5,9 @@
 .settings-layout { display: block; }
 .settings-main, #settings-content { min-width: 0; }
 .settings-section-heading { margin: 24px 0 16px; }
+.settings-anchors { position: sticky; top: 62px; z-index: 20; display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0 6px; padding: 8px 0; background: rgba(8,10,14,.85); backdrop-filter: blur(8px); }
+.settings-block { scroll-margin-top: 118px; }
+.settings-block .settings-section-heading { margin-top: 18px; }
 .settings-section-heading h2 { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 19px; }
 .settings-section-heading h2 .ic { color: var(--amber); }
 .settings-page h3 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 14px; font-weight: 700; }

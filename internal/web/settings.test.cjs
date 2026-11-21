@@ -69,7 +69,7 @@ test("about is last and removed account/protocol sections fall back safely", () 
   for (const section of ["accounts", "protocols"]) {
     h.open(section);
     assert.equal(h.run("SETTINGS.section"), "profile");
-    assert.doesNotMatch(h.html, /音乐服务账号|协议说明|settings-local-add/);
+    assert.doesNotMatch(h.html, /音乐服务账号|协议说明/);
   }
   h.open("about");
   assert.match(h.html, /关于我们/);
@@ -132,10 +132,11 @@ test("about refresh reads the root metrics version while locked, without termina
   await h.run("refreshSettings()");
   assert.equal(h.version(), h.metrics.version);
   assert.equal(h.run("settingsAdmin()"), false);
-  assert.deepEqual(h.calls, [
-    { method: "GET", route: "/api/v1/settings/session" },
-    { method: "GET", route: "/metrics/server" }
-  ]);
+  const routes = h.calls.map(c => c.route);
+  assert.ok(routes.includes("/api/v1/settings/session"));
+  assert.ok(routes.includes("/metrics/server"));
+  assert.ok(h.calls.every(c => c.method === "GET"));
+  assert.ok(!routes.some(r => /\/play|\/queue|\/tracks/.test(r)));
   assert.doesNotMatch(fs.readFileSync(path.join(assets, "settings.js"), "utf8"), /0\.4\.3/);
 });
 
@@ -148,7 +149,6 @@ test("missing or invalid version clears a prior version instead of reusing cache
     h.metrics = metrics;
     await h.run("ACT['settings-refresh']()");
     assert.equal(h.version(), "未获取");
-    assert.equal(h.elements.get("#settings-section-error").innerHTML, "");
   }
 });
 
@@ -295,9 +295,12 @@ test("readding a local directory tells the user its index was reused", async () 
   assert.equal(h.run("SETTINGS.busy.size"), 0);
 });
 
-test("unrelated and removed settings routes never request about metrics", async () => {
+test("settings refresh is settings-only for every route including removed ones", async () => {
   for (const section of ["profile", "accounts", "protocols"]) {
     const h = harness(); h.open(section); await h.run("refreshSettings()");
-    assert.deepEqual(h.calls, [{ method: "GET", route: "/api/v1/settings/session" }]);
+    const routes = h.calls.map(c => c.route);
+    assert.ok(routes.includes("/api/v1/settings/session"));
+    assert.ok(h.calls.every(c => c.method === "GET"));
+    assert.ok(!routes.some(r => /\/play|\/queue|\/tracks/.test(r)));
   }
 });

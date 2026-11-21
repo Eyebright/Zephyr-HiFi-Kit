@@ -184,6 +184,31 @@ func (s *Service) GetFavoriteState(trackID string) (FavoriteState, error) {
 	return state, err
 }
 
+// FavoriteAlbum identifies one favorited album by its (artist, album) key.
+type FavoriteAlbum struct {
+	Artist string `json:"artist"`
+	Album  string `json:"album"`
+}
+
+// ListFavoriteAlbums returns every favorited album key so card lists can show
+// heart state without one request per album.
+func (s *Service) ListFavoriteAlbums() ([]FavoriteAlbum, error) {
+	rows, err := s.db.Query(`SELECT artist,album FROM favorites WHERE kind='album' ORDER BY added_at DESC,id DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	albums := []FavoriteAlbum{}
+	for rows.Next() {
+		var a FavoriteAlbum
+		if err := rows.Scan(&a.Artist, &a.Album); err != nil {
+			return nil, err
+		}
+		albums = append(albums, a)
+	}
+	return albums, rows.Err()
+}
+
 func (s *Service) SaveFavorite(req FavoriteRequest) error {
 	if err := req.validate(true); err != nil {
 		return err

@@ -520,7 +520,7 @@ func (s *Server) StartPlay(ctx context.Context, nodeID, trackID string) (string,
 			}
 		}
 	}
-	dec, err := decode.Open(playbackPath)
+	dec, err := openTrackFile(playbackPath, track)
 	if err != nil {
 		return "", err
 	}
@@ -854,6 +854,14 @@ func setupFailure(ack zat.SetupAck, err error) error {
 	return fmt.Errorf("终端未能建立位完美输出：%s", ack.Detail)
 }
 
+// openTrackFile opens the decoder, limiting CUE virtual tracks to their window.
+func openTrackFile(path string, track library.Track) (decode.Decoder, error) {
+	if track.CueEnd > track.CueStart {
+		return decode.OpenSegment(path, track.CueStart, track.CueEnd)
+	}
+	return decode.Open(path)
+}
+
 // openTrackDecoder reopens the current track for seek, preserving the ffmpeg
 // PCM fallback choice once DoP was rejected.
 func (s *Server) openTrackDecoder(track library.Track, ps *playState) (decode.Decoder, error) {
@@ -864,7 +872,7 @@ func (s *Server) openTrackDecoder(track library.Track, ps *playState) (decode.De
 	if ps.converted {
 		return openFallbackPCM(path, ps.rate, track.Channels, track.DurationMS)
 	}
-	return decode.Open(path)
+	return openTrackFile(path, track)
 }
 
 // reSetup rebuilds the terminal's render session at a seek target: a fresh

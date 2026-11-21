@@ -134,7 +134,8 @@ test("personalized greeting uses text, never HTML", () => {
 test("favorites are a library tab with paged server reads and no removed history entry", async () => {
   const h = harness(); h.pages.track = { items: [item("a")], total: 49, page: 2, page_size: 24 };
   h.run("S.view='library'; S.libTab='favorites'; lbFrame().query.page=2"); await h.run("refreshLibraryBrowser()");
-  assert.match(h.elements.get("#lb-header").innerHTML, /我喜欢的/);
+  assert.match(h.elements.get("#lb-body").innerHTML, /id="fav-search"/);
+  assert.match(h.elements.get("#lb-body").innerHTML, /data-act="favorite-library-kind"/);
   assert.doesNotMatch(h.elements.get("#lb-header").innerHTML, /最近播放/);
   assert.match(h.elements.get("#lb-pages").innerHTML, /第 2 \/ 3 页/);
   assert.ok(h.calls.some(c => c.route.includes("page=2")));

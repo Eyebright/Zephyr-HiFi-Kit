@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -91,6 +92,70 @@ func (a *API) browseLibrary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, page)
+}
+
+// relatedAlbums serves album suggestions scored by same artist, genre and year.
+// An album parameter targets one album; without it every album of the artist is
+// answered in one request (artist page strips).
+func (a *API) relatedAlbums(w http.ResponseWriter, r *http.Request) {
+	if a.lib == nil {
+		writeErrorCode(w, http.StatusServiceUnavailable, "library_unavailable", "媒体库未启用")
+		return
+	}
+	v, err := favoriteQueryValues(r, "artist", "album", "limit", "pairs")
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	limit := 6
+	if s := v.Get("limit"); s != "" {
+		n, err := strconv.Atoi(s)
+		if err != nil || n <= 0 {
+			writeErrorCode(w, http.StatusBadRequest, "positive_integer_required", "limit 必须为正整数", map[string]any{"field": "limit"})
+			return
+		}
+		limit = n
+	}
+	if raw := v.Get("pairs"); raw != "" {
+		var pairs []library.AlbumPair
+		if err := json.Unmarshal([]byte(raw), &pairs); err != nil || len(pairs) == 0 || len(pairs) > 40 {
+			writeErrorCode(w, http.StatusBadRequest, "pairs_invalid", "pairs 必须为 1–40 个 {artist,album} 对象", map[string]any{"field": "pairs"})
+			return
+		}
+		for _, p := range pairs {
+			if p.Artist == "" || p.Album == "" || len(p.Artist) > 512 || len(p.Album) > 512 {
+				writeErrorCode(w, http.StatusBadRequest, "pairs_invalid", "pairs 必须为 1–40 个 {artist,album} 对象", map[string]any{"field": "pairs"})
+				return
+			}
+		}
+		groups, err := a.lib.RelatedAlbumsForPairs(pairs, limit)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"groups": groups})
+		return
+	}
+	artist := v.Get("artist")
+	if artist == "" {
+		writeErrorCode(w, http.StatusBadRequest, "artist_required", "artist 不能为空")
+		return
+	}
+	if album := v.Get("album"); album != "" {
+		items, err := a.lib.RelatedAlbums(artist, album, limit)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"items": items})
+		return
+	}
+	groups, err := a.lib.RelatedAlbumsByArtist(artist, limit)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": groups})
 }
 
 func (a *API) artistIndex(w http.ResponseWriter, r *http.Request) {

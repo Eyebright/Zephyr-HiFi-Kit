@@ -121,3 +121,58 @@ func TestReadSidecarCoverPicksConventionalImage(t *testing.T) {
 		t.Fatalf("empty dir err = %v", err)
 	}
 }
+
+func writePNG(t *testing.T, path string, side int) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, side, side))); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func TestReadSidecarCoverArtworkSubfolder(t *testing.T) {
+	dir := t.TempDir()
+	// Booklet page is larger, but the conventional COVER name must win.
+	writePNG(t, filepath.Join(dir, "Artwork", "01.png"), 8)
+	want := writePNG(t, filepath.Join(dir, "Artwork", "COVER.png"), 2)
+	c, err := ReadSidecarCover(dir)
+	if err != nil || string(c.Data) != string(want) {
+		t.Fatalf("artwork cover = %+v, %v", c, err)
+	}
+}
+
+func TestReadSidecarCoverArtworkSubfolderNumberedOnly(t *testing.T) {
+	dir := t.TempDir()
+	want := writePNG(t, filepath.Join(dir, "Arwork", "01.png"), 2)
+	writePNG(t, filepath.Join(dir, "Arwork", "02.png"), 8)
+	c, err := ReadSidecarCover(dir)
+	if err != nil || string(c.Data) != string(want) {
+		t.Fatalf("numbered artwork cover = %+v, %v", c, err)
+	}
+}
+
+func TestReadSidecarCoverArbitraryNameFallback(t *testing.T) {
+	dir := t.TempDir()
+	want := writePNG(t, filepath.Join(dir, "aaa.png"), 2)
+	c, err := ReadSidecarCover(dir)
+	if err != nil || string(c.Data) != string(want) {
+		t.Fatalf("arbitrary cover = %+v, %v", c, err)
+	}
+}
+
+func TestReadSidecarCoverConventionalBeatsSubfolder(t *testing.T) {
+	dir := t.TempDir()
+	want := writePNG(t, filepath.Join(dir, "folder.png"), 2)
+	writePNG(t, filepath.Join(dir, "Artwork", "COVER.png"), 8)
+	c, err := ReadSidecarCover(dir)
+	if err != nil || string(c.Data) != string(want) {
+		t.Fatalf("dir conventional cover = %+v, %v", c, err)
+	}
+}

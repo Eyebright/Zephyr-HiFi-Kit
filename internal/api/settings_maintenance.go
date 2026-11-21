@@ -142,3 +142,35 @@ func (a *API) cleanupSettingsLibrary(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"kind": req.Kind, "deleted": n})
 	})(w, r)
 }
+
+// settingsTextRepairPreview counts tags damaged by lossy writers; read-only.
+func (a *API) settingsTextRepairPreview(w http.ResponseWriter, r *http.Request) {
+	a.requireSettingsAdmin(func(w http.ResponseWriter, r *http.Request) {
+		if a.lib == nil {
+			writeErrorCode(w, http.StatusServiceUnavailable, "library_unavailable", "曲库不可用")
+			return
+		}
+		preview, err := a.lib.PreviewTextRepair(20)
+		if err != nil {
+			writeErrorCode(w, http.StatusInternalServerError, "maintenance_status_failed", "读取标签修复预览失败")
+			return
+		}
+		writeJSON(w, http.StatusOK, preview)
+	})(w, r)
+}
+
+// settingsTextRepairApply rewrites damaged tags from stored paths.
+func (a *API) settingsTextRepairApply(w http.ResponseWriter, r *http.Request) {
+	a.requireSettingsAdmin(func(w http.ResponseWriter, r *http.Request) {
+		if a.lib == nil {
+			writeErrorCode(w, http.StatusServiceUnavailable, "library_unavailable", "曲库不可用")
+			return
+		}
+		n, err := a.lib.ApplyTextRepair(r.Context())
+		if err != nil {
+			writeErrorCode(w, http.StatusInternalServerError, "maintenance_failed", "修复乱码标签失败")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]int{"updated": n})
+	})(w, r)
+}

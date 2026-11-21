@@ -66,6 +66,8 @@ type backupTrack struct {
 	Channels     int64  `json:"channels"`
 	Bits         int64  `json:"bits"`
 	TotalSamples int64  `json:"total_samples"`
+	CueStart     int64  `json:"cue_start,omitempty"`
+	CueEnd       int64  `json:"cue_end,omitempty"`
 	DurationMS   int64  `json:"duration_ms"`
 	Decodable    bool   `json:"decodable"`
 	Size         int64  `json:"size"`
@@ -223,10 +225,10 @@ func (s *Service) ExportLibrary(ctx context.Context) ([]byte, error) {
 	}); err != nil {
 		return nil, ErrLibraryMaintenance
 	}
-	query := `SELECT id,mount_id,path,rel_path,title,artist,album,` + maintenanceOptional(trackCols, "album_artist", "''") + `,` + maintenanceOptional(trackCols, "composer", "''") + `,` + maintenanceOptional(trackCols, "year", "0") + `,` + maintenanceOptional(trackCols, "disc_number", "0") + `,` + maintenanceOptional(trackCols, "track_number", "0") + `,genre,added_at,codec,container,rate,channels,bits,total_samples,duration_ms,decodable,size,` + maintenanceOptional(trackCols, "mtime_ns", "0") + `,scanned_at,cover_hash FROM tracks ORDER BY id`
+	query := `SELECT id,mount_id,path,rel_path,title,artist,album,` + maintenanceOptional(trackCols, "album_artist", "''") + `,` + maintenanceOptional(trackCols, "composer", "''") + `,` + maintenanceOptional(trackCols, "year", "0") + `,` + maintenanceOptional(trackCols, "disc_number", "0") + `,` + maintenanceOptional(trackCols, "track_number", "0") + `,genre,added_at,codec,container,rate,channels,bits,total_samples,duration_ms,decodable,size,` + maintenanceOptional(trackCols, "mtime_ns", "0") + `,` + maintenanceOptional(trackCols, "cue_start", "0") + `,` + maintenanceOptional(trackCols, "cue_end", "0") + `,scanned_at,cover_hash FROM tracks ORDER BY id`
 	if err := backupReadRows(ctx, tx, query, func(r *sql.Rows) error {
 		var v backupTrack
-		if err := r.Scan(&v.ID, &v.MountID, &v.Path, &v.RelPath, &v.Title, &v.Artist, &v.Album, &v.AlbumArtist, &v.Composer, &v.Year, &v.DiscNumber, &v.TrackNumber, &v.Genre, &v.AddedAt, &v.Codec, &v.Container, &v.Rate, &v.Channels, &v.Bits, &v.TotalSamples, &v.DurationMS, &v.Decodable, &v.Size, &v.MtimeNS, &v.ScannedAt, &v.CoverHash); err != nil {
+		if err := r.Scan(&v.ID, &v.MountID, &v.Path, &v.RelPath, &v.Title, &v.Artist, &v.Album, &v.AlbumArtist, &v.Composer, &v.Year, &v.DiscNumber, &v.TrackNumber, &v.Genre, &v.AddedAt, &v.Codec, &v.Container, &v.Rate, &v.Channels, &v.Bits, &v.TotalSamples, &v.DurationMS, &v.Decodable, &v.Size, &v.MtimeNS, &v.CueStart, &v.CueEnd, &v.ScannedAt, &v.CoverHash); err != nil {
 			return err
 		}
 		return appendBackupRecord(&b.Tracks, v, &encodedBytes)
@@ -659,7 +661,7 @@ func (s *Service) RestoreLibrary(ctx context.Context, data []byte) error {
 			nonzero bool
 		}{
 			{"album_artist", v.AlbumArtist, v.AlbumArtist != ""}, {"composer", v.Composer, v.Composer != ""}, {"year", v.Year, v.Year != 0}, {"disc_number", v.DiscNumber, v.DiscNumber != 0}, {"track_number", v.TrackNumber, v.TrackNumber != 0},
-			{"mtime_ns", v.MtimeNS, v.MtimeNS != 0},
+			{"mtime_ns", v.MtimeNS, v.MtimeNS != 0}, {"cue_start", v.CueStart, v.CueStart != 0}, {"cue_end", v.CueEnd, v.CueEnd != 0},
 		} {
 			if trackCols[field.name] {
 				cols += "," + field.name

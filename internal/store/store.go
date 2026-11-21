@@ -96,6 +96,9 @@ func (s *Store) additiveMigrate() error {
 		// tracks: MQA marker (tagged or sample-analysis detected).
 		{"tracks", "mqa", "INTEGER NOT NULL DEFAULT 0"},
 		{"tracks", "mqa_checked", "INTEGER NOT NULL DEFAULT 0"},
+		// tracks: CUE-split virtual tracks reference a sample window in the image.
+		{"tracks", "cue_start", "INTEGER NOT NULL DEFAULT 0"},
+		{"tracks", "cue_end", "INTEGER NOT NULL DEFAULT 0"},
 		{"mounts", "kind", "TEXT NOT NULL DEFAULT 'smb'"},
 		{"mounts", "text_encoding", "TEXT NOT NULL DEFAULT 'auto'"},
 		{"mounts", "last_scan", "INTEGER NOT NULL DEFAULT 0"},

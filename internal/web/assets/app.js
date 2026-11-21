@@ -104,6 +104,7 @@ const ICONS = {
   eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>',
   stop: '<rect x="6" y="6" width="12" height="12" rx="2"/>',
   folder: '<path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/>',
+  heart: '<path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 00-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 000-7.8z"/>',
   pause: '<rect x="7" y="5" width="3.5" height="14" rx="1"/><rect x="13.5" y="5" width="3.5" height="14" rx="1"/>',
   modeSequence: '<path d="M4 7h10M4 12h10M4 17h6"/><path d="M17 9l3 3-3 3"/>',
   modeLoopAll: '<path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/>',
@@ -333,10 +334,11 @@ function openDrawer(title, sub, body, foot = "", opts = {}) {
   closeDrawer();
   drawerOnClose = opts.onClose || null;
   drawerCtx = opts.ctx || null;
+  if (typeof renderSidebarNav === "function") renderSidebarNav(true);
   const back = opts.back ? `<button class="icon-btn" data-act="${esc(opts.back.act)}" data-id="${esc(opts.back.id)}" title="${appH("m064")}" aria-label="${appH("m064")}">${icon("chevL", 18)}</button>` : "";
   $("#drawer-root").innerHTML = `
     <div class="drawer-backdrop" data-act="drawer-backdrop"></div>
-    <div class="drawer" role="dialog" aria-modal="true">
+    <div class="drawer${opts.wide ? " drawer-wide" : ""}" role="dialog" aria-modal="true">
       <div class="drawer-head">
         ${back}
         <div style="flex:1;min-width:0">
@@ -365,6 +367,7 @@ function closeDrawer() {
   if (!root || !root.firstElementChild) { drawerOnClose = null; drawerCtx = null; return; }
   const cb = drawerOnClose; drawerOnClose = null; drawerCtx = null;
   root.innerHTML = "";
+  if (typeof renderSidebarNav === "function") renderSidebarNav(true);
   if (cb) { try { cb(); } catch (e) { /* cleanup best-effort */ } }
 }
 
@@ -400,8 +403,9 @@ const S = {
 const NAV = [
   { id: "overview", get name() { return appT("m065"); }, icon: "home" },
   { id: "library", get name() { return appT("m066"); }, icon: "library" },
+  { id: "favorites", get name() { return appT("navFavorites"); }, icon: "heart" },
+  { id: "playlists", get name() { return appT("navPlaylists"); }, icon: "layers" },
   { id: "nodes", get name() { return appT("m067"); }, icon: "server" },
-  { id: "audit", get name() { return appT("m068"); }, icon: "audit" },
   { id: "settings", get name() { return appT("m069"); }, icon: "settings" }
 ];
 
@@ -540,7 +544,10 @@ async function refreshOverview() {
     OV.nodesError = !Array.isArray(nodes); OV.tracksError = !Array.isArray(tracks); OV.playlistsError = !Array.isArray(playlists);
     if (Array.isArray(nodes)) S.nodes = nodes;
     if (Array.isArray(tracks)) S.tracks = tracks;
-    if (Array.isArray(playlists)) S.playlists = playlists;
+    if (Array.isArray(playlists)) {
+      S.playlists = playlists;
+      if (typeof refreshSidebarPlaylists === "function") refreshSidebarPlaylists();
+    }
     S.metrics = metrics;
     if (Array.isArray(jobs)) S.jobs = jobs;
     if (Array.isArray(alerts)) S.alerts = alerts;
@@ -645,12 +652,21 @@ function ovAlbumCard(g, info = {}) {
   const key = g ? esc(albumKey(g)) : "";
   const count = appT(historical ? "listenedTracks" : "m151", { count: historical ? info.track_count : g.tracks.length });
   const unavailable = !OV.loaded ? appT("m125") : OV.tracksError ? appT("m126") : appT("m127");
+  const favArtist = missing ? "" : albumGroupArtist(g);
+  const meta = missing ? { year: 0, genres: [] } : albumGroupMeta(g);
+  const metaText = [meta.year > 0 ? String(meta.year) : "", meta.genres.slice(0, 2).join(" / ")].filter(Boolean).join(" · ");
+  const heart = missing || !favArtist || typeof favoriteAlbumHeart !== "function" ? "" : favoriteAlbumHeart(favArtist, album, "ov-heart");
+  const artistLine = missing
+    ? `<span class="ov-album-artist truncate">${esc(artist || appT("m117"))}</span>`
+    : `<button class="ov-album-artist truncate" data-act="artist-albums" data-name="${esc(favArtist || artist || "")}">${esc(artist || appT("m117"))}</button>`;
   return `<article class="ov-album">
     <button class="ov-album-open" ${missing ? 'disabled aria-disabled="true"' : `data-act="album-open" data-ak="${key}"`} ${missing ? `title="${esc(unavailable)}"` : ""} aria-label="${appH("m130", { value: album || appT("m128") })}">
       <span class="al-cover">${hash ? `<img class="al-img" src="/api/v1/covers/${esc(hash)}" alt="" loading="lazy">` : icon("disc", 30)}<span class="al-cnt mono">${esc(count)}</span></span>
-      <span class="al-name truncate">${esc(album || appT("m128"))}</span><span class="al-artist truncate">${esc(artist || appT("m117"))}</span>
+      <span class="al-name truncate">${esc(album || appT("m128"))}</span>
     </button>
-    <div class="ov-album-foot"><span class="hint truncate" title="${esc(info.time ? fmtTime(info.time) : "")}">${info.time ? ago(info.time) : ""}</span><button class="btn xs ghost" data-act="album-push" data-ak="${key}" ${playable ? "" : "disabled"} title="${missing ? esc(unavailable) : appH("m129")}" aria-label="${appH("m131", { value: album || appT("m128") })}">${icon("send", 12)}</button></div>
+    ${artistLine}
+    ${metaText ? `<div class="al-meta mono truncate">${esc(metaText)}</div>` : ""}
+    <div class="ov-album-foot"><span class="hint truncate" title="${esc(info.time ? fmtTime(info.time) : "")}">${info.time ? ago(info.time) : ""}</span>${heart}<button class="btn xs ghost" data-act="album-push" data-ak="${key}" ${playable ? "" : "disabled"} title="${missing ? esc(unavailable) : appH("m129")}" aria-label="${appH("m131", { value: album || appT("m128") })}">${icon("send", 12)}</button></div>
   </article>`;
 }
 function paintOvRecent() {
@@ -669,6 +685,7 @@ function paintOvRecent() {
     return;
   }
   const groups = new Map(OV.loaded && !OV.tracksError ? albumGroups().map(g => [albumKey(g), g]) : []);
+  if (typeof ensureAlbumFavorites === "function") ensureAlbumFavorites();
   el.innerHTML = head + tabs + note + (albums.length ? `<div class="ov-album-row ${OV.recentMore ? "expanded" : ""}">${albums.slice(0, OV.recentMore ? 50 : 8).map(a => ovAlbumCard(groups.get(albumKey(a)), Object.assign({}, a, { history: true, time: a.last_played_at }))).join("")}</div>` : empty("disc", S.search ? appT("m135") : appT("m136"), "", true));
 }
 function ovAddedAlbums(groups) {
@@ -683,6 +700,7 @@ function ovAddedAlbums(groups) {
 }
 function paintOvAlbums() {
   const el = $("#ov-albums"); if (!el) return;
+  if (typeof ensureAlbumFavorites === "function") ensureAlbumFavorites();
   const all = ovAddedAlbums(albumGroups());
   const unknown = all.filter(a => !a.added).length;
   const list = all.filter(a => a.added && hit(a.g.artist, a.g.album));
@@ -711,7 +729,7 @@ const PB = {
 };
 function playerBarShell() {
   return `<section class="player-bar" id="player-bar" aria-label="${appH("m154")}">
-    <div class="player-bar-meta"><div id="pb-cover"></div><div class="player-bar-text"><div class="player-bar-title truncate" id="pb-title">${appH("m155")}</div><div class="player-bar-sub truncate" id="pb-sub">${appH("m156")}</div><div class="player-bar-state" id="pb-state" role="status">${appH("m157")}</div><span class="codec-icon" id="pb-mqa" hidden></span></div>${typeof favoritePlayerShell === "function" ? favoritePlayerShell() : ""}${pbModeShell()}</div>
+    <div class="player-bar-meta"><div id="pb-cover"></div><div class="player-bar-text"><div class="player-bar-title truncate" id="pb-title">${appH("m155")}</div><div class="player-bar-sub truncate" id="pb-sub">${appH("m156")}</div><div class="player-bar-state" id="pb-state" role="status">${appH("m157")}</div><span id="pb-mqa" hidden></span></div>${typeof favoritePlayerShell === "function" ? favoritePlayerShell() : ""}${pbModeShell()}</div>
     <div class="player-bar-transport"><button class="btn ghost" id="pb-prev" data-act="queue-prev" aria-label="${appH("m158")}" title="${appH("m158")}" disabled>${icon("chevL", 17)}</button><button class="btn primary pc-play" id="pb-pause" data-act="play-pause" aria-label="${appH("m159")}" title="${appH("m159")}" disabled>${icon("play", 18)}</button><button class="btn ghost" id="pb-next" data-act="queue-next" aria-label="${appH("m160")}" title="${appH("m160")}" disabled>${icon("chevR", 17)}</button></div>
     <div class="player-bar-tools" tabindex="0" aria-label="${appH("m161")}">
       <div class="player-bar-seek"><span id="pb-elapsed" class="mono">0:00</span><input id="pb-seek" type="range" min="0" max="0" step="500" value="0" data-change="pb-seek" aria-label="${appH("m162")}" disabled><span id="pb-total" class="mono">0:00</span></div>
@@ -965,6 +983,23 @@ function albumGroups() {
 function filteredAlbums() { return albumGroups().filter(g => hit(g.artist, g.album)); }
 function albumKey(g) { return JSON.stringify([g.artist || "", g.album || ""]); }
 function albumByKey(key) { return albumGroups().find(g => albumKey(g) === key); }
+function genreNames(raw) {
+  const seen = new Set();
+  String(raw || "").split(";").forEach(part => { const g = part.trim(); if (g) seen.add(g); });
+  return [...seen];
+}
+function albumGroupMeta(g) {
+  let year = 0; const genres = new Set();
+  for (const t of g.tracks) {
+    if (t.year > year) year = t.year;
+    genreNames(t.genre).forEach(n => genres.add(n));
+  }
+  return { year, genres: [...genres] };
+}
+function albumGroupArtist(g) {
+  const t = g.tracks.find(x => x.album_artist) || g.tracks[0];
+  return (t && (t.album_artist || t.artist)) || g.artist || "";
+}
 function albumCard(g, i, sm) {
   return `<div class="album-card ${sm ? "sm" : ""}" data-act="album-open" data-ak="${esc(albumKey(g))}" role="button" tabindex="0">
     <div class="al-cover">${albumCoverHash(g) ? `<img class="al-img" src="/api/v1/covers/${esc(albumCoverHash(g))}" alt="" loading="lazy">` : icon("disc", sm ? 22 : 30)}<span class="al-cnt mono">${appH("m151", { count: appN(g.tracks.length) })}</span></div>
@@ -1164,6 +1199,72 @@ async function queueMove(id, dir) {
     toast(dir === "next" ? appT("m263") : appT("m264"), "ok");
   } catch (e) { toast(e.message, "err"); }
   await queueAfter(id);
+}
+
+/* ---------- keyboard shortcuts ---------- */
+function hotkeyTyping(t) {
+  return !!(t && (t.isContentEditable || (t.closest && t.closest("input,textarea,select,[contenteditable=true]"))));
+}
+async function hotkeySeek(deltaSec) {
+  const id = PB.id; if (!id) return;
+  const p = S.play[id] || {};
+  if (!(p.playing || p.state === "paused")) return;
+  const rate = p.rate || 0, total = p.duration_ms || 0;
+  let elapsed = rate && p.pts ? p.pts / rate * 1000 : 0;
+  if (total && elapsed > total) elapsed = total;
+  const target = Math.max(0, Math.round(elapsed + deltaSec * 1000));
+  try { await api("POST", `/nodes/${enc(id)}/seek`, { position_ms: total ? Math.min(target, total) : target }); }
+  catch (e) { toast(e.message, "err"); }
+  await refreshPlayerBar();
+}
+async function hotkeyVolume(delta) {
+  const id = PB.id; if (!id) return;
+  const slider = $("#pb-volume"), p = S.play[id] || {};
+  const current = slider ? Number(slider.value) : Number(p.volume == null ? 100 : p.volume);
+  const next = clamp(current + delta, 0, 100);
+  if (next === current) return;
+  try { await api("POST", `/nodes/${enc(id)}/volume`, { volume: next }); }
+  catch (e) { toast(e.message, "err"); }
+  await refreshPlayerBar();
+}
+async function hotkeyMute() {
+  const id = PB.id; if (!id) return;
+  const p = S.play[id] || {};
+  const current = Number(p.volume == null ? 100 : p.volume);
+  if (current > 0) PB.mutePrev = current;
+  try { await api("POST", `/nodes/${enc(id)}/volume`, { volume: current > 0 ? 0 : (PB.mutePrev || 50) }); }
+  catch (e) { toast(e.message, "err"); }
+  await refreshPlayerBar();
+}
+function openHotkeys() {
+  const rows = [["Space", appT("hkPlayPause")], ["← / →", appT("hkPrevNext")], ["Ctrl + ← / →", appT("hkSeek")], ["↑ / ↓", appT("hkVolume")], ["M", appT("hkMute")], ["F", appT("hkFavorite")], ["/", appT("hkSearch")], ["?", appT("hkHelp")], ["Esc", appT("hkClose")]];
+  openModal(`${icon("info", 18)} ${appT("hotkeysTitle")}`, `<div class="q-list">${rows.map(([key, label]) => `<div class="q-row"><span class="hk-key mono">${esc(key)}</span><span class="q-info"><span class="q-title">${esc(label)}</span></span></div>`).join("")}</div><p class="f-hint">${appT("hkNote")}</p>`, `<button class="btn ghost" data-act="modal-close">${appH("m040")}</button>`, { narrow: true });
+}
+async function hotkeyMove(dir) {
+  const id = PB.id;
+  if (!id) { toast(appT("noTerminal"), "warn"); return; }
+  await queueMove(id, dir);
+}
+function onHotkey(e) {
+  if (e.defaultPrevented || e.altKey || e.metaKey) return;
+  if (hotkeyTyping(e.target)) return;
+  const key = e.key;
+  if (e.ctrlKey) {
+    if (key === "ArrowLeft" || key === "ArrowRight") { e.preventDefault(); hotkeySeek(key === "ArrowLeft" ? -10 : 10); }
+    return;
+  }
+  if (key === " " || key === "Spacebar") {
+    if (e.target && e.target.matches && e.target.matches("button,a,summary,[role=button]")) return;
+    e.preventDefault(); if (PB.id) playPause(PB.id);
+    return;
+  }
+  if (key === "ArrowLeft") { e.preventDefault(); hotkeyMove("prev"); }
+  else if (key === "ArrowRight") { e.preventDefault(); hotkeyMove("next"); }
+  else if (key === "ArrowUp") { e.preventDefault(); hotkeyVolume(5); }
+  else if (key === "ArrowDown") { e.preventDefault(); hotkeyVolume(-5); }
+  else if (key === "m" || key === "M") hotkeyMute();
+  else if (key === "f" || key === "F") { const b = $("#pb-favorite"); if (b && !b.disabled) b.click(); }
+  else if (key === "?") { e.preventDefault(); openHotkeys(); }
 }
 async function queueJump(id, idx) {
   try { await api("POST", `/nodes/${enc(id)}/queue/jump`, { index: idx }); toast(appT("m265"), "ok"); }
@@ -2684,28 +2785,51 @@ function auditActionBadge(a) {
   const k = /delete|revoke|ban|rollback|fail|deny/.test(s) ? "err" : /create|import|activate|authorize|publish|add|register|advance/.test(s) ? "ok" : /update|patch|config|set|trust/.test(s) ? "violet" : "info";
   return badge(s || "—", k);
 }
-function paintAudit() {
-  const chips = $("#au-chips"), tbl = $("#au-table");
-  if (!chips || !tbl) return;
+function auditChipsHTML() {
   const counts = {};
   S.audit.forEach(r => { counts[r.action] = (counts[r.action] || 0) + 1; });
   const top = Object.keys(counts).sort((a, b) => counts[b] - counts[a]).slice(0, 10);
-  chips.innerHTML = `<button class="chip ${S.auditFilter === "all" ? "active" : ""}" data-act="audit-filter" data-f="all">${appH("m738")} <span class="cnt">${esc(typeof (S.audit.length) === "number" ? appN(S.audit.length) : (S.audit.length))}</span></button>` +
+  return `<button class="chip ${S.auditFilter === "all" ? "active" : ""}" data-act="audit-filter" data-f="all">${appH("m738")} <span class="cnt">${esc(typeof (S.audit.length) === "number" ? appN(S.audit.length) : (S.audit.length))}</span></button>` +
     top.map(a => `<button class="chip ${S.auditFilter === a ? "active" : ""}" data-act="audit-filter" data-f="${esc(a)}">${esc(a)} <span class="cnt">${esc(typeof (counts[a]) === "number" ? appN(counts[a]) : (counts[a]))}</span></button>`).join("");
+}
+function auditTableHTML() {
   let list = S.audit.slice();
   if (S.auditFilter !== "all") list = list.filter(r => r.action === S.auditFilter);
   list = list.filter(r => hit(r.actor, r.action, r.target, r.detail, r.ip, r.result));
   list.sort((a, b) => ts(b.at) - ts(a.at));
-  if (!list.length) { tbl.innerHTML = empty("audit", S.audit.length ? appT("m739") : appT("m740"), "", true); return; }
-  tbl.innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>${appH("m741")}</th><th>${appH("m742")}</th><th>${appH("m743")}</th><th>${appH("m744")}</th><th>${appH("m299")}</th><th>${appH("m300")}</th></tr></thead><tbody>` +
+  if (!list.length) return empty("audit", S.audit.length ? appT("m739") : appT("m740"), "", true);
+  return `<div class="tbl-wrap audit-tbl"><table class="tbl"><thead><tr><th>${appH("m741")}</th><th>${appH("m742")}</th><th>${appH("m743")}</th><th>${appH("m744")}</th><th>${appH("m299")}</th><th>${appH("m300")}</th></tr></thead><tbody>` +
     list.map(r => `<tr>
       <td class="sub nowrap">${fmtTime(r.at)}</td>
       <td>${esc(r.actor || "—")}<div class="sub mono">${esc(r.ip || "")}</div></td>
       <td>${auditActionBadge(r.action)}</td>
-      <td><span class="mono truncate" style="max-width:280px;display:inline-block;vertical-align:bottom">${esc(r.target || "—")}</span>${r.detail ? `<div class="sub truncate" style="max-width:320px">${esc(r.detail)}</div>` : ""}</td>
+      <td><span class="mono audit-target">${esc(r.target || "—")}</span>${r.detail ? `<div class="sub audit-detail">${esc(r.detail)}</div>` : ""}</td>
       <td>${resultBadge(r.result)}</td>
       <td class="cell-mono sub">${r.duration_ms != null ? r.duration_ms + " ms" : "—"}</td>
     </tr>`).join("") + `</tbody></table></div>`;
+}
+function paintAudit() {
+  const chips = $("#au-chips"), tbl = $("#au-table");
+  if (!chips || !tbl) return;
+  chips.innerHTML = auditChipsHTML();
+  tbl.innerHTML = auditTableHTML();
+}
+function paintAuditDrawer() {
+  if (!drawerCtx || drawerCtx.kind !== "audit") return;
+  const chips = $("#au-d-chips"), tbl = $("#au-d-table");
+  if (!chips || !tbl) return;
+  chips.innerHTML = auditChipsHTML();
+  tbl.innerHTML = auditTableHTML();
+}
+async function openAuditDrawer() {
+  openDrawer(`${icon("audit", 18)} ${appH("m068")}`, appT("auditDrawerSub"), `<div class="chips mb12" id="au-d-chips"></div><div id="au-d-table"></div>`,
+    `<button class="btn ghost sm" data-act="audit-export" data-fmt="csv">${icon("download", 14)} CSV</button><button class="btn ghost sm" data-act="audit-export" data-fmt="json">${icon("download", 14)} JSON</button>`,
+    { ctx: { kind: "audit" }, wide: true });
+  if (S.auditFilter !== "all") S.auditFilter = "all";
+  paintAuditDrawer();
+  try { const rows = await api("GET", "/audit?limit=200"); S.audit = Array.isArray(rows) ? rows : []; }
+  catch (e) { toast(e.message, "err"); }
+  paintAuditDrawer();
 }
 function auditExport(fmt) {
   download(`/audit/export?format=${fmt === "json" ? "json" : "csv"}`);
@@ -3025,6 +3149,8 @@ async function trackEnqueueGo(next = false) {
 function openAlbum(key) {
   const g = albumByKey(key); if (!g) { toast(appT("m834"), "warn"); return; }
   const dec = g.tracks.filter(t => t.decodable).length;
+  const meta = albumGroupMeta(g);
+  const metaText = [meta.year > 0 ? String(meta.year) : "", meta.genres.slice(0, 3).join(" / ")].filter(Boolean).join(" · ");
   const rows = g.tracks.map((t, i) => `
     <div class="q-row">
       <span class="q-idx mono">${i + 1}</span>
@@ -3042,15 +3168,26 @@ function openAlbum(key) {
       ${coverArt(g.album, g.artist, "thumb", 22, albumCoverHash(g))}
       <div class="tp-track" style="min-width:0">
         <div class="tp-title truncate">${esc(g.album || appT("m128"))}</div>
-        <div class="tp-meta">${appH("m838", { value: g.artist || appT("m117"), count: appN(g.tracks.length), value2: fmtDur(g.ms) })}${dec < g.tracks.length ? appH("m837", { value: dec }) : ""}</div>
+        <div class="tp-meta">${appH("m838", { value: g.artist || appT("m117"), count: appN(g.tracks.length), value2: fmtDur(g.ms) })}${dec < g.tracks.length ? appH("m837", { value: dec }) : ""}${metaText ? " · " + esc(metaText) : ""}</div>
       </div>
     </div>
     <div class="divider"></div>
-    <div class="q-list">${rows}</div>`,
+    <div class="q-list">${rows}</div>
+    <div id="album-related" class="album-related"></div>`,
     `<button class="btn ghost" data-act="modal-close">${appH("m040")}</button><div class="spacer"></div>
-     ${typeof favoriteAlbumButton === "function" && g.tracks.length && g.tracks.every(t => (t.album_artist || t.artist || "") === (g.tracks[0].album_artist || g.tracks[0].artist || "")) ? favoriteAlbumButton(g.tracks[0].album_artist || g.tracks[0].artist, g.album) : ""}
+     ${typeof favoriteAlbumHeart === "function" ? favoriteAlbumHeart(albumGroupArtist(g), g.album || "", "modal-heart") : ""}
      <button class="btn" data-act="album-pl" data-ak="${esc(key)}">${icon("layers", 15)} ${appH("m836")}</button>
      <button class="btn primary" data-act="album-push" data-ak="${esc(key)}" ${dec ? "" : "disabled"}>${icon("send", 15)} ${appH("m839")}</button>`);
+  loadAlbumRelated(albumGroupArtist(g), g.album || "");
+}
+function loadAlbumRelated(artist, album) {
+  const el = $("#album-related");
+  if (!el || !artist || !album || typeof relatedStripHTML !== "function") return;
+  api("GET", "/library/related?artist=" + encodeURIComponent(artist) + "&album=" + encodeURIComponent(album) + "&limit=6").then(r => {
+    if (!document.body.contains(el)) return;
+    const list = (r && r.items) || [];
+    el.innerHTML = list.length ? `<div class="album-related-head">${icon("disc", 13)} ${esc(typeof lbT === "function" ? lbT("relatedAlbums") : "")}</div>` + relatedStripHTML(list) : "";
+  }).catch(() => {});
 }
 function albumPush(key) {
   const g = albumByKey(key); if (!g) { toast(appT("m834"), "warn"); return; }
@@ -3113,59 +3250,101 @@ async function plNewSubmit() {
 }
 async function syncPlaylists() {
   try { const p = await api("GET", "/playlists"); S.playlists = Array.isArray(p) ? p : []; } catch (e) { return; }
+  if (typeof refreshSidebarPlaylists === "function") refreshSidebarPlaylists();
   if (S.view === "overview") { paintOverviewKpis(); paintOvPlaylists(); }
   else if (S.view === "library") { paintLibTabs(); if (S.libTab === "playlists") paintLibTab(); }
 }
 
-/* ---- playlist detail (view / reorder / remove / rename / delete) ---- */
-const PL = { id: "", detail: null };
-async function openPlaylist(id) {
-  PL.id = id; PL.detail = null;
-  openModal(`${icon("layers", 18)} ${appH("m851")}`, `<div id="pl-body">${empty("refresh", appT("m149"), "", true)}</div>`, "");
-  try { PL.detail = await api("GET", `/playlists/${enc(id)}`); }
-  catch (e) { toast(e.message, "err"); closeModal(); return; }
-  if (!$(".modal") || PL.id !== id) return;
-  paintPlaylist();
+/* ================= PLAYLISTS ================= */
+const PLD = { id: "", detail: null, seq: 0 };
+function playlistPageActive() { return !!PLD.id; }
+async function openPlaylistPage(id) {
+  if (!id) return;
+  PLD.id = id; PLD.detail = null;
+  clearTimeout(LB.searchTimer); LB.sel.clear(); S.libTab = "playlists";
+  if (S.view === "library") { if (typeof renderSidebarNav === "function") renderSidebarNav(); return refreshLibraryBrowser(); }
+  setView("library");
 }
-function paintPlaylist() {
-  const d = PL.detail; if (!d || !$(".modal")) return;
+function closePlaylistPage() {
+  PLD.id = ""; PLD.detail = null;
+  if (S.view === "library") { if (typeof renderSidebarNav === "function") renderSidebarNav(); return refreshLibraryBrowser(); }
+  setView("library");
+}
+async function playlistPageLoad() {
+  const id = PLD.id, seq = ++PLD.seq;
+  const active = () => PLD.id === id && seq === PLD.seq && S.view === "library" && S.libTab === "playlists";
+  try {
+    const d = await api("GET", `/playlists/${enc(id)}`);
+    if (!active()) return;
+    PLD.detail = d;
+    LB.busy = false;
+    if (typeof paintLibraryBrowserHeader === "function") { paintLibraryBrowserHeader(); paintLibraryBrowserItems(); }
+    const pages = $("#lb-pages"); if (pages) pages.innerHTML = "";
+  } catch (e) {
+    if (!active()) return;
+    LB.busy = false;
+    const body = $("#lb-body");
+    if (body) body.innerHTML = empty("alert", appT("m070") + ((e && e.message) || appT("m071")), `<button class="btn primary" data-act="pl-page-retry">${icon("refresh", 15)} ${appH("m072")}</button>`);
+  }
+}
+function playlistPageHeader(el) {
+  if (!el) return;
+  const d = PLD.detail, items = (d && d.items) || [];
+  el.innerHTML = `<div class="lb-crumbs"><button class="btn ghost xs" data-act="pl-page-back">${icon("chevL", 12)} ${esc(appT("plPageBack"))}</button></div>
+    <div class="pl-page-head">
+      <div class="pl-page-title"><div class="tp-title truncate" id="pl-page-name">${esc(d ? d.name : "…")}</div><div class="tp-meta" id="pl-page-meta">${d ? esc(appH("m855", { count: appN(items.length), time: ago(d.updated_at) })) : ""}</div></div>
+      <div class="pl-page-acts">
+        <button class="btn ghost sm" data-act="pl-page-add">${icon("plus", 14)} ${esc(appT("plPageAdd"))}</button>
+        <button class="btn ghost sm" data-act="pl-rename" data-id="${esc(PLD.id)}">${icon("edit", 14)} ${appH("m856")}</button>
+        <button class="btn danger sm" data-act="pl-delete" data-id="${esc(PLD.id)}">${icon("trash", 14)} ${appH("m531")}</button>
+        <div class="spacer"></div>
+        <button class="btn primary sm" data-act="pl-push" data-id="${esc(PLD.id)}" ${items.some(t => !t.missing) ? "" : "disabled"}>${icon("send", 15)} ${appH("m763")}</button>
+      </div>
+    </div>
+    <div class="f-hint lb-note">${esc(appT("plPageAddHint"))}</div>`;
+}
+function playlistPageItems(el) {
+  if (!el) return;
+  const d = PLD.detail;
+  if (!d) { el.innerHTML = empty("refresh", appT("m149"), "", true); return; }
   const items = d.items || [];
   const rows = items.map((t, i) => `
     <div class="q-row">
       <span class="q-idx mono">${i + 1}</span>
       <span class="q-info">
-        <span class="q-title truncate">${esc(t.title || t.track_id)}${t.mqa ? " " + badge("MQA", "gold") : ""}${t.codec === "dsd" ? " " + badge("DSD", "gold") : ""}${t.missing ? " " + badge(appT("m348"), "warn") : ""}</span>
+        <span class="q-title truncate">${esc(t.title || t.track_id)}${t.mqa ? " " + badge("MQA", "gold") : ""}${t.codec === "dsd" ? " " + badge("DSD", "gold") : ""}${t.cue_end ? " " + badge("CUE", "gold") : ""}${t.missing ? " " + badge(appT("m348"), "warn") : ""}</span>
         <span class="q-sub txt-faint">${esc([t.artist, t.album].filter(Boolean).join(" · ") || "—")}${t.duration_ms ? " · " + fmtDur(t.duration_ms) : ""}</span>
       </span>
       <span class="q-acts">
+        <button class="btn xs ghost" data-act="pl-item-send" data-i="${i}" title="${appH("m763")}" ${t.missing ? "disabled" : ""}>${icon("send", 12)}</button>
         <button class="btn xs ghost" data-act="pl-item-up" data-i="${i}" ${i === 0 ? "disabled" : ""} title="${appH("m852")}">${icon("arrowUp", 12)}</button>
         <button class="btn xs ghost" data-act="pl-item-down" data-i="${i}" ${i === items.length - 1 ? "disabled" : ""} title="${appH("m853")}">${icon("arrowDown", 12)}</button>
         <button class="btn xs ghost" data-act="pl-item-del" data-i="${i}" title="${appH("m516")}">${icon("x", 12)}</button>
       </span>
     </div>`).join("");
-  setModalBody(`
-    <div class="tp-track">
-      <div class="tp-title truncate">${esc(d.name)}</div>
-      <div class="tp-meta">${appH("m855", { count: appN(items.length), time: ago(d.updated_at) })}</div>
-    </div>
-    <div class="divider"></div>
-    ${items.length ? `<div class="q-list">${rows}</div>` : empty("music", appT("m854"), "", true)}`);
-  const ok = items.some(t => !t.missing);
-  setModalFoot(`
-    <button class="btn ghost" data-act="pl-rename" data-id="${esc(d.id)}">${icon("edit", 14)} ${appH("m856")}</button>
-    <button class="btn danger" data-act="pl-delete" data-id="${esc(d.id)}">${icon("trash", 14)} ${appH("m531")}</button>
-    <div class="spacer"></div>
-    <button class="btn primary" data-act="pl-push" data-id="${esc(d.id)}" ${ok ? "" : "disabled"}>${icon("send", 15)} ${appH("m763")}</button>`);
+  el.innerHTML = items.length ? `<div class="q-list">${rows}</div>` : empty("music", appT("m854"), `<button class="btn xs ghost" data-act="pl-page-add">${esc(appT("plPageAdd"))}</button>`, true);
+}
+function playlistPageRepaint() {
+  if (!playlistPageActive() || S.view !== "library") return;
+  const header = $("#lb-header"), body = $("#lb-body");
+  if (header) playlistPageHeader(header);
+  if (body) playlistPageItems(body);
+}
+function plItemSend(i) {
+  const items = (PLD.detail && PLD.detail.items) || [];
+  const t = items[i];
+  if (!t || t.missing) return;
+  openPushPicker({ trackIDs: [t.track_id], track: { id: t.track_id, title: t.title, artist: t.artist, album: t.album, codec: t.codec, mqa: t.mqa, duration_ms: t.duration_ms }, label: PLD.detail.name });
 }
 async function plSaveItems(ids) {
   try {
-    PL.detail = await api("PUT", `/playlists/${enc(PL.id)}/items`, { track_ids: ids });
-    paintPlaylist();
+    PLD.detail = await api("PUT", `/playlists/${enc(PLD.id)}/items`, { track_ids: ids });
+    playlistPageRepaint();
     await syncPlaylists();
   } catch (e) { toast(e.message, "err"); }
 }
 function plItemMove(i, delta) {
-  const items = (PL.detail && PL.detail.items) || [];
+  const items = (PLD.detail && PLD.detail.items) || [];
   const j = i + delta;
   if (j < 0 || j >= items.length) return;
   const ids = items.map(t => t.track_id);
@@ -3173,17 +3352,17 @@ function plItemMove(i, delta) {
   plSaveItems(ids);
 }
 function plItemDel(i) {
-  const ids = ((PL.detail && PL.detail.items) || []).map(t => t.track_id);
+  const ids = ((PLD.detail && PLD.detail.items) || []).map(t => t.track_id);
   if (i < 0 || i >= ids.length) return;
   ids.splice(i, 1);
   plSaveItems(ids);
 }
 function openPlRename(id) {
-  const p = (PL.detail && PL.detail.id === id) ? PL.detail : S.playlists.find(x => x.id === id);
+  const p = (PLD.detail && PLD.detail.id === id) ? PLD.detail : S.playlists.find(x => x.id === id);
   openModal(`${icon("edit", 18)} ${appH("m857")}`, `
     <div id="plr-err"></div>
     <div class="field"><label>${appH("m427")}</label><input id="plr-name" class="inp" maxlength="80" value="${esc(p ? p.name : "")}"></div>`,
-    `<button class="btn ghost" data-act="pl-open" data-id="${esc(id)}">${appH("m064")}</button><div class="spacer"></div><button class="btn primary" data-act="pl-rename-submit" data-id="${esc(id)}">${icon("check", 15)} ${appH("m858")}</button>`, { narrow: true });
+    `<button class="btn ghost" data-act="modal-close">${appH("m063")}</button><div class="spacer"></div><button class="btn primary" data-act="pl-rename-submit" data-id="${esc(id)}">${icon("check", 15)} ${appH("m858")}</button>`, { narrow: true });
   const i = $("#plr-name"); if (i) i.focus();
 }
 async function plRenameSubmit(id) {
@@ -3193,20 +3372,23 @@ async function plRenameSubmit(id) {
   try {
     await api("PATCH", `/playlists/${enc(id)}`, { name });
     toast(appT("m859"), "ok");
+    closeModal();
+    if (PLD.id === id && PLD.detail) { PLD.detail.name = name; playlistPageRepaint(); }
     await syncPlaylists();
-    openPlaylist(id);
+    if (typeof renderSidebarNav === "function") renderSidebarNav(true);
   } catch (e) { toast(e.message, "err"); }
 }
 async function plDelete(id) {
-  const p = (PL.detail && PL.detail.id === id) ? PL.detail : S.playlists.find(x => x.id === id);
+  const p = (PLD.detail && PLD.detail.id === id) ? PLD.detail : S.playlists.find(x => x.id === id);
   const name = p ? p.name : shortId(id);
   const ok = await confirmDlg({ title: appT("m860"), message: appT("m861", { name: name }), okText: appT("m531") });
   if (!ok) return;
   try {
     await api("DELETE", `/playlists/${enc(id)}`);
     toast(appT("m862", { name: name }), "ok");
-    closeModal();
+    if (PLD.id === id) closePlaylistPage();
     await syncPlaylists();
+    if (typeof renderSidebarNav === "function") renderSidebarNav(true);
   } catch (e) { toast(e.message, "err"); }
 }
 
@@ -3302,7 +3484,7 @@ function playerShell() {
       <button class="btn xs ghost" data-act="queue-clear" data-id="${esc(id)}">${icon("trash", 12)} ${appH("m872")}</button>
     </div>
     <div id="ply-add" class="ply-add hidden">
-      <input id="ply-add-search" class="inp" placeholder="${appH("m873")}" value="" autocomplete="off">
+      <input id="ply-add-search" class="inp" data-voice placeholder="${appH("m873")}" value="" autocomplete="off">
       <div class="ply-add-list" id="ply-add-list"></div>
       <div class="acts mt8"><span class="f-hint" id="ply-add-cnt"></span><div class="spacer"></div><button class="btn primary sm" id="ply-add-go" data-act="ply-add-go" disabled>${icon("plus", 14)} ${appH("m811")}</button></div>
     </div>
@@ -3399,7 +3581,7 @@ function playerQueueList(id, q) {
     <div class="q-row ${i === pos ? "cur" : ""}">
       <span class="q-idx mono">${i === pos ? icon("speaker", 12) : i + 1}</span>
       <span class="q-info">
-        <span class="q-title truncate">${esc(t.title || t.track_id)}${t.mqa ? " " + badge("MQA", "gold") : ""}${t.codec === "dsd" ? " " + badge("DSD", "gold") : ""}${t.missing ? " " + badge(appT("m348"), "warn") : ""}</span>
+        <span class="q-title truncate">${esc(t.title || t.track_id)}${t.mqa ? " " + badge("MQA", "gold") : ""}${t.codec === "dsd" ? " " + badge("DSD", "gold") : ""}${t.cue_end ? " " + badge("CUE", "gold") : ""}${t.missing ? " " + badge(appT("m348"), "warn") : ""}</span>
         <span class="q-sub txt-faint">${esc([t.artist, t.album].filter(Boolean).join(" · ") || "—")}${t.duration_ms ? " · " + fmtDur(t.duration_ms) : ""}</span>
       </span>
       <span class="q-acts">
@@ -3586,7 +3768,8 @@ Object.assign(ACT, {
   "key-trust": ds => keyTrust(ds.id),
   "key-export": () => keyExport(),
   "audit-export": ds => auditExport(ds.fmt),
-  "audit-filter": ds => { S.auditFilter = ds.f; paintAudit(); },
+  "audit-filter": ds => { S.auditFilter = ds.f; if (drawerCtx && drawerCtx.kind === "audit") paintAuditDrawer(); else paintAudit(); },
+  "audit-drawer": () => openAuditDrawer(),
   "alert-scan": () => alertScan(),
   "alert-ack-all": () => alertAckAll(),
   "alert-filter": ds => { S.alertFilter = ds.f; paintAlerts(); },
@@ -3612,6 +3795,7 @@ Object.assign(ACT, {
   "ov-recent-tab": ds => { OV.recentTab = ds.tab === "albums" ? "albums" : "tracks"; OV.recentMore = false; paintOvRecent(); },
   "ov-track-play": ds => openTrackPlay(ds.id),
   "album-open": ds => openAlbum(ds.ak),
+  "artist-albums": ds => { if (typeof openArtistAlbums === "function") openArtistAlbums(ds.name || ""); },
   "album-push": ds => albumPush(ds.ak),
   "album-pl": ds => { const g = albumByKey(ds.ak); if (g) openPlPicker(g.tracks.map(t => t.id)); },
   "track-pl": ds => openPlPicker([ds.id]),
@@ -3619,7 +3803,11 @@ Object.assign(ACT, {
   "pl-new-submit": () => plNewSubmit(),
   "pl-pick": ds => plPick(ds.id),
   "pl-pick-new": () => openPlNew(PP.ids),
-  "pl-open": ds => openPlaylist(ds.id),
+  "pl-open": ds => openPlaylistPage(ds.id),
+  "pl-page-back": () => closePlaylistPage(),
+  "pl-page-retry": () => playlistPageLoad(),
+  "pl-page-add": () => { toast(appT("plPageAddHint"), "info"); return openLibraryTab("tracks"); },
+  "pl-item-send": ds => plItemSend(Number(ds.i)),
   "pl-push": ds => openPlPush(ds.id),
   "pl-item-up": ds => plItemMove(Number(ds.i), -1),
   "pl-item-down": ds => plItemMove(Number(ds.i), 1),
@@ -3833,6 +4021,7 @@ function boot() {
   document.addEventListener("change", onChange);
   document.addEventListener("input", onInput);
   document.addEventListener("keydown", onKey);
+  document.addEventListener("keydown", onHotkey);
   document.addEventListener("pointerdown", e => { if (e.target.matches("#pb-seek, #pb-volume")) playerBarBeginRange(e.target); });
   document.addEventListener("pointerup", () => { PB.dragging = PB.volDrag = false; });
   document.addEventListener("pointercancel", e => {

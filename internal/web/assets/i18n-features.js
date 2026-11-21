@@ -139,6 +139,8 @@ I18n.register("features", {
   favRemoved: ["已取消收藏", "已取消收藏", "Removed from favorites"],
   favSaveFailed: ["收藏未保存，请重试", "收藏未儲存，請重試", "Favorite not saved. Please try again."],
   favSaveAlbum: ["收藏专辑", "收藏專輯", "Save album"],
+  favRemoveAlbum: ["取消收藏专辑", "取消收藏專輯", "Unsave album"],
+  relatedAlbums: ["相似专辑", "相似專輯", "Similar albums"],
   favLateNight: ["夜深了", "夜深了", "Hello, night owl"],
   favMorning: ["早上好", "早安", "Good morning"],
   favAfternoon: ["下午好", "午安", "Good afternoon"],

@@ -136,6 +136,25 @@ func (a *API) listFavorites(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, page)
 }
 
+// listFavoriteAlbums returns all album favorite keys for card heart state.
+func (a *API) listFavoriteAlbums(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	if a.lib == nil {
+		writeErrorCode(w, http.StatusServiceUnavailable, "library_unavailable", "媒体库未启用")
+		return
+	}
+	if _, err := favoriteQueryValues(r); err != nil {
+		fail(w, err)
+		return
+	}
+	albums, err := a.lib.ListFavoriteAlbums()
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": albums})
+}
+
 func (a *API) favoriteState(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	if a.lib == nil {

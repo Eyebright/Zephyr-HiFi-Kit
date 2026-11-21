@@ -11,6 +11,9 @@
 .xp-settings-link .ic { flex: none; }
 .xp-settings-link:hover { background: var(--soft); color: var(--text); }
 .xp-settings-link.active { background: rgba(246,168,33,.08); color: var(--gold); }
+.xp-playlist-children { max-height: 240px; overflow-y: auto; }
+.xp-pl-count { margin-left: auto; font-size: 10px; color: var(--faint); }
+.xp-settings-empty { padding: 6px 8px; font-size: 11px; color: var(--faint); }
 #nav button:focus-visible, .xp-onboarding button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 #mobile-nav-toggle, #mobile-nav-close, #nav-backdrop { display: none; }
 #onboarding-root { padding: 24px 26px 0; scroll-margin-top: 80px; }
