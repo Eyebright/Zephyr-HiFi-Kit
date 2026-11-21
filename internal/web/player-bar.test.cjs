@@ -142,7 +142,7 @@ function harness(t) {
           return match[2] === "play" ? h.plays[id] || { connected: false } : h.queues[id] || { tracks: [], position: 0 };
         }
       }
-      if (method === "POST" && /^\/nodes\/[^/]+\/(seek|volume|device|pause|resume|queue\/(prev|next))$/.test(route)) return {};
+      if (method === "POST" && /^\/nodes\/[^/]+\/(seek|volume|device|pause|resume|queue\/(prev|next|mode))$/.test(route)) return {};
       h.unexpected.push({ method, route });
       throw new Error("Unexpected request: " + method + " " + route);
     }
@@ -708,4 +708,30 @@ test("changing view during console loading closes the modal but leaves playback 
   pending.resolve(h.play({ title: "Late but current playback" })); await work;
   assert.equal(h.run("S.view"), "audit"); assert.equal(h.el("ply-body"), null); assert.equal(h.run("PLY.id"), "");
   assert.equal(h.el("pb-title").textContent, "Late but current playback"); assert.equal(h.run("PB.id"), "a");
+});
+
+
+test("mode icon menu reflects and updates the per-terminal mode; codec badge only when detected", async t => {
+  const h = harness(t);
+  h.nodes = [h.node("a")];
+  h.plays.a = h.play({ mqa: true });
+  h.queues.a = { tracks: ["song-a"], position: 0, mode: "loop_all" };
+  await h.init();
+
+  const badge = h.el("pb-mqa"), wrap = h.el("pb-mode");
+  assert.equal(badge.hidden, false);
+  assert.match(badge.innerHTML, /MQA/);
+  assert.equal(wrap.dataset.disabled, "0");
+  assert.match(h.el("pb-mode-btn").getAttribute("aria-label"), /列表循环/);
+  assert.equal(wrap.querySelectorAll("[data-mode]").length, 4);
+  assert.equal(wrap.querySelector('[data-mode="loop_all"]').classList.contains("active"), true);
+  assert.equal(wrap.querySelector('[data-mode="sequence"]').classList.contains("active"), false);
+
+  await h.run("ACT['pb-mode-set']({mode:'shuffle'})");
+  const call = h.calls.find(c => c.route === "/nodes/a/queue/mode");
+  assert.deepEqual(call.body, { mode: "shuffle" });
+  assert.equal(h.run("S.nodeQueue['a'].mode"), "shuffle");
+
+  h.run("S.play.a = { ...S.play.a, mqa: false, dop: false, converted: false }; paintPlayerBar()");
+  assert.equal(badge.hidden, true, "MQA icon must stay hidden for non-MQA sources");
 });

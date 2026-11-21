@@ -2,8 +2,12 @@ package ui
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"embed"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"net"
 	"net/http"
@@ -39,6 +43,8 @@ func (s *Server) routes() {
 
 	// GET routes stay open (read-only).
 	s.mux.HandleFunc("GET /local/api/status", s.status)
+	s.mux.HandleFunc("GET /local/api/identity", s.identity)
+	s.mux.HandleFunc("POST /local/api/server-endpoint", s.serverEndpoint)
 	s.mux.HandleFunc("GET /local/api/services", s.services)
 	s.mux.HandleFunc("GET /local/api/metrics", s.metrics)
 	s.mux.HandleFunc("GET /local/api/catalog", s.catalog)
@@ -126,6 +132,46 @@ func isLoopback(remoteAddr string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+// identity answers a nonce challenge for server-initiated address pushes. The
+// server verifies the HMAC before sending its node secret, so a DHCP-reassigned
+// address cannot collect that secret.
+func (s *Server) identity(w http.ResponseWriter, r *http.Request) {
+	nonce := r.URL.Query().Get("nonce")
+	if nonce == "" || len(nonce) > 128 {
+		writeErr(w, http.StatusBadRequest, "nonce required")
+		return
+	}
+	id := s.backend.Identity(ctx(r)).NodeID
+	if id == "" {
+		writeErr(w, http.StatusServiceUnavailable, "terminal is not registered yet")
+		return
+	}
+	secret := s.backend.Secret()
+	mac := hmac.New(sha256.New, []byte(secret))
+	fmt.Fprintf(mac, "%s|%s|server-endpoint", id, nonce)
+	writeJSON(w, http.StatusOK, map[string]any{"node_id": id, "hmac": hex.EncodeToString(mac.Sum(nil))})
+}
+
+func (s *Server) serverEndpoint(w http.ResponseWriter, r *http.Request) {
+	if !s.gate(w, r) {
+		return
+	}
+	var b struct {
+		ServerURL string `json:"server_url"`
+		ZATAddr   string `json:"zat_addr"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad JSON")
+		return
+	}
+	changed, err := s.backend.SetServerEndpoint(b.ServerURL, b.ZATAddr)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "changed": changed})
 }
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {

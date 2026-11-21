@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"io"
 	"os"
+	"strings"
 )
 
 // ProbeResult is the identified format of one audio file.
@@ -20,10 +21,13 @@ type ProbeResult struct {
 	TotalSamples uint64 `json:"total_samples"`
 	DurationMS   int    `json:"duration_ms"`
 	Decodable    bool   `json:"decodable"` // v0.1: flac + wav only
+	MQA          bool   `json:"mqa"`       // tagged MQA; untagged files are found by sample analysis
 }
 
 // headRead is how many leading bytes ProbeFile reads for identification.
 const headRead = 64 * 1024
+
+const maxMetadataBlocks = 64
 
 // Probe identifies a format from a leading header buffer and the full file size.
 // It is pure so it can be unit-tested with crafted headers.
@@ -41,7 +45,7 @@ func Probe(head []byte, fileSize int64) ProbeResult {
 	case string(head[0:4]) == "DSD ":
 		return probeDSF(head)
 	case string(head[0:4]) == "FRM8":
-		return ProbeResult{Codec: "dsd", Container: "dff"}
+		return probeDFF(head)
 	case len(head) >= 8 && string(head[4:8]) == "ftyp":
 		return probeMP4(head)
 	case string(head[0:3]) == "ID3" || isMP3Sync(head, 0):
@@ -99,7 +103,69 @@ func probeFLAC(h []byte) ProbeResult {
 	r.Rate = rate
 	r.TotalSamples = uint64(b[13]&0xF)<<32 | uint64(b[14])<<24 | uint64(b[15])<<16 | uint64(b[16])<<8 | uint64(b[17])
 	r.DurationMS = ms(r.TotalSamples, rate)
+	r.MQA = flacHasMQATag(h)
 	return r
+}
+
+// flacHasMQATag looks for MQA markers in the metadata blocks contained in the
+// header buffer: an "MQA " APPLICATION block or a tagged encoder/original-rate
+// comment. Untagged MQA is detected later from the sample bitstream.
+func flacHasMQATag(h []byte) bool {
+	off := 4
+	for i := 0; i < maxMetadataBlocks && off+4 <= len(h); i++ {
+		last := h[off]&0x80 != 0
+		typ := h[off] & 0x7f
+		length := int(h[off+1])<<16 | int(h[off+2])<<8 | int(h[off+3])
+		start := off + 4
+		if length < 0 || start+length > len(h) {
+			return false
+		}
+		payload := h[start : start+length]
+		switch typ {
+		case 2:
+			if len(payload) >= 4 && (string(payload[:4]) == "MQA " || string(payload[:4]) == "MQA\x00") {
+				return true
+			}
+		case 4:
+			if vorbisHasMQA(payload) {
+				return true
+			}
+		}
+		off = start + length
+		if last {
+			break
+		}
+	}
+	return false
+}
+
+func vorbisHasMQA(b []byte) bool {
+	if len(b) < 8 {
+		return false
+	}
+	vendorLen := int(binary.LittleEndian.Uint32(b))
+	if vendorLen < 0 || 4+vendorLen+4 > len(b) {
+		return false
+	}
+	p := 4 + vendorLen
+	count := int(binary.LittleEndian.Uint32(b[p:]))
+	p += 4
+	for i := 0; i < count && p+4 <= len(b); i++ {
+		n := int(binary.LittleEndian.Uint32(b[p:]))
+		p += 4
+		if n < 0 || p+n > len(b) {
+			return false
+		}
+		entry := strings.ToUpper(string(b[p : p+n]))
+		p += n
+		if strings.HasPrefix(entry, "ENCODER=") || strings.HasPrefix(entry, "MQAENCODER=") ||
+			strings.HasPrefix(entry, "ORIGINALSAMPLERATE=") {
+			if strings.Contains(entry, "MQA") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // --- WAV ---
@@ -315,10 +381,76 @@ func probeOGG(h []byte) ProbeResult {
 }
 
 func probeDSF(h []byte) ProbeResult {
-	r := ProbeResult{Codec: "dsd", Container: "dsf"}
-	if len(h) >= 28 {
-		r.Channels = int(binary.LittleEndian.Uint32(h[24:28]))
+	r := ProbeResult{Codec: "dsd", Container: "dsf", Bits: 1}
+	if len(h) < 80 || string(h[28:32]) != "fmt " {
+		return r
 	}
+	// fmt chunk body: version, id, channel type, channels, rate, bits, samples, block size.
+	r.Channels = int(binary.LittleEndian.Uint32(h[52:56]))
+	r.Rate = int(binary.LittleEndian.Uint32(h[56:60]))
+	if bits := int(binary.LittleEndian.Uint32(h[60:64])); bits == 8 {
+		r.Bits = 8
+	}
+	samples := binary.LittleEndian.Uint64(h[64:72])
+	r.DurationMS = ms(samples, r.Rate)
+	r.TotalSamples = samples / 16 // DoP carrier frames
+	r.Decodable = r.Channels == 2 && r.Rate > 0
+	return r
+}
+
+// probeDFF reads the Philips DSDIFF header: PROP carries the rate and channel
+// count, the DSD chunk size gives the interleaved payload length.
+func probeDFF(h []byte) ProbeResult {
+	r := ProbeResult{Codec: "dsd", Container: "dff", Bits: 1}
+	if len(h) < 16 || string(h[12:16]) != "DSD " {
+		return r
+	}
+	for p := 16; p+12 <= len(h); {
+		id := string(h[p : p+4])
+		size := int64(binary.BigEndian.Uint64(h[p+4 : p+12]))
+		body := p + 12
+		if size <= 0 || body > len(h) {
+			break
+		}
+		switch id {
+		case "PROP":
+			end := body + int(size)
+			if end > len(h) {
+				end = len(h)
+			}
+			q := body
+			if q+4 <= end && string(h[q:q+4]) == "SND " {
+				q += 4
+			}
+			for q+12 <= end {
+				sid := string(h[q : q+4])
+				ssize := int64(binary.BigEndian.Uint64(h[q+4 : q+12]))
+				sbody := q + 12
+				if ssize <= 0 || sbody > end {
+					break
+				}
+				switch sid {
+				case "FS  ":
+					if sbody+4 <= end {
+						r.Rate = int(binary.BigEndian.Uint32(h[sbody : sbody+4]))
+					}
+				case "CHNL":
+					if sbody+2 <= end {
+						r.Channels = int(binary.BigEndian.Uint16(h[sbody : sbody+2]))
+					}
+				}
+				q = sbody + int(ssize)
+			}
+		case "DSD ":
+			if r.Channels > 0 && size > 0 {
+				samples := uint64(size) * 8 / uint64(r.Channels)
+				r.DurationMS = ms(samples, r.Rate)
+				r.TotalSamples = samples / 16
+			}
+		}
+		p = body + int(size)
+	}
+	r.Decodable = r.Channels == 2 && r.Rate > 0
 	return r
 }
 

@@ -38,6 +38,14 @@ func StreamFramesFrom(sink FrameSink, d Decoder, trackID string, seq uint32, sta
 	buf := make([]byte, zat.MaxAudioPCM)
 	var pos uint64
 	pts := startSample
+	if startSample > 0 {
+		if sk, ok := d.(interface{ SeekSample(uint64) error }); ok {
+			if err := sk.SeekSample(startSample); err != nil {
+				return 0, err
+			}
+			pos = startSample
+		}
+	}
 	for {
 		n, err := d.Read(buf)
 		if n > 0 {

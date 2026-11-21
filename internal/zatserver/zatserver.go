@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -26,6 +27,7 @@ import (
 
 	"hifihub/server/internal/decode"
 	"hifihub/server/internal/library"
+	"hifihub/server/internal/mqa"
 	"hifihub/server/internal/node"
 	"hifihub/server/internal/store"
 	"hifihub/zat"
@@ -62,7 +64,29 @@ type PlayStatus struct {
 	DeviceInfo []zat.ALSADevice `json:"device_info,omitempty"`
 	// ConfiguredDevice is the server-side DAC suggestion (node.dac_device).
 	ConfiguredDevice string `json:"configured_device"`
+	MQA              bool   `json:"mqa"`
+	BitPerfect       bool   `json:"bit_perfect"`
+	MQACapable       bool   `json:"mqa_capable"`
+	DoP              bool   `json:"dop"`
+	DSDRate          int    `json:"dsd_rate"`
+	DoPCapable       bool   `json:"dop_capable"`
+	Converted        bool   `json:"converted"`
 }
+
+var (
+	// ErrMQACapability is returned when the terminal lacks strict MQA support.
+	ErrMQACapability = errors.New("终端版本不支持 MQA 位完美输出，请先升级终端")
+	// ErrMQADevice is returned when the chosen output device converts audio.
+	ErrMQADevice = errors.New("MQA 位完美输出要求直连 hw: 设备")
+	// ErrMQALocked is returned when volume changes would alter MQA bits.
+	ErrMQALocked = errors.New("MQA 位完美播放已锁定软件音量")
+	// ErrDoPCapability is returned when the terminal cannot carry DoP.
+	ErrDoPCapability = errors.New("终端版本不支持 DSD DoP 直通，请先升级终端")
+	// ErrDoPDevice is returned when the output device would convert DoP PCM.
+	ErrDoPDevice = errors.New("DSD 位完美输出要求直连 hw: 设备")
+	// ErrDoPLocked is returned when volume changes would alter DoP bits.
+	ErrDoPLocked = errors.New("DSD 位完美播放已锁定软件音量")
+)
 
 // Server accepts ZAT endpoint connections and drives push playback.
 type Server struct {
@@ -183,6 +207,11 @@ type endpoint struct {
 	prefDevice string
 	underruns  int
 	volume     int // last server-set soft volume; STATUS does not carry it
+	mqa        bool
+	dop        bool
+	dsdRate    int
+	converted  bool
+	bitPerfect bool
 }
 
 // playState is one active push-playback stream.
@@ -198,6 +227,11 @@ type playState struct {
 	device       string
 	totalSamples uint64
 	rate         int
+	mqa          bool
+	dop          bool
+	dsdRate      int
+	converted    bool
+	bitPerfect   bool
 
 	mu         sync.Mutex
 	paused     bool
@@ -468,16 +502,34 @@ func (s *Server) StartPlay(ctx context.Context, nodeID, trackID string) (string,
 	if err != nil {
 		return "", err
 	}
-	if !track.Decodable {
+	if !track.Decodable && track.Codec != "dsd" {
 		return "", fmt.Errorf("该格式暂不支持解码播放：%s", track.Codec)
 	}
 	playbackPath, err := s.lib.PlaybackPath(track.ID)
 	if err != nil {
 		return "", err
 	}
+	// Untagged MQA streams hide their sync word in the PCM; detect once here and
+	// persist so later plays and the browse UI see the marker without a rescan.
+	if !track.MQAChecked && mqaCandidate(track) {
+		if res, derr := mqa.DetectFile(playbackPath); derr == nil {
+			track.MQAChecked = true
+			track.MQA = res.Detected
+			if merr := s.lib.MarkMQA(track.ID, res.Detected); merr != nil {
+				slog.Warn("zat mark mqa", "track", track.ID, "err", merr)
+			}
+		}
+	}
 	dec, err := decode.Open(playbackPath)
 	if err != nil {
 		return "", err
+	}
+	dop, dsdRate := false, 0
+	if info, ok := dec.(interface {
+		DoP() bool
+		DSDRate() int
+	}); ok && info.DoP() {
+		dop, dsdRate = true, info.DSDRate()
 	}
 	n, err := s.nodes.Get(nodeID)
 	if err != nil {
@@ -505,31 +557,70 @@ func (s *Server) StartPlay(ctx context.Context, nodeID, trackID string) (string,
 	playCtx, cancel := context.WithCancel(context.Background())
 	ps := &playState{ctx: playCtx, cancel: cancel, done: make(chan struct{}), sessionID: sessionID, trackID: trackID,
 		resumeCh: make(chan struct{}), seekWake: make(chan struct{})}
-	ackCh := make(chan zat.SetupAck, 1)
+	format := dec.Format()
+	if dop {
+		total := dec.TotalSamples()
+		dur := 0
+		if format.Rate > 0 {
+			dur = int(total * 1000 / uint64(format.Rate))
+		}
+		if track.TotalSamples != total || track.DurationMS != dur || !track.Decodable {
+			track.TotalSamples, track.DurationMS, track.Decodable = total, dur, true
+			if err := s.lib.MarkDSD(track.ID, dsdRate, format.Channels, 1, total, dur); err != nil {
+				slog.Warn("zat mark dsd", "track", track.ID, "err", err)
+			}
+		}
+	}
+	metaRate := track.Rate
+	if dop {
+		metaRate = format.Rate
+	}
 	meta := zat.TrackMeta{
 		TrackID: trackID, Title: track.Title, Artist: track.Artist, Album: track.Album,
-		DurationMS: track.DurationMS, Codec: track.Codec, Rate: track.Rate, Channels: track.Channels,
+		DurationMS: track.DurationMS, Codec: track.Codec, Rate: metaRate, Channels: track.Channels,
+		MQA: track.MQA, DoP: dop, DSDRate: dsdRate,
 	}
-	format := dec.Format()
 	device := n.DacDevice
 	if device == "" {
 		device = "default"
 	}
-	ps.format, ps.device, ps.totalSamples, ps.rate = format.Format, device, track.TotalSamples, format.Rate
+	// MQA and DoP need an untouched bit path: a capable agent, strict hw output,
+	// and no software volume. Refuse early instead of playing degraded audio.
+	if track.MQA || dop {
+		if track.MQA && !e.caps.MQA {
+			dec.Close()
+			return "", ErrMQACapability
+		}
+		if dop && !e.caps.DoP {
+			dec.Close()
+			return "", ErrDoPCapability
+		}
+		if !strings.HasPrefix(device, "hw:") {
+			dec.Close()
+			if dop {
+				return "", fmt.Errorf("%w（当前 %s）", ErrDoPDevice, device)
+			}
+			return "", fmt.Errorf("%w（当前 %s）", ErrMQADevice, device)
+		}
+	}
+	ps.format, ps.device, ps.totalSamples, ps.rate, ps.mqa = format.Format, device, dec.TotalSamples(), format.Rate, track.MQA
+	ps.dop, ps.dsdRate = dop, dsdRate
 	e.mu.Lock()
 	e.play = ps
-	e.setupAck = ackCh
 	e.trackID = trackID
 	e.title = track.Title
 	e.meta = meta
 	e.state = zat.StateReady
+	if track.MQA || dop {
+		e.volume = 100 // strict sessions force unity gain on the terminal
+	}
 	e.mu.Unlock()
 
 	e.resetPacing(format.Rate * format.Channels * format.Format.BytesPerSample() / 1000)
 	setup := zat.Setup{
 		SessionID: sessionID, TrackID: trackID, Format: format.Format, Rate: format.Rate,
 		Channels: format.Channels, PrebufferMS: 200, ALSADevice: device,
-		TotalSamples: track.TotalSamples,
+		TotalSamples: dec.TotalSamples(), MQA: track.MQA, DoP: dop, DSDRate: dsdRate,
 	}
 	// abort tears down a play that never reached the stream goroutine; it must
 	// close done so a concurrent StartPlay waiting on us can proceed.
@@ -540,20 +631,49 @@ func (s *Server) StartPlay(ctx context.Context, nodeID, trackID string) (string,
 		close(ps.done)
 		return "", err
 	}
-	if err := e.control(zat.TypeSetup, setup); err != nil {
-		return abort(err)
-	}
-	select {
-	case ack := <-ackCh:
-		if !ack.OK {
-			return abort(fmt.Errorf("终端拒绝播放：%s", ack.Detail))
+	ack, ackErr := s.awaitSetup(e, ps, setup, ctx)
+	if ackErr == nil && ack.OK && (!(track.MQA || dop) || ack.BitPerfect) {
+		ps.bitPerfect = ack.BitPerfect
+	} else {
+		if !dop {
+			return abort(setupFailure(ack, ackErr))
 		}
-	case <-ps.ctx.Done():
-		return abort(errors.New("播放被新请求取代"))
-	case <-time.After(8 * time.Second):
-		return abort(errors.New("终端 SETUP 超时"))
-	case <-ctx.Done():
-		return abort(ctx.Err())
+		// The terminal could not carry DoP at the carrier rate. Fall back to
+		// server-side ffmpeg PCM so the track still plays, marked as converted.
+		dec.Close()
+		var ferr error
+		for _, rate := range []int{176400, 88200} {
+			dec, ferr = openFallbackPCM(playbackPath, rate, 2, track.DurationMS)
+			if ferr == nil {
+				break
+			}
+		}
+		if ferr != nil {
+			return abort(fmt.Errorf("DSD DoP 失败（%v），且 ffmpeg PCM 回退不可用：%w", setupFailure(ack, ackErr), ferr))
+		}
+		converted := true
+		dop = false
+		format = dec.Format()
+		ps.format, ps.rate, ps.totalSamples = format.Format, format.Rate, dec.TotalSamples()
+		ps.dop, ps.converted = false, converted
+		meta.Rate, meta.DoP, meta.DSDRate = format.Rate, false, dsdRate
+		if format.Rate > 0 {
+			meta.DurationMS = int(dec.TotalSamples() * 1000 / uint64(format.Rate))
+		}
+		e.mu.Lock()
+		e.meta = meta
+		e.mu.Unlock()
+		e.resetPacing(format.Rate * format.Channels * format.Format.BytesPerSample() / 1000)
+		setup = zat.Setup{
+			SessionID: sessionID, TrackID: trackID, Format: format.Format, Rate: format.Rate,
+			Channels: format.Channels, PrebufferMS: 200, ALSADevice: device,
+			TotalSamples: dec.TotalSamples(), MQA: false, DoP: false, DSDRate: dsdRate,
+		}
+		ack, ackErr = s.awaitSetup(e, ps, setup, ctx)
+		if ackErr != nil || !ack.OK {
+			return abort(fmt.Errorf("DSD PCM 回退失败：%w", setupFailure(ack, ackErr)))
+		}
+		ps.bitPerfect = false
 	}
 
 	if err := e.control(zat.TypePlay, zat.Play{SessionID: sessionID}); err != nil {
@@ -581,6 +701,11 @@ func (s *Server) StartPlay(ctx context.Context, nodeID, trackID string) (string,
 	e.mu.Lock()
 	e.state = zat.StatePlaying
 	e.pts = 0
+	e.mqa = track.MQA
+	e.dop = dop
+	e.dsdRate = dsdRate
+	e.converted = ps.converted
+	e.bitPerfect = ps.bitPerfect
 	e.mu.Unlock()
 
 	go s.stream(e, ps, dec, track)
@@ -631,13 +756,7 @@ func (s *Server) stream(e *endpoint, ps *playState, dec decode.Decoder, track li
 			break
 		}
 		if target, ok := ps.takeSeek(); ok {
-			playbackPath, pathErr := s.lib.PlaybackPath(track.ID)
-			if pathErr != nil {
-				reason = "error"
-				slog.Warn("zat seek path", "node", e.nodeID, "err", pathErr)
-				break
-			}
-			nd, oerr := decode.Open(playbackPath)
+			nd, oerr := s.openTrackDecoder(track, ps)
 			if oerr != nil {
 				reason = "error"
 				slog.Warn("zat seek reopen", "node", e.nodeID, "err", oerr)
@@ -663,13 +782,7 @@ func (s *Server) stream(e *endpoint, ps *playState, dec decode.Decoder, track li
 		ar := s.awaitPlaybackEnd(e, ps, track)
 		if ar == "seek" {
 			target, _ := ps.takeSeek()
-			playbackPath, pathErr := s.lib.PlaybackPath(track.ID)
-			if pathErr != nil {
-				reason = "error"
-				slog.Warn("zat seek path", "node", e.nodeID, "err", pathErr)
-				break
-			}
-			nd, oerr := decode.Open(playbackPath)
+			nd, oerr := s.openTrackDecoder(track, ps)
 			if oerr != nil {
 				reason = "error"
 				slog.Warn("zat seek reopen", "node", e.nodeID, "err", oerr)
@@ -698,11 +811,60 @@ func (s *Server) stream(e *endpoint, ps *playState, dec decode.Decoder, track li
 	if e.play == ps {
 		e.play = nil
 	}
+	e.mqa = false
+	e.dop = false
+	e.dsdRate = 0
+	e.converted = false
+	e.bitPerfect = false
 	e.mu.Unlock()
 	close(ps.done)
 	if reason == "eof" {
 		go s.autoAdvance(e.nodeID, ps.trackID)
 	}
+}
+
+// awaitSetup sends SETUP and waits for its acknowledgement.
+func (s *Server) awaitSetup(e *endpoint, ps *playState, setup zat.Setup, ctx context.Context) (zat.SetupAck, error) {
+	ackCh := make(chan zat.SetupAck, 1)
+	e.mu.Lock()
+	e.setupAck = ackCh
+	e.mu.Unlock()
+	if err := e.control(zat.TypeSetup, setup); err != nil {
+		return zat.SetupAck{}, err
+	}
+	select {
+	case ack := <-ackCh:
+		return ack, nil
+	case <-ps.ctx.Done():
+		return zat.SetupAck{}, errors.New("播放被新请求取代")
+	case <-time.After(8 * time.Second):
+		return zat.SetupAck{}, errors.New("终端 SETUP 超时")
+	case <-ctx.Done():
+		return zat.SetupAck{}, ctx.Err()
+	}
+}
+
+func setupFailure(ack zat.SetupAck, err error) error {
+	if err != nil {
+		return err
+	}
+	if !ack.OK {
+		return fmt.Errorf("终端拒绝播放：%s", ack.Detail)
+	}
+	return fmt.Errorf("终端未能建立位完美输出：%s", ack.Detail)
+}
+
+// openTrackDecoder reopens the current track for seek, preserving the ffmpeg
+// PCM fallback choice once DoP was rejected.
+func (s *Server) openTrackDecoder(track library.Track, ps *playState) (decode.Decoder, error) {
+	path, err := s.lib.PlaybackPath(track.ID)
+	if err != nil {
+		return nil, err
+	}
+	if ps.converted {
+		return openFallbackPCM(path, ps.rate, track.Channels, track.DurationMS)
+	}
+	return decode.Open(path)
 }
 
 // reSetup rebuilds the terminal's render session at a seek target: a fresh
@@ -718,7 +880,7 @@ func (s *Server) reSetup(e *endpoint, ps *playState, track library.Track, target
 	setup := zat.Setup{
 		SessionID: ps.sessionID, TrackID: track.ID, Format: ps.format, Rate: ps.rate,
 		Channels: track.Channels, PrebufferMS: 200, ALSADevice: ps.device,
-		TotalSamples: track.TotalSamples,
+		TotalSamples: ps.totalSamples, MQA: ps.mqa, DoP: ps.dop, DSDRate: ps.dsdRate,
 	}
 	if err := e.control(zat.TypeSetup, setup); err != nil {
 		return err
@@ -728,6 +890,12 @@ func (s *Server) reSetup(e *endpoint, ps *playState, track library.Track, target
 		if !ack.OK {
 			return fmt.Errorf("终端拒绝播放：%s", ack.Detail)
 		}
+		if (ps.mqa || ps.dop) && !ack.BitPerfect {
+			return fmt.Errorf("终端未能建立位完美输出：%s", ack.Detail)
+		}
+		e.mu.Lock()
+		e.bitPerfect = ack.BitPerfect
+		e.mu.Unlock()
 	case <-ps.ctx.Done():
 		return ps.ctx.Err()
 	case <-time.After(8 * time.Second):
@@ -770,8 +938,8 @@ func (s *Server) awaitPlaybackEnd(e *endpoint, ps *playState, track library.Trac
 		if pts != lastPTS {
 			lastPTS = pts
 			remaining := time.Duration(track.DurationMS) * time.Millisecond
-			if track.TotalSamples > 0 && ps.rate > 0 && pts < track.TotalSamples {
-				remaining = time.Duration((track.TotalSamples-pts)*1000/uint64(ps.rate)) * time.Millisecond
+			if ps.totalSamples > 0 && ps.rate > 0 && pts < ps.totalSamples {
+				remaining = time.Duration((ps.totalSamples-pts)*1000/uint64(ps.rate)) * time.Millisecond
 			}
 			deadline = time.Now().Add(remaining + 5*time.Second)
 		}
@@ -794,7 +962,7 @@ func (s *Server) awaitPlaybackEnd(e *endpoint, ps *playState, track library.Trac
 			if state == zat.StateStopped || state == zat.StateIdle {
 				return "eof"
 			}
-			if track.TotalSamples > 0 && pts >= track.TotalSamples {
+			if ps.totalSamples > 0 && pts >= ps.totalSamples {
 				return "eof"
 			}
 			if time.Now().After(deadline) {
@@ -941,8 +1109,16 @@ func (s *Server) SetVolume(nodeID string, volume int) error {
 	if volume > 100 {
 		volume = 100
 	}
-	sid := ""
 	e.mu.Lock()
+	if e.play != nil && e.play.mqa {
+		e.mu.Unlock()
+		return ErrMQALocked
+	}
+	if e.play != nil && e.play.dop {
+		e.mu.Unlock()
+		return ErrDoPLocked
+	}
+	sid := ""
 	if e.play != nil {
 		sid = e.play.sessionID
 	}
@@ -978,6 +1154,13 @@ func (s *Server) Status(nodeID string) (PlayStatus, error) {
 	st.ALSADevice = e.alsaDevice
 	st.PrefDevice = e.prefDevice
 	st.Volume = e.volume
+	st.MQA = e.mqa
+	st.BitPerfect = e.bitPerfect
+	st.MQACapable = e.caps.MQA
+	st.DoP = e.dop
+	st.DSDRate = e.dsdRate
+	st.DoPCapable = e.caps.DoP
+	st.Converted = e.converted
 	if e.play != nil {
 		st.SessionID = e.play.sessionID
 		st.Playing = e.state == zat.StatePlaying
@@ -990,6 +1173,26 @@ func (s *Server) Status(nodeID string) (PlayStatus, error) {
 		st.DeviceInfo = e.caps.ALSADeviceInfo
 	}
 	return st, nil
+}
+
+// openFallbackPCM is a seam for tests; production shells out to ffmpeg.
+var openFallbackPCM = decode.OpenFFmpegPCM
+
+// mqaCandidate limits the sample scan to stereo PCM at rates MQA delivers.
+func mqaCandidate(t library.Track) bool {
+	switch t.Codec {
+	case "flac", "pcm_s16le", "pcm_s24le", "pcm_s32le", "pcm":
+	default:
+		return false
+	}
+	if t.Channels != 2 {
+		return false
+	}
+	switch t.Rate {
+	case 44100, 48000, 88200, 96000, 176400, 192000:
+		return true
+	}
+	return false
 }
 
 // SetDevice selects the terminal's preferred ALSA output device. The choice is

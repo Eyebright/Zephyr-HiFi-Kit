@@ -30,6 +30,9 @@ type aaudioPlayer struct {
 
 func newPlatform() Player { return &aaudioPlayer{} }
 
+// AAudio may route through the Android mixer, so it cannot guarantee MQA bits.
+func supportsBitPerfect() bool { return false }
+
 func aaudioFormat(f zat.Format) (C.aaudio_format_t, error) {
 	switch f {
 	case zat.S16LE:

@@ -46,6 +46,8 @@ func Open(path string) (Decoder, error) {
 		return openFLAC(path, pr)
 	case "pcm_s16le", "pcm_s24le", "pcm_s32le", "pcm":
 		return openWAV(path)
+	case "dsd":
+		return openDSD(path, pr)
 	default:
 		return nil, fmt.Errorf("%w: %s", ErrUnsupported, pr.Codec)
 	}

@@ -12,6 +12,15 @@ type ListeningRank struct {
 	TrackCount int    `json:"track_count"`
 }
 
+type HeardTrack struct {
+	TrackID      string `json:"track_id"`
+	Title        string `json:"title"`
+	Artist       string `json:"artist"`
+	Album        string `json:"album"`
+	LastPlayedAt int64  `json:"last_played_at"`
+	CoverHash    string `json:"cover_hash"`
+}
+
 type HeardAlbum struct {
 	Artist       string `json:"artist"`
 	Album        string `json:"album"`
@@ -32,6 +41,7 @@ type ListeningSummary struct {
 	UnmeasuredPlays int             `json:"unmeasured_plays"`
 	Genres          []ListeningRank `json:"genres"`
 	Artists         []ListeningRank `json:"artists"`
+	RecentTracks    []HeardTrack    `json:"recent_tracks"`
 	RecentAlbums    []HeardAlbum    `json:"recent_albums"`
 }
 
@@ -48,8 +58,8 @@ func (s *Service) listeningAt(days int, nodeID string, now time.Time) (Listening
 	}
 	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).AddDate(0, 0, 1-days)
 	out := ListeningSummary{Days: days, From: start.Unix(), Until: now.Unix(), Timezone: now.Format("MST -07:00"),
-		Genres: []ListeningRank{}, Artists: []ListeningRank{}, RecentAlbums: []HeardAlbum{}}
-	rows, err := s.db.Query(`SELECT h.track_id, h.measured, h.artist, h.album, h.genre, h.cover_hash,
+		Genres: []ListeningRank{}, Artists: []ListeningRank{}, RecentTracks: []HeardTrack{}, RecentAlbums: []HeardAlbum{}}
+	rows, err := s.db.Query(`SELECT h.track_id, h.title, h.measured, h.artist, h.album, h.genre, h.cover_hash,
 		COALESCE(d.listen_ms,0), COALESCE(d.last_at,h.started_at)
 		FROM play_history h
 		LEFT JOIN (SELECT history_id,SUM(listen_ms) listen_ms,MAX(last_played_at) last_at
@@ -69,6 +79,7 @@ func (s *Service) listeningAt(days int, nodeID string, now time.Time) (Listening
 	artists := map[string]*rank{}
 	genres := map[string]*rank{}
 	albums := map[albumKey]HeardAlbum{}
+	recentTracks := map[string]HeardTrack{}
 	albumTracks := map[albumKey]map[string]bool{}
 	addRank := func(ranks map[string]*rank, name, id string, ms int64) {
 		if ranks[name] == nil {
@@ -79,14 +90,17 @@ func (s *Service) listeningAt(days int, nodeID string, now time.Time) (Listening
 	}
 	artistNames := map[string]bool{}
 	for rows.Next() {
-		var id, artist, album, genre, cover string
+		var id, title, artist, album, genre, cover string
 		var measured bool
 		var ms, last int64
-		if err := rows.Scan(&id, &measured, &artist, &album, &genre, &cover, &ms, &last); err != nil {
+		if err := rows.Scan(&id, &title, &measured, &artist, &album, &genre, &cover, &ms, &last); err != nil {
 			rows.Close()
 			return out, err
 		}
 		tracks[id] = true
+		if prev, ok := recentTracks[id]; !ok || last > prev.LastPlayedAt {
+			recentTracks[id] = HeardTrack{TrackID: id, Title: title, Artist: artist, Album: album, LastPlayedAt: last, CoverHash: cover}
+		}
 		out.ListenMS += ms
 		if !measured {
 			out.UnmeasuredPlays++
@@ -131,6 +145,19 @@ func (s *Service) listeningAt(days int, nodeID string, now time.Time) (Listening
 		return result
 	}
 	out.Genres, out.Artists = makeRanks(genres), makeRanks(artists)
+	for _, t := range recentTracks {
+		out.RecentTracks = append(out.RecentTracks, t)
+	}
+	sort.Slice(out.RecentTracks, func(i, j int) bool {
+		a, b := out.RecentTracks[i], out.RecentTracks[j]
+		if a.LastPlayedAt == b.LastPlayedAt {
+			return a.Title < b.Title
+		}
+		return a.LastPlayedAt > b.LastPlayedAt
+	})
+	if len(out.RecentTracks) > 100 {
+		out.RecentTracks = out.RecentTracks[:100]
+	}
 	for key, a := range albums {
 		a.TrackCount = len(albumTracks[key])
 		out.RecentAlbums = append(out.RecentAlbums, a)

@@ -46,14 +46,16 @@ func setupFull(t *testing.T, sigMode string) (base, root, dir string) {
 	t.Helper()
 	dir = t.TempDir()
 	cfg := config.Config{
-		DataDir:         dir,
-		ArtifactsDir:    filepath.Join(dir, "artifacts"),
-		DistDir:         filepath.Join(dir, "dist"),
-		DBPath:          filepath.Join(dir, "test.db"),
-		SignatureMode:   sigMode,
-		PlayGateEnabled: true,
-		OfflineAfter:    45 * time.Second,
-		IdleWaitTimeout: 120 * time.Minute,
+		DataDir:          dir,
+		DiscoveryID:      "test-server",
+		DiscoveryEnabled: true,
+		ArtifactsDir:     filepath.Join(dir, "artifacts"),
+		DistDir:          filepath.Join(dir, "dist"),
+		DBPath:           filepath.Join(dir, "test.db"),
+		SignatureMode:    sigMode,
+		PlayGateEnabled:  true,
+		OfflineAfter:     45 * time.Second,
+		IdleWaitTimeout:  120 * time.Minute,
 	}
 	if err := os.MkdirAll(cfg.ArtifactsDir, 0o755); err != nil {
 		t.Fatal(err)

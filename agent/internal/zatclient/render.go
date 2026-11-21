@@ -35,7 +35,13 @@ type renderCmd struct {
 	kind   renderCmdKind
 	setup  zat.Setup
 	device string
-	ack    chan error
+	ack    chan openResult
+}
+
+type openResult struct {
+	err        error
+	bitPerfect bool
+	detail     string
 }
 
 // session holds one connection's playback state. The render goroutine owns the
@@ -63,6 +69,7 @@ type session struct {
 	bytesPerMS  int
 	frameBytes  int
 	prebufferMS int
+	bitPerfect  bool
 
 	pcmCh      chan audioChunk
 	ctrlCh     chan renderCmd
@@ -131,7 +138,8 @@ func (s *session) snapshotLocked() Snapshot {
 		TrackID: trackID, Title: s.meta.Title, Artist: s.meta.Artist, Album: s.meta.Album,
 		DurationMS: s.meta.DurationMS, Codec: s.meta.Codec, Rate: s.setup.Rate, Channels: s.setup.Channels,
 		PTS: s.pts, BufferMS: s.bufferMSLocked(), Volume: s.volume, ALSADevice: s.device,
-		PrefDevice: s.c.PreferredDevice(),
+		PrefDevice: s.c.PreferredDevice(), MQA: s.setup.MQA, DoP: s.setup.DoP,
+		DSDRate: s.setup.DSDRate, BitPerfect: s.bitPerfect,
 	}
 }
 
@@ -192,13 +200,31 @@ func (s *session) renderLoop() {
 					break
 				}
 				np := s.c.newPlayer()
-				err := np.Open(cmd.setup.Format, cmd.setup.Rate, cmd.setup.Channels, cmd.device)
-				if err != nil {
-					cmd.ack <- err
+				res := openResult{}
+				if cmd.setup.MQA || cmd.setup.DoP {
+					bp, ok := np.(player.BitPerfectPlayer)
+					if !ok {
+						res.err = errors.New("此终端构建不支持 MQA 位完美输出")
+					} else {
+						res.err = bp.OpenBitPerfect(cmd.setup.Format, cmd.setup.Rate, cmd.setup.Channels, cmd.device)
+						if res.err == nil {
+							res.bitPerfect = true
+							if info, ok := np.(interface {
+								BitPerfect() (bool, string)
+							}); ok {
+								res.bitPerfect, res.detail = info.BitPerfect()
+							}
+						}
+					}
+				} else {
+					res.err = np.Open(cmd.setup.Format, cmd.setup.Rate, cmd.setup.Channels, cmd.device)
+				}
+				cmd.ack <- res
+				if res.err != nil {
+					_ = np.Close()
 					continue
 				}
 				p = np
-				cmd.ack <- nil
 			case cmdStop:
 				if p != nil {
 					_ = p.Drain()
@@ -208,7 +234,7 @@ func (s *session) renderLoop() {
 				s.mu.Lock()
 				s.queuedBytes = 0
 				s.mu.Unlock()
-				cmd.ack <- nil
+				cmd.ack <- openResult{}
 			}
 		case chunk := <-pcmCh:
 			if p == nil {
@@ -216,9 +242,12 @@ func (s *session) renderLoop() {
 				continue
 			}
 			s.mu.Lock()
-			format, vol := s.setup.Format, s.volume
+			format, vol, isMQA := s.setup.Format, s.volume, s.setup.MQA
 			s.mu.Unlock()
-			pcm := applyVolume(chunk.pcm, format, vol)
+			pcm := chunk.pcm
+			if !isMQA {
+				pcm = applyVolume(chunk.pcm, format, vol)
+			}
 			err := p.Write(pcm)
 			s.addQueued(-int64(len(chunk.pcm)))
 			if err != nil {
@@ -332,6 +361,9 @@ func (s *session) handleSetup(ctx context.Context, fr zat.Frame) error {
 		device = "default"
 	}
 	bpf := su.Format.BytesPerSample() * su.Channels
+	if su.MQA || su.DoP {
+		su.GainDB = 0
+	}
 	s.mu.Lock()
 	s.sessionID = su.SessionID
 	s.setup = su
@@ -343,29 +375,37 @@ func (s *session) handleSetup(ctx context.Context, fr zat.Frame) error {
 	s.frameBytes = bpf
 	s.bytesPerMS = su.Rate * bpf / 1000
 	s.state = zat.StateReady
+	if su.MQA || su.DoP {
+		s.volume = 100
+	}
 	s.mu.Unlock()
 
-	ackCh := make(chan error, 1)
+	ackCh := make(chan openResult, 1)
 	select {
 	case s.ctrlCh <- renderCmd{kind: cmdSetup, setup: su, device: device, ack: ackCh}:
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-	var openErr error
+	var res openResult
 	select {
-	case openErr = <-ackCh:
+	case res = <-ackCh:
 	case <-time.After(5 * time.Second):
-		openErr = errors.New("ALSA 设备打开超时")
+		res.err = errors.New("ALSA 设备打开超时")
 	case <-ctx.Done():
 		return ctx.Err()
 	}
 	ack := zat.SetupAck{
-		SessionID: su.SessionID, OK: openErr == nil, BufferFrames: 4096,
+		SessionID: su.SessionID, OK: res.err == nil, BufferFrames: 4096, BitPerfect: res.bitPerfect,
 		Opened: zat.OpenedParams{Format: su.Format, Rate: su.Rate, Channels: su.Channels},
 	}
-	if openErr != nil {
-		ack.Detail = openErr.Error()
+	if res.err != nil {
+		ack.Detail = res.err.Error()
+	} else if res.detail != "" {
+		ack.Detail = res.detail
 	}
+	s.mu.Lock()
+	s.bitPerfect = res.bitPerfect
+	s.mu.Unlock()
 	_ = s.write(zat.TypeSetupAck, ack)
 	s.publish()
 	return nil
@@ -406,7 +446,7 @@ func (s *session) stopPlayback() {
 	s.state = zat.StateStopped
 	s.paused = false
 	s.mu.Unlock()
-	ackCh := make(chan error, 1)
+	ackCh := make(chan openResult, 1)
 	select {
 	case s.ctrlCh <- renderCmd{kind: cmdStop, ack: ackCh}:
 		<-ackCh
@@ -482,6 +522,9 @@ func (s *session) setVolume(v int) {
 		v = 100
 	}
 	s.mu.Lock()
+	if s.setup.MQA || s.setup.DoP {
+		v = 100 // bit-perfect passthrough must not be scaled in software
+	}
 	s.volume = v
 	s.mu.Unlock()
 	s.publish()

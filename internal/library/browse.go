@@ -17,12 +17,14 @@ import (
 // BrowseQuery uses pointers to distinguish no filter from an unknown (empty/0)
 // entity. Directory is a slash-separated path relative to MountID, never an OS
 // path. YearFrom/YearTo form an inclusive range and cannot be combined with Year.
-// Page is one-based (0 defaults to 1); PageSize is 24, 48 or 96.
+// Page is one-based (0 defaults to 1); PageSize defaults to 20 and accepts
+// 1..200. Offset, when >0, overrides Page so callers can preserve a position
+// while the adaptive page size changes.
 type BrowseQuery struct {
 	Category, Q, Field, Sort, Direction, ArtistMode, Initial, MountID, Directory string
 	Artist, Album, Genre, Composer                                               *string
 	Year, YearFrom, YearTo                                                       *int
-	Page, PageSize                                                               int
+	Page, PageSize, Offset                                                       int
 	Recursive                                                                    bool
 }
 
@@ -30,6 +32,7 @@ type BrowsePage struct {
 	Category    string       `json:"category"`
 	Page        int          `json:"page"`
 	PageSize    int          `json:"page_size"`
+	Offset      int          `json:"offset"`
 	Total       int          `json:"total"`
 	TotalTracks int          `json:"total_tracks"`
 	Items       []BrowseItem `json:"items"`
@@ -162,13 +165,21 @@ func normalizeBrowse(q BrowseQuery) (BrowseQuery, error) {
 		q.Page = 1
 	}
 	if q.PageSize == 0 {
-		q.PageSize = 24
+		q.PageSize = 20
 	}
-	if q.PageSize != 24 && q.PageSize != 48 && q.PageSize != 96 {
-		return q, fmt.Errorf("每页数量必须为24、48或96")
+	if q.PageSize < 1 || q.PageSize > 200 {
+		return q, fmt.Errorf("每页数量必须在 1..200 之间")
 	}
-	if q.Page-1 > int(^uint(0)>>1)/q.PageSize {
-		return q, fmt.Errorf("页码过大")
+	if q.Offset < 0 {
+		return q, fmt.Errorf("偏移量不能为负数")
+	}
+	if q.Offset > 0 {
+		q.Page = q.Offset/q.PageSize + 1
+	} else {
+		if q.Page-1 > int(^uint(0)>>1)/q.PageSize {
+			return q, fmt.Errorf("页码过大")
+		}
+		q.Offset = (q.Page - 1) * q.PageSize
 	}
 	if q.Year != nil && *q.Year < 0 {
 		return q, fmt.Errorf("年份不能为负数")
@@ -388,7 +399,7 @@ func entityOrder(q BrowseQuery) string {
 // requested page's Track objects are loaded; no full-catalog sort occurs in Go.
 func (s *Service) Browse(query BrowseQuery) (BrowsePage, error) {
 	q, err := normalizeBrowse(query)
-	page := BrowsePage{Category: q.Category, Page: q.Page, PageSize: q.PageSize, Items: []BrowseItem{}}
+	page := BrowsePage{Category: q.Category, Page: q.Page, PageSize: q.PageSize, Offset: q.Offset, Items: []BrowseItem{}}
 	if err != nil {
 		return page, err
 	}
@@ -401,7 +412,7 @@ func (s *Service) Browse(query BrowseQuery) (BrowsePage, error) {
 	if err := tx.QueryRow(cte+` SELECT (SELECT COUNT(*) FROM entities),(SELECT COUNT(DISTINCT id) FROM members)`, args...).Scan(&page.Total, &page.TotalTracks); err != nil {
 		return page, err
 	}
-	pageArgs := append(append([]any{}, args...), q.PageSize, (q.Page-1)*q.PageSize)
+	pageArgs := append(append([]any{}, args...), q.PageSize, q.Offset)
 	rows, err := tx.Query(cte+` SELECT kind,name,value,entity_artist,entity_album,year,cover_hash,track_count,album_count,duration_ms,entity_mount,entity_dir,library_initial(name),track_id FROM entities ORDER BY `+entityOrder(q)+` LIMIT ? OFFSET ?`, pageArgs...)
 	if err != nil {
 		return page, err

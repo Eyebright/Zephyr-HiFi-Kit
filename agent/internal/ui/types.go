@@ -109,6 +109,9 @@ type Backend interface {
 	Disable(appID string) error
 	Configure(appID string, cfg map[string]string) error
 	Power(action string) error
+	// SetServerEndpoint persists the management server address pushed by the
+	// server and restarts the agent when it changed.
+	SetServerEndpoint(serverURL, zatAddr string) (bool, error)
 	// GateState reports the local mutation gate inputs; Secret returns the
 	// stored node secret (loopback-only endpoint). OSCheck/OSUpgrade/Netdiag run
 	// terminal commands through the shared executor and return their results.

@@ -276,3 +276,48 @@ func TestCoverNotFound(t *testing.T) {
 		t.Fatalf("expected 404 for unknown cover, got %d", s)
 	}
 }
+
+func TestSetQueueModeAPI(t *testing.T) {
+	base := setup(t, "dev")
+	nodeID := registerNode(t, base, "mode-ep")
+	url := base + "/nodes/" + nodeID + "/queue/mode"
+
+	// Unknown modes are rejected without touching the stored queue.
+	if s, b := doJSON(t, "POST", url, map[string]any{"mode": "bogus"}); s != http.StatusBadRequest {
+		t.Fatalf("invalid mode: %d %s", s, b)
+	}
+
+	s, b := doJSON(t, "POST", url, map[string]any{"mode": "shuffle"})
+	if s != http.StatusOK {
+		t.Fatalf("set shuffle: %d %s", s, b)
+	}
+	if m := mustJSON(t, b); m["mode"] != "shuffle" {
+		t.Fatalf("shuffle mode not echoed: %s", b)
+	}
+	s, b = doJSON(t, "POST", url, map[string]any{"mode": "loop_all"})
+	if s != http.StatusOK || mustJSON(t, b)["mode"] != "loop_all" {
+		t.Fatalf("set loop_all: %d %s", s, b)
+	}
+	// GET /nodes/{id}/queue exposes the persisted mode.
+	s, b = doJSON(t, "GET", base+"/nodes/"+nodeID+"/queue", nil)
+	if s != http.StatusOK || mustJSON(t, b)["mode"] != "loop_all" {
+		t.Fatalf("queue mode not exposed: %d %s", s, b)
+	}
+
+	// Playback mode is a per-terminal playback control, not a settings mutation.
+	origin := strings.TrimSuffix(base, "/api/v1")
+	req, err := http.NewRequest("POST", url, strings.NewReader(`{"mode":"sequence"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", origin)
+	resp, err := (&http.Client{}).Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("unauthenticated mode change: %d", resp.StatusCode)
+	}
+}

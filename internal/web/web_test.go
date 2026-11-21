@@ -105,3 +105,21 @@ func TestUnknownPathFallsBackToShell(t *testing.T) {
 		t.Fatalf("fallback did not serve index shell")
 	}
 }
+
+func TestAssetETagReturnsNotModified(t *testing.T) {
+	h := Handler()
+	req := httptest.NewRequest(http.MethodGet, "/app.js", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	tag := rec.Header().Get("ETag")
+	if tag == "" {
+		t.Fatal("missing ETag")
+	}
+	req = httptest.NewRequest(http.MethodGet, "/app.js", nil)
+	req.Header.Set("If-None-Match", tag)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotModified {
+		t.Fatalf("revalidation status = %d", rec.Code)
+	}
+}

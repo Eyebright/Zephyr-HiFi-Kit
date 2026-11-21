@@ -25,6 +25,13 @@ func parseBrowseQuery(v url.Values) (library.BrowseQuery, error) {
 			*dst = n
 		}
 	}
+	if v.Has("offset") {
+		n, err := strconv.Atoi(v.Get("offset"))
+		if err != nil || n < 0 {
+			return q, invalidInput("positive_integer_required", "offset 必须为非负整数", map[string]any{"field": "offset"})
+		}
+		q.Offset = n
+	}
 	for key, dst := range map[string]**string{"artist": &q.Artist, "album": &q.Album, "genre": &q.Genre, "composer": &q.Composer} {
 		if v.Has(key) {
 			s := v.Get(key)
@@ -84,6 +91,23 @@ func (a *API) browseLibrary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, page)
+}
+
+func (a *API) artistIndex(w http.ResponseWriter, r *http.Request) {
+	if a.lib == nil {
+		writeErrorCode(w, http.StatusServiceUnavailable, "library_unavailable", "媒体库未启用")
+		return
+	}
+	mode := r.URL.Query().Get("artist_mode")
+	if mode == "" {
+		mode = r.URL.Query().Get("mode")
+	}
+	idx, err := a.lib.ArtistIndex(r.Context(), mode)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, idx)
 }
 
 func (a *API) selectLibraryTracks(w http.ResponseWriter, r *http.Request) {

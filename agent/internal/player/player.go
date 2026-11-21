@@ -21,5 +21,14 @@ type Player interface {
 	Close() error
 }
 
+// BitPerfectPlayer opens a strict hardware path for MQA passthrough. The
+// implementation must reject converting plugins, resampling and gain.
+type BitPerfectPlayer interface {
+	OpenBitPerfect(format zat.Format, rate, channels int, device string) error
+}
+
+// SupportsBitPerfect reports whether this build can deliver a strict MQA path.
+func SupportsBitPerfect() bool { return supportsBitPerfect() }
+
 // New returns the platform player: ALSA on Linux with CGO, a stub elsewhere.
 func New() Player { return newPlatform() }

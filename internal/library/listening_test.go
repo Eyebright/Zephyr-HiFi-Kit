@@ -73,6 +73,19 @@ func TestListeningSummary(t *testing.T) {
 	if !reflect.DeepEqual(summary.RecentAlbums, wantAlbums) {
 		t.Fatalf("historical albums=%+v, want %+v", summary.RecentAlbums, wantAlbums)
 	}
+	if len(summary.RecentTracks) != 3 {
+		t.Fatalf("recent tracks=%+v", summary.RecentTracks)
+	}
+	heard := map[string]bool{}
+	for i, tr := range summary.RecentTracks {
+		heard[tr.TrackID] = true
+		if i > 0 && tr.LastPlayedAt > summary.RecentTracks[i-1].LastPlayedAt {
+			t.Fatalf("recent tracks not sorted: %+v", summary.RecentTracks)
+		}
+	}
+	if !heard["t1"] || !heard["t2"] || !heard["gone"] {
+		t.Fatalf("recent track ids=%+v", summary.RecentTracks)
+	}
 	encoded, err := json.Marshal(summary.RecentAlbums[0])
 	if err != nil {
 		t.Fatal(err)
@@ -129,7 +142,7 @@ func TestListeningUnboundedHistoryAndEmpty(t *testing.T) {
 	s, st := newService(t, &fakeRunner{}, "/mnt/zephyr")
 	now := time.Now()
 	empty, err := s.listeningAt(0, "", now)
-	if err != nil || empty.Days != 7 || empty.Genres == nil || empty.Artists == nil || empty.RecentAlbums == nil {
+	if err != nil || empty.Days != 7 || empty.Genres == nil || empty.Artists == nil || empty.RecentAlbums == nil || empty.RecentTracks == nil {
 		t.Fatalf("empty=%+v err=%v", empty, err)
 	}
 	if _, err := s.listeningAt(2, "", now); err == nil {

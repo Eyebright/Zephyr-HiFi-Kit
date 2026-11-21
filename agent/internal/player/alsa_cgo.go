@@ -13,6 +13,7 @@ import "C"
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"unsafe"
 
 	"hifihub/zat"
@@ -24,9 +25,70 @@ import (
 type alsaPlayer struct {
 	handle     *C.snd_pcm_t
 	frameBytes int
+	// pack24to32 is set when the hw device only accepts 32-bit slots; the 24
+	// payload bits are shifted into the high bytes with zero padding.
+	pack24to32 bool
+	pack16to32 bool
+	bitPerfect bool
+	detail     string
 }
 
 func newPlatform() Player { return &alsaPlayer{} }
+
+func supportsBitPerfect() bool { return true }
+
+// OpenBitPerfect opens only an hw: PCM with no soft resampling and no plug
+// fallback. A 24-bit stream may be left-aligned into 32-bit slots because that
+// preserves the exact 24 payload bits; nothing else is converted.
+func (p *alsaPlayer) OpenBitPerfect(format zat.Format, rate, channels int, device string) error {
+	if channels <= 0 || rate <= 0 {
+		return fmt.Errorf("player: invalid rate/channels %d/%d", rate, channels)
+	}
+	if !strings.HasPrefix(device, "hw:") {
+		return fmt.Errorf("player: MQA 位完美输出要求 hw: 直连设备，当前 %s", device)
+	}
+	var sf C.snd_pcm_format_t
+	switch format {
+	case zat.S16LE:
+		sf = C.SND_PCM_FORMAT_S16_LE
+	case zat.S24LE:
+		sf = C.SND_PCM_FORMAT_S24_3LE
+	case zat.S32LE:
+		sf = C.SND_PCM_FORMAT_S32_LE
+	default:
+		return fmt.Errorf("player: unsupported format %s", format)
+	}
+	if p.handle != nil {
+		p.Close()
+	}
+	p.pack24to32, p.pack16to32, p.bitPerfect, p.detail = false, false, false, ""
+	p.frameBytes = format.BytesPerSample() * channels
+	if err := p.openDevice(sf, rate, channels, device); err == nil {
+		p.bitPerfect = true
+		return nil
+	}
+	// Many USB DACs expose only 32-bit slots. Widen the payload into the high
+	// bits with zero padding; every source bit is preserved.
+	if format == zat.S24LE || format == zat.S16LE {
+		if err := p.openDevice(C.SND_PCM_FORMAT_S32_LE, rate, channels, device); err == nil {
+			p.frameBytes = 4 * channels
+			p.bitPerfect = true
+			if format == zat.S24LE {
+				p.pack24to32 = true
+				p.detail = "24-bit 左对齐装入 32-bit hw"
+			} else {
+				p.pack16to32 = true
+				p.detail = "16-bit 左对齐装入 32-bit hw"
+			}
+			return nil
+		}
+	}
+	p.frameBytes = 0
+	return fmt.Errorf("player: MQA 需要位完美 hw 输出，%s 不接受 %s/%dHz（请选择直连 DAC 的 hw 设备）", device, format, rate)
+}
+
+// BitPerfect reports whether the current open is a strict, non-converting path.
+func (p *alsaPlayer) BitPerfect() (bool, string) { return p.bitPerfect, p.detail }
 
 func alsaErr(rc C.int) string { return C.GoString(C.snd_strerror(rc)) }
 
@@ -48,6 +110,7 @@ func (p *alsaPlayer) Open(format zat.Format, rate, channels int, device string) 
 	if p.handle != nil {
 		p.Close()
 	}
+	p.pack24to32, p.pack16to32, p.bitPerfect, p.detail = false, false, false, ""
 	p.frameBytes = format.BytesPerSample() * channels
 	if err := p.openDevice(sf, rate, channels, device); err != nil {
 		if fallback, ok := plugDevice(device); ok {
@@ -84,6 +147,11 @@ func (p *alsaPlayer) Write(pcm []byte) error {
 	}
 	if p.frameBytes <= 0 {
 		return errors.New("player: invalid frame size")
+	}
+	if p.pack24to32 {
+		pcm = pack24to32(pcm)
+	} else if p.pack16to32 {
+		pcm = pack16to32(pcm)
 	}
 	frames := len(pcm) / p.frameBytes
 	offset := 0

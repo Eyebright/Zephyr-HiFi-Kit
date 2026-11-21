@@ -3,12 +3,17 @@ package zatserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net"
+	"os"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
+	"hifihub/server/internal/decode"
+	"hifihub/server/internal/library"
 	"hifihub/zat"
 )
 
@@ -23,11 +28,20 @@ type ctrlEvent struct {
 	audioLen int
 }
 
+type ctrlOpts struct {
+	caps       zat.Caps
+	bitPerfect bool
+}
+
 // runCtrlEndpoint authenticates and stays connected across sessions, auto-ACKing
 // every SETUP and forwarding observed frames to events. AUDIO is answered with a
 // fixed PTS=0 STATUS so the source's drain wait keeps the session alive (the
 // test controls lifetime via Stop/Seek rather than a simulated playback clock).
 func runCtrlEndpoint(t *testing.T, addr, nodeID, secret string, ready chan<- struct{}, events chan<- ctrlEvent) {
+	runCtrlEndpointOpts(t, addr, nodeID, secret, ctrlOpts{caps: zat.Caps{MaxChannels: 2}}, ready, events)
+}
+
+func runCtrlEndpointOpts(t *testing.T, addr, nodeID, secret string, opts ctrlOpts, ready chan<- struct{}, events chan<- ctrlEvent) {
 	t.Helper()
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
@@ -36,7 +50,7 @@ func runCtrlEndpoint(t *testing.T, addr, nodeID, secret string, ready chan<- str
 	}
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(60 * time.Second))
-	hello := zat.Hello{NodeID: nodeID, SecretSHA256: hash(secret), AgentVersion: "test", Caps: zat.Caps{MaxChannels: 2}}
+	hello := zat.Hello{NodeID: nodeID, SecretSHA256: hash(secret), AgentVersion: "test", Caps: opts.caps}
 	f, _ := zat.ControlFrame(zat.TypeHello, 1, hello)
 	if err := zat.WriteFrame(conn, f); err != nil {
 		t.Errorf("hello: %v", err)
@@ -94,7 +108,7 @@ func runCtrlEndpoint(t *testing.T, addr, nodeID, secret string, ready chan<- str
 			sid = su.SessionID
 			paused = false
 			mu.Unlock()
-			sa := zat.SetupAck{SessionID: su.SessionID, OK: true,
+			sa := zat.SetupAck{SessionID: su.SessionID, OK: true, BitPerfect: opts.bitPerfect,
 				Opened: zat.OpenedParams{Format: su.Format, Rate: su.Rate, Channels: su.Channels}, BufferFrames: 1024}
 			sf, _ := zat.ControlFrame(zat.TypeSetupAck, 2, sa)
 			wmu.Lock()
@@ -432,4 +446,223 @@ func TestVolumeAndNoSession(t *testing.T) {
 	if ev.volume.Volume != 100 {
 		t.Fatalf("volume not clamped: %+v", ev.volume)
 	}
+}
+
+func TestMQAPlaybackStrictPath(t *testing.T) {
+	h := setup(t)
+	nodeID, secret := h.register(t, "ep-mqa", true)
+	trackID, _ := h.addWAVTrack(t, 200000)
+	if _, err := h.st.DB.Exec(`UPDATE tracks SET mqa=1, mqa_checked=1 WHERE id=?`, trackID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.st.DB.Exec(`UPDATE nodes SET dac_device='hw:0,0' WHERE node_id=?`, nodeID); err != nil {
+		t.Fatal(err)
+	}
+	ready := make(chan struct{}, 1)
+	events := make(chan ctrlEvent, 512)
+	go runCtrlEndpointOpts(t, h.srv.Addr(), nodeID, secret, ctrlOpts{caps: zat.Caps{MaxChannels: 2, MQA: true}, bitPerfect: true}, ready, events)
+	<-ready
+
+	if _, err := h.srv.StartPlay(context.Background(), nodeID, trackID); err != nil {
+		t.Fatalf("StartPlay: %v", err)
+	}
+	su := waitEvent(t, events, zat.TypeSetup, 3*time.Second)
+	if !su.setup.MQA {
+		t.Fatalf("SETUP did not request MQA: %+v", su.setup)
+	}
+	st, err := h.srv.Status(nodeID)
+	if err != nil || !st.MQA || !st.BitPerfect || !st.MQACapable {
+		t.Fatalf("status mqa/bitperfect = %+v err=%v", st, err)
+	}
+	if err := h.srv.SetVolume(nodeID, 40); !errors.Is(err, ErrMQALocked) {
+		t.Fatalf("SetVolume during MQA = %v want ErrMQALocked", err)
+	}
+	if err := h.srv.Stop(nodeID); err != nil {
+		t.Fatal(err)
+	}
+	waitEvent(t, events, zat.TypeStop, 5*time.Second)
+}
+
+func TestMQARequiresCapabilityAndHW(t *testing.T) {
+	h := setup(t)
+	nodeID, secret := h.register(t, "ep-mqa-2", true)
+	trackID, _ := h.addWAVTrack(t, 200000)
+	if _, err := h.st.DB.Exec(`UPDATE tracks SET mqa=1, mqa_checked=1 WHERE id=?`, trackID); err != nil {
+		t.Fatal(err)
+	}
+	ready := make(chan struct{}, 1)
+	events := make(chan ctrlEvent, 64)
+	go runCtrlEndpoint(t, h.srv.Addr(), nodeID, secret, ready, events)
+	<-ready
+	if _, err := h.srv.StartPlay(context.Background(), nodeID, trackID); !errors.Is(err, ErrMQACapability) {
+		t.Fatalf("StartPlay without MQA cap = %v want ErrMQACapability", err)
+	}
+}
+
+func TestMQADeviceRequiresHW(t *testing.T) {
+	h := setup(t)
+	nodeID, secret := h.register(t, "ep-mqa-3", true)
+	trackID, _ := h.addWAVTrack(t, 200000)
+	if _, err := h.st.DB.Exec(`UPDATE tracks SET mqa=1, mqa_checked=1 WHERE id=?`, trackID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.st.DB.Exec(`UPDATE nodes SET dac_device='default' WHERE node_id=?`, nodeID); err != nil {
+		t.Fatal(err)
+	}
+	ready := make(chan struct{}, 1)
+	events := make(chan ctrlEvent, 64)
+	go runCtrlEndpointOpts(t, h.srv.Addr(), nodeID, secret, ctrlOpts{caps: zat.Caps{MaxChannels: 2, MQA: true}, bitPerfect: true}, ready, events)
+	<-ready
+	if _, err := h.srv.StartPlay(context.Background(), nodeID, trackID); !errors.Is(err, ErrMQADevice) {
+		t.Fatalf("StartPlay on default device = %v want ErrMQADevice", err)
+	}
+}
+
+func TestDSDDoPStrictPath(t *testing.T) {
+	h := setup(t)
+	nodeID, secret := h.register(t, "ep-dop", true)
+	if _, err := h.st.DB.Exec(`UPDATE nodes SET dac_device='hw:0,0' WHERE node_id=?`, nodeID); err != nil {
+		t.Fatal(err)
+	}
+	m, err := h.lib.AddMount(library.AddMountRequest{Host: "nas", Share: "music"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := t.TempDir()
+	if _, err := h.st.DB.Exec(`UPDATE mounts SET target=?,status='mounted' WHERE id=?`, target, m.ID); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(target, "DSD")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeTestDSF(t, filepath.Join(dir, "song.dsf"))
+	if _, err := h.lib.Scan(context.Background(), m.ID); err != nil {
+		t.Fatal(err)
+	}
+	tracks, err := h.lib.ListTracks(m.ID)
+	if err != nil || len(tracks) != 1 {
+		t.Fatalf("scan dsd: %v len=%d", err, len(tracks))
+	}
+	if !tracks[0].Decodable || tracks[0].Codec != "dsd" {
+		t.Fatalf("dsd track = %+v", tracks[0])
+	}
+	ready := make(chan struct{}, 1)
+	events := make(chan ctrlEvent, 512)
+	go runCtrlEndpointOpts(t, h.srv.Addr(), nodeID, secret, ctrlOpts{caps: zat.Caps{MaxChannels: 2, DoP: true}, bitPerfect: true}, ready, events)
+	<-ready
+	if _, err := h.srv.StartPlay(context.Background(), nodeID, tracks[0].ID); err != nil {
+		t.Fatalf("StartPlay: %v", err)
+	}
+	su := waitEvent(t, events, zat.TypeSetup, 3*time.Second)
+	if !su.setup.DoP || su.setup.DSDRate != 2822400 || su.setup.Rate != 176400 || su.setup.Format != zat.S24LE {
+		t.Fatalf("DoP setup = %+v", su.setup)
+	}
+	st, err := h.srv.Status(nodeID)
+	if err != nil || !st.DoP || st.DSDRate != 2822400 || !st.BitPerfect || !st.DoPCapable {
+		t.Fatalf("DoP status = %+v err=%v", st, err)
+	}
+	if err := h.srv.SetVolume(nodeID, 40); !errors.Is(err, ErrDoPLocked) {
+		t.Fatalf("SetVolume during DoP = %v want ErrDoPLocked", err)
+	}
+	_ = h.srv.Stop(nodeID)
+}
+
+func TestDSDRequiresDoPCapability(t *testing.T) {
+	h := setup(t)
+	nodeID, secret := h.register(t, "ep-dop-2", true)
+	if _, err := h.st.DB.Exec(`UPDATE nodes SET dac_device='hw:0,0' WHERE node_id=?`, nodeID); err != nil {
+		t.Fatal(err)
+	}
+	m, err := h.lib.AddMount(library.AddMountRequest{Host: "nas", Share: "music"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := t.TempDir()
+	if _, err := h.st.DB.Exec(`UPDATE mounts SET target=?,status='mounted' WHERE id=?`, target, m.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(target, "DSD"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeTestDSF(t, filepath.Join(target, "DSD", "song.dsf"))
+	if _, err := h.lib.Scan(context.Background(), m.ID); err != nil {
+		t.Fatal(err)
+	}
+	tracks, _ := h.lib.ListTracks(m.ID)
+	ready := make(chan struct{}, 1)
+	events := make(chan ctrlEvent, 64)
+	go runCtrlEndpoint(t, h.srv.Addr(), nodeID, secret, ready, events)
+	<-ready
+	if _, err := h.srv.StartPlay(context.Background(), nodeID, tracks[0].ID); !errors.Is(err, ErrDoPCapability) {
+		t.Fatalf("StartPlay without DoP cap = %v want ErrDoPCapability", err)
+	}
+}
+
+type fakePCMDecoder struct {
+	format decode.PCMFormat
+	total  uint64
+}
+
+func (f *fakePCMDecoder) Read([]byte) (int, error) { return 0, io.EOF }
+func (f *fakePCMDecoder) Close() error             { return nil }
+func (f *fakePCMDecoder) Format() decode.PCMFormat { return f.format }
+func (f *fakePCMDecoder) TotalSamples() uint64     { return f.total }
+
+func TestDSDFallbackToPCM(t *testing.T) {
+	h := setup(t)
+	nodeID, secret := h.register(t, "ep-dop-pcm", true)
+	if _, err := h.st.DB.Exec(`UPDATE nodes SET dac_device='hw:0,0' WHERE node_id=?`, nodeID); err != nil {
+		t.Fatal(err)
+	}
+	m, err := h.lib.AddMount(library.AddMountRequest{Host: "nas", Share: "music"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := t.TempDir()
+	if _, err := h.st.DB.Exec(`UPDATE mounts SET target=?,status='mounted' WHERE id=?`, target, m.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(target, "DSD"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeTestDSF(t, filepath.Join(target, "DSD", "song.dsf"))
+	if _, err := h.lib.Scan(context.Background(), m.ID); err != nil {
+		t.Fatal(err)
+	}
+	tracks, _ := h.lib.ListTracks(m.ID)
+
+	old := openFallbackPCM
+	defer func() { openFallbackPCM = old }()
+	openFallbackPCM = func(path string, rate, channels, durationMS int) (decode.Decoder, error) {
+		return &fakePCMDecoder{format: decode.PCMFormat{Format: zat.S24LE, Rate: rate, Channels: channels}, total: uint64(rate)}, nil
+	}
+
+	ready := make(chan struct{}, 1)
+	events := make(chan ctrlEvent, 512)
+	// DoP capability present, but the ACK never confirms bit-perfect, which is
+	// exactly the case that must fall back to ffmpeg PCM.
+	go runCtrlEndpointOpts(t, h.srv.Addr(), nodeID, secret, ctrlOpts{caps: zat.Caps{MaxChannels: 2, DoP: true}, bitPerfect: false}, ready, events)
+	<-ready
+	if _, err := h.srv.StartPlay(context.Background(), nodeID, tracks[0].ID); err != nil {
+		t.Fatalf("StartPlay fallback: %v", err)
+	}
+	evs := collectEvents(events, 500*time.Millisecond)
+	var setups []zat.Setup
+	for _, ev := range evs {
+		if ev.typ == zat.TypeSetup {
+			setups = append(setups, ev.setup)
+		}
+	}
+	if len(setups) != 2 || !setups[0].DoP || setups[1].DoP || setups[1].Rate != 176400 || setups[1].Format != zat.S24LE {
+		t.Fatalf("setups = %+v", setups)
+	}
+	st, err := h.srv.Status(nodeID)
+	if err != nil || !st.Converted || st.DoP || st.DSDRate != 2822400 {
+		t.Fatalf("fallback status = %+v err=%v", st, err)
+	}
+	if err := h.srv.SetVolume(nodeID, 40); err != nil {
+		t.Fatalf("volume after PCM fallback should work: %v", err)
+	}
+	_ = h.srv.Stop(nodeID)
 }

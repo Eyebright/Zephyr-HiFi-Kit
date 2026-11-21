@@ -93,6 +93,9 @@ func (s *Store) additiveMigrate() error {
 		{"tracks", "disc_number", "INTEGER NOT NULL DEFAULT 0"},
 		{"tracks", "track_number", "INTEGER NOT NULL DEFAULT 0"},
 		{"tracks", "mtime_ns", "INTEGER NOT NULL DEFAULT 0"},
+		// tracks: MQA marker (tagged or sample-analysis detected).
+		{"tracks", "mqa", "INTEGER NOT NULL DEFAULT 0"},
+		{"tracks", "mqa_checked", "INTEGER NOT NULL DEFAULT 0"},
 		{"mounts", "kind", "TEXT NOT NULL DEFAULT 'smb'"},
 		{"mounts", "text_encoding", "TEXT NOT NULL DEFAULT 'auto'"},
 		{"mounts", "last_scan", "INTEGER NOT NULL DEFAULT 0"},
@@ -105,6 +108,9 @@ func (s *Store) additiveMigrate() error {
 		{"play_history", "measured", "INTEGER NOT NULL DEFAULT 0"},
 		// app_versions: distro package name for format=apt entries.
 		{"app_versions", "apt_package", "TEXT NOT NULL DEFAULT ''"},
+		// node_queue: per-terminal playback mode + frozen shuffle order.
+		{"node_queue", "mode", "TEXT NOT NULL DEFAULT 'sequence'"},
+		{"node_queue", "shuffle_order", "TEXT NOT NULL DEFAULT '[]'"},
 	}
 	for _, c := range cols {
 		if err := s.addColumnIfMissing(c.table, c.name, c.decl); err != nil {
@@ -460,11 +466,35 @@ CREATE TABLE IF NOT EXISTS tracks (
   total_samples INTEGER NOT NULL DEFAULT 0,
   duration_ms   INTEGER NOT NULL DEFAULT 0,
   decodable     INTEGER NOT NULL DEFAULT 0,
+  mqa           INTEGER NOT NULL DEFAULT 0,
+  mqa_checked   INTEGER NOT NULL DEFAULT 0,
   size          INTEGER NOT NULL DEFAULT 0,
   scanned_at    INTEGER NOT NULL,
   UNIQUE(mount_id, rel_path)
 );
 CREATE INDEX IF NOT EXISTS idx_tracks_mount ON tracks(mount_id);
+
+-- Materialized artist index: artist grouping and pinyin keys are computed once
+-- per scan instead of on every browse request.
+CREATE TABLE IF NOT EXISTS artist_index (
+  mode          TEXT NOT NULL,
+  name          TEXT NOT NULL,
+  sort_key      TEXT NOT NULL,
+  initial       TEXT NOT NULL,
+  first_char    TEXT NOT NULL,
+  track_count   INTEGER NOT NULL DEFAULT 0,
+  album_count   INTEGER NOT NULL DEFAULT 0,
+  duration_ms   INTEGER NOT NULL DEFAULT 0,
+  cover_hash    TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY(mode,name)
+);
+CREATE INDEX IF NOT EXISTS idx_artist_index_initial ON artist_index(mode,initial,sort_key,name);
+CREATE INDEX IF NOT EXISTS idx_artist_index_sort ON artist_index(mode,sort_key,name);
+CREATE TABLE IF NOT EXISTS artist_index_meta (
+  mode      TEXT PRIMARY KEY,
+  built_at  INTEGER NOT NULL DEFAULT 0,
+  tracks    INTEGER NOT NULL DEFAULT 0
+);
 
 -- Identity survives catalog cleanup and temporarily missing files, but not source deletion.
 CREATE TABLE IF NOT EXISTS track_identities (
@@ -483,10 +513,12 @@ CREATE TABLE IF NOT EXISTS covers (
 );
 
 CREATE TABLE IF NOT EXISTS node_queue (
-  node_id    TEXT PRIMARY KEY,
-  track_ids  TEXT NOT NULL DEFAULT '[]',
-  position   INTEGER NOT NULL DEFAULT 0,
-  updated_at INTEGER NOT NULL DEFAULT 0
+  node_id       TEXT PRIMARY KEY,
+  track_ids     TEXT NOT NULL DEFAULT '[]',
+  position      INTEGER NOT NULL DEFAULT 0,
+  updated_at    INTEGER NOT NULL DEFAULT 0,
+  mode          TEXT NOT NULL DEFAULT 'sequence',
+  shuffle_order TEXT NOT NULL DEFAULT '[]'
 );
 
 CREATE TABLE IF NOT EXISTS play_history (

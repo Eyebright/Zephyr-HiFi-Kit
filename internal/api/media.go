@@ -508,3 +508,33 @@ func (a *API) queueJump(w http.ResponseWriter, r *http.Request) {
 		return a.zat.QueueJump(ctx, nodeID, body.Index)
 	})
 }
+
+// setQueueMode persists the terminal's queue playback mode ("sequence",
+// "loop_all", "loop_one" or "shuffle") and returns the updated queue.
+func (a *API) setQueueMode(w http.ResponseWriter, r *http.Request) {
+	if a.zat == nil {
+		writeErrorCode(w, http.StatusServiceUnavailable, "zat_unavailable", "ZAT 服务未启用")
+		return
+	}
+	var body struct {
+		Mode string `json:"mode"`
+	}
+	if err := decode(r, &body); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_json", err.Error(), "")
+		return
+	}
+	if !zatserver.ValidQueueMode(body.Mode) {
+		writeErrorCode(w, http.StatusBadRequest, "bad_request", "队列播放模式无效："+body.Mode)
+		return
+	}
+	q, err := a.zat.SetQueueMode(r.PathValue("id"), body.Mode)
+	if err != nil {
+		if errors.Is(err, zatserver.ErrQueueMode) {
+			writeServiceError(w, http.StatusBadRequest, err)
+			return
+		}
+		fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, q)
+}

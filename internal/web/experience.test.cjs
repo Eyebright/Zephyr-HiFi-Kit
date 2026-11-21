@@ -1305,7 +1305,7 @@ test("language changes repaint cached library and audit views without remounting
       if (route === "library") {
         assert.ok(h.elements.get("#lb-header").innerHTML.includes(h.run("lbT('libTitle')")));
         assert.match(h.elements.get("#lb-body").innerHTML, /Cached album/);
-        assert.match(h.elements.get("#lb-pages").innerHTML, /data-page="1"/);
+        assert.match(h.elements.get("#lb-pages").innerHTML, /data-offset="0"/);
       } else {
         assert.ok(title.innerHTML.includes(h.run("appT('m068')")));
         assert.match(h.elements.get("#au-chips").innerHTML, /class="chip active" data-act="audit-filter" data-f="settings.update"/);
@@ -1462,4 +1462,21 @@ test("assets order keeps experience between settings and terminal-center", () =>
   assert.ok(html.indexOf('src="/settings.js"') < html.indexOf('src="/experience.js"'));
   assert.ok(html.indexOf('src="/experience.js"') < html.indexOf('src="/terminal-center.js"'));
   assert.match(html, /id="onboarding-root"/); assert.match(html, /aria-controls="sidebar" aria-expanded="false"/);
+});
+
+test("new albums sort by the latest added track, cache groups and cap at 50", () => {
+  const h = harness();
+  h.run(`S.tracks = [
+    { artist: 'A', album: 'Old', added_at: 5, duration_ms: 1 },
+    { artist: 'A', album: 'Old', added_at: 100, duration_ms: 1 },
+    { artist: 'B', album: 'Newest', added_at: 200, duration_ms: 1 },
+    { artist: 'C', album: 'Mixed', added_at: 0, duration_ms: 1 },
+    { artist: 'C', album: 'Mixed', added_at: 150, duration_ms: 1 },
+    { artist: 'D', album: 'Unknown', added_at: 0, duration_ms: 1 }
+  ];`);
+  const order = h.run("JSON.stringify(ovAddedAlbums(albumGroups()).filter(x => x.added > 0).map(x => [x.g.album, x.added]))");
+  assert.equal(order, JSON.stringify([["Newest", 200], ["Mixed", 150], ["Old", 100]]));
+  assert.equal(h.run("albumGroups() === albumGroups()"), true, "album grouping must be cached");
+  assert.equal(h.run("ovAddedAlbums(albumGroups()) === ovAddedAlbums(albumGroups())"), true, "added ordering must be cached");
+  assert.equal(h.run("NEW_ALBUM_LIMIT"), 50);
 });

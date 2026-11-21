@@ -16,6 +16,8 @@ type stubPlayer struct{}
 
 func newPlatform() Player { return stubPlayer{} }
 
+func supportsBitPerfect() bool { return false }
+
 func (stubPlayer) Open(zat.Format, int, int, string) error { return errStub }
 func (stubPlayer) Write([]byte) error                      { return errStub }
 func (stubPlayer) Drain() error                            { return errStub }

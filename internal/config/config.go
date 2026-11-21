@@ -2,8 +2,12 @@
 package config
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -50,6 +54,11 @@ type Config struct {
 	UpdateMaxAttempts  int
 	UpdateRingPercent  int
 	UpdateStageDir     string
+
+	// DiscoveryID identifies this server instance in terminal auto-discovery
+	// replies. DiscoveryEnabled adds the signed discovery endpoint.
+	DiscoveryID      string
+	DiscoveryEnabled bool
 }
 
 // Load reads configuration from the environment, applying defaults.
@@ -81,7 +90,32 @@ func Load() Config {
 	c.UpdateMaxAttempts = envInt("HIFIHUB_UPDATE_MAX_ATTEMPTS", 3)
 	c.UpdateRingPercent = envInt("HIFIHUB_UPDATE_RING_PERCENT", 20)
 	c.UpdateStageDir = env("HIFIHUB_UPDATE_STAGE_DIR", c.DataDir+"/update")
+	c.DiscoveryEnabled = envBool("HIFIHUB_DISCOVERY", true)
+	c.DiscoveryID = loadDiscoveryID(c.DataDir)
 	return c
+}
+
+// loadDiscoveryID returns a stable per-instance id used to sign discovery
+// replies. It is persisted next to the database; a runtime-random fallback
+// still lets discovery work if the file cannot be written.
+func loadDiscoveryID(dir string) string {
+	if v := os.Getenv("HIFIHUB_DISCOVERY_ID"); v != "" {
+		return v
+	}
+	path := filepath.Join(dir, "server-id")
+	if raw, err := os.ReadFile(path); err == nil {
+		if id := strings.TrimSpace(string(raw)); id != "" {
+			return id
+		}
+	}
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		return "zephyr"
+	}
+	id := hex.EncodeToString(buf)
+	_ = os.MkdirAll(dir, 0o755)
+	_ = os.WriteFile(path, []byte(id+"\n"), 0o600)
+	return id
 }
 
 func env(key, def string) string {

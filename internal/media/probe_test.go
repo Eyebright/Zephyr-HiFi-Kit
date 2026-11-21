@@ -133,12 +133,43 @@ func TestProbeADTS(t *testing.T) {
 }
 
 func TestProbeDSF(t *testing.T) {
-	h := make([]byte, 28)
+	h := make([]byte, 92)
 	copy(h[0:4], "DSD ")
-	binary.LittleEndian.PutUint32(h[24:28], 2)
+	copy(h[28:32], "fmt ")
+	copy(h[44:48], "DSD ") // format id 0 is stored little-endian
+	binary.LittleEndian.PutUint32(h[52:56], 2)
+	binary.LittleEndian.PutUint32(h[56:60], 2822400)
+	binary.LittleEndian.PutUint32(h[60:64], 1)
+	binary.LittleEndian.PutUint64(h[64:72], 2822400*10)
+	binary.LittleEndian.PutUint32(h[72:76], 4096)
+	copy(h[80:84], "data")
 	r := Probe(h, 1<<20)
-	if r.Codec != "dsd" || r.Container != "dsf" || r.Channels != 2 {
+	if r.Codec != "dsd" || r.Container != "dsf" || r.Channels != 2 || r.Rate != 2822400 {
 		t.Fatalf("dsf = %+v", r)
+	}
+	if r.TotalSamples != 2822400*10/16 || r.DurationMS != 10000 || !r.Decodable {
+		t.Fatalf("dsf totals = %+v", r)
+	}
+}
+
+func TestProbeDFF(t *testing.T) {
+	h := make([]byte, 96)
+	copy(h[0:4], "FRM8")
+	copy(h[12:16], "DSD ")
+	copy(h[16:20], "PROP")
+	binary.BigEndian.PutUint64(h[20:28], 34)
+	copy(h[28:32], "SND ")
+	copy(h[32:36], "FS  ")
+	binary.BigEndian.PutUint64(h[36:44], 4)
+	binary.BigEndian.PutUint32(h[44:48], 2822400)
+	copy(h[48:52], "CHNL")
+	binary.BigEndian.PutUint64(h[52:60], 2)
+	binary.BigEndian.PutUint16(h[60:62], 2)
+	copy(h[62:66], "DSD ")
+	binary.BigEndian.PutUint64(h[66:74], 705600)
+	r := Probe(h, 1<<20)
+	if r.Codec != "dsd" || r.Container != "dff" || r.Channels != 2 || r.Rate != 2822400 || !r.Decodable {
+		t.Fatalf("dff = %+v", r)
 	}
 }
 
@@ -159,4 +190,41 @@ func TestProbeUnknown(t *testing.T) {
 	if r := Probe([]byte{1}, 10); r.Codec != "unknown" {
 		t.Fatalf("short = %+v", r)
 	}
+}
+
+func TestProbeFLACMQAApplicationBlock(t *testing.T) {
+	h := []byte("fLaC")
+	si := make([]byte, 4+34)
+	si[0], si[1], si[2], si[3] = 0x00, 0x00, 0x00, 0x22 // STREAMINFO, 34 bytes
+	h = append(h, si...)
+	app := []byte{0x02, 0x00, 0x00, 0x04, 'M', 'Q', 'A', ' '}
+	h = append(h, app...)
+	if r := Probe(h, int64(len(h))); !r.MQA {
+		t.Fatalf("MQA application block not detected: %+v", r)
+	}
+}
+
+func TestProbeFLACMQATag(t *testing.T) {
+	h := []byte("fLaC")
+	si := make([]byte, 4+34)
+	si[3] = 0x22
+	h = append(h, si...)
+	comment := []byte("MQAENCODER=MQAEncode v1.2")
+	vendor := []byte("reference libFLAC")
+	payload := make([]byte, 0, 4+len(vendor)+4+4+len(comment))
+	payload = appendLE(payload, len(vendor))
+	payload = append(payload, vendor...)
+	payload = appendLE(payload, 1)
+	payload = appendLE(payload, len(comment))
+	payload = append(payload, comment...)
+	block := []byte{0x84, byte(len(payload) >> 16), byte(len(payload) >> 8), byte(len(payload))}
+	h = append(h, block...)
+	h = append(h, payload...)
+	if r := Probe(h, int64(len(h))); !r.MQA {
+		t.Fatalf("MQA tag not detected: %+v", r)
+	}
+}
+
+func appendLE(b []byte, v int) []byte {
+	return append(b, byte(v), byte(v>>8), byte(v>>16), byte(v>>24))
 }

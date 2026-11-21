@@ -53,7 +53,7 @@ func TestBrowseSevenCategoriesAndPinyin(t *testing.T) {
 	s, m := browseFixture(t)
 	for category, total := range map[string]int{"artists": 4, "albums": 4, "tracks": 5, "genres": 4, "years": 2, "composers": 4, "folders": 1} {
 		page := mustBrowse(t, s, BrowseQuery{Category: category})
-		if page.Category != category || page.Total != total || page.TotalTracks != 5 || page.Page != 1 || page.PageSize != 24 || len(page.Items) != total {
+		if page.Category != category || page.Total != total || page.TotalTracks != 5 || page.Page != 1 || page.PageSize != 20 || len(page.Items) != total {
 			t.Fatalf("%s: %+v", category, page)
 		}
 	}
@@ -290,7 +290,7 @@ func TestBrowseYearRangeAlbumDrilldownAndSelection(t *testing.T) {
 		t.Fatalf("decade album totals: %+v", decades)
 	}
 	decade := decades.Items[0]
-	q := BrowseQuery{Category: "albums", Artist: browseString("Band"), YearFrom: &decade.YearFrom, YearTo: &decade.YearTo}
+	q := BrowseQuery{Category: "albums", Artist: browseString("Band"), YearFrom: &decade.YearFrom, YearTo: &decade.YearTo, PageSize: 24}
 	seen := map[string]bool{}
 	for pageNumber := 1; pageNumber <= 3; pageNumber++ {
 		q.Page = pageNumber
@@ -400,10 +400,14 @@ func TestBrowsePaginationSortAndSelection(t *testing.T) {
 	if len(seen) != 60 {
 		t.Fatalf("missing paginated tracks: %d", len(seen))
 	}
-	for _, size := range []int{24, 48, 96} {
+	for _, size := range []int{20, 24, 48, 96} {
 		if page := mustBrowse(t, s, BrowseQuery{PageSize: size}); len(page.Items) != min(size, 60) {
 			t.Fatalf("size %d: %+v", size, page)
 		}
+	}
+	page := mustBrowse(t, s, BrowseQuery{PageSize: 10, Offset: 20})
+	if page.Offset != 20 || page.Page != 3 || len(page.Items) != 10 || page.Items[0].Value != "t20" {
+		t.Fatalf("offset page: %+v", page)
 	}
 	for _, sort := range []string{"year", "added", "duration"} {
 		for _, direction := range []string{"asc", "desc"} {
@@ -468,7 +472,7 @@ func TestBrowseRejectsInvalidQuery(t *testing.T) {
 	s, _ := browseFixture(t)
 	for _, q := range []BrowseQuery{
 		{Category: "sql"}, {Field: "title; DROP TABLE tracks"}, {Sort: "title"}, {Direction: "ASC;--"}, {ArtistMode: "both"},
-		{Page: -1}, {PageSize: 1}, {PageSize: -24}, {Page: int(^uint(0) >> 1)}, {Initial: "AB"}, {Initial: "1"},
+		{Page: -1}, {PageSize: -24}, {PageSize: 201}, {Offset: -1}, {Page: int(^uint(0) >> 1)}, {Initial: "AB"}, {Initial: "1"},
 		{Directory: "../outside", MountID: "m"}, {Directory: "nested/../outside", MountID: "m"}, {Directory: "/absolute", MountID: "m"},
 		{Directory: "C:\\outside", MountID: "m"}, {Directory: "album"}, {Year: browseYear(-1)},
 		{YearFrom: browseYear(1980)}, {YearTo: browseYear(1989)},

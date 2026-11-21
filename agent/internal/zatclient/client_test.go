@@ -29,6 +29,7 @@ type testPlayer struct {
 	closed   bool
 	openErr  error
 	writeErr error
+	bitPerf  bool
 }
 
 func (p *testPlayer) Open(f zat.Format, rate, ch int, dev string) error {
@@ -40,6 +41,19 @@ func (p *testPlayer) Open(f zat.Format, rate, ch int, dev string) error {
 	p.format, p.rate, p.channels, p.device = f, rate, ch, dev
 	return nil
 }
+func (p *testPlayer) OpenBitPerfect(f zat.Format, rate, ch int, dev string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.openErr != nil {
+		return p.openErr
+	}
+	p.format, p.rate, p.channels, p.device = f, rate, ch, dev
+	p.bitPerf = true
+	return nil
+}
+
+func (p *testPlayer) BitPerfect() (bool, string) { return p.bitPerf, "test" }
+
 func (p *testPlayer) Write(pcm []byte) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -697,4 +711,130 @@ func waitPlaying(t *testing.T, c *Client, want bool) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("Playing() never became %v", want)
+}
+
+func TestMQASetupLocksVolume(t *testing.T) {
+	fp := &testPlayer{}
+	src := newFakeSource(t)
+	defer src.close()
+	c := newTestClient(src.addr(), fp)
+	done := runClient(c)
+
+	src.accept()
+	src.read()
+	src.send(zat.TypeHelloAck, zat.HelloAck{SessionID: "", ServerVersion: "zat/0.1", PrebufferMS: 0})
+
+	src.send(zat.TypeSetup, zat.Setup{SessionID: "s-mqa", TrackID: "trk-mqa", Format: zat.S16LE, Rate: 44100, Channels: 2, ALSADevice: "hw:0,0", TotalSamples: 1000, MQA: true})
+	var ack zat.SetupAck
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		_ = src.conn.SetReadDeadline(time.Now().Add(1200 * time.Millisecond))
+		fr, err := zat.ReadFrame(src.conn)
+		if err != nil {
+			t.Fatalf("setup ack: %v", err)
+		}
+		if fr.Type == zat.TypeSetupAck {
+			_ = json.Unmarshal(fr.Payload, &ack)
+			break
+		}
+	}
+	if !ack.OK || !ack.BitPerfect {
+		t.Fatalf("MQA setup ack = %+v", ack)
+	}
+	fp.mu.Lock()
+	if !fp.bitPerf {
+		t.Fatal("player did not open the bit-perfect path")
+	}
+	fp.mu.Unlock()
+
+	src.send(zat.TypePlay, zat.Play{SessionID: "s-mqa"})
+	src.send(zat.TypeVolume, zat.Volume{SessionID: "s-mqa", Volume: 20})
+	pcm := rampPCM(1000, 2, 2)
+	src.sendAudio(0, pcm)
+
+	deadline = time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, writes, _, _ := fp.snapshot(); writes > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if vol := c.Snapshot().Volume; vol != 100 {
+		t.Fatalf("MQA session volume = %d want 100", vol)
+	}
+	got, _, _, _ := fp.snapshot()
+	if !bytes.Equal(got, pcm) {
+		t.Fatalf("MQA PCM was altered: got %d bytes, want %d", len(got), len(pcm))
+	}
+	src.send(zat.TypeStop, zat.Stop{SessionID: "s-mqa"})
+	src.close()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("client did not finish")
+	}
+}
+
+func TestDoPSetupLocksVolume(t *testing.T) {
+	fp := &testPlayer{}
+	src := newFakeSource(t)
+	defer src.close()
+	c := newTestClient(src.addr(), fp)
+	done := runClient(c)
+
+	src.accept()
+	src.read()
+	src.send(zat.TypeHelloAck, zat.HelloAck{SessionID: "", ServerVersion: "zat/0.1", PrebufferMS: 0})
+
+	src.send(zat.TypeSetup, zat.Setup{SessionID: "s-dop", TrackID: "trk-dop", Format: zat.S24LE, Rate: 176400, Channels: 2, ALSADevice: "hw:0,0", TotalSamples: 1000, DoP: true, DSDRate: 2822400})
+	var ack zat.SetupAck
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		_ = src.conn.SetReadDeadline(time.Now().Add(1200 * time.Millisecond))
+		fr, err := zat.ReadFrame(src.conn)
+		if err != nil {
+			t.Fatalf("setup ack: %v", err)
+		}
+		if fr.Type == zat.TypeSetupAck {
+			_ = json.Unmarshal(fr.Payload, &ack)
+			break
+		}
+	}
+	if !ack.OK || !ack.BitPerfect {
+		t.Fatalf("DoP setup ack = %+v", ack)
+	}
+	fp.mu.Lock()
+	if !fp.bitPerf {
+		t.Fatal("player did not open the bit-perfect path")
+	}
+	fp.mu.Unlock()
+	if snap := c.Snapshot(); !snap.DoP || snap.DSDRate != 2822400 {
+		t.Fatalf("snapshot = %+v", snap)
+	}
+
+	src.send(zat.TypePlay, zat.Play{SessionID: "s-dop"})
+	src.send(zat.TypeVolume, zat.Volume{SessionID: "s-dop", Volume: 20})
+	pcm := rampPCM(1000*6, 1, 1) // six bytes per DoP frame; opaque bytes
+	src.sendAudio(0, pcm)
+	deadline = time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, writes, _, _ := fp.snapshot(); writes > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if vol := c.Snapshot().Volume; vol != 100 {
+		t.Fatalf("DoP session volume = %d want 100", vol)
+	}
+	got, _, _, _ := fp.snapshot()
+	if !bytes.Equal(got, pcm) {
+		t.Fatalf("DoP PCM was altered: got %d bytes, want %d", len(got), len(pcm))
+	}
+	src.send(zat.TypeStop, zat.Stop{SessionID: "s-dop"})
+	src.close()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("client did not finish")
+	}
 }

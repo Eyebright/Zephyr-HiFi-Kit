@@ -7,10 +7,12 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -31,6 +33,7 @@ import (
 	"hifihub/server/internal/node"
 	"hifihub/server/internal/repo"
 	"hifihub/server/internal/rollouts"
+	"hifihub/server/internal/serverpush"
 	"hifihub/server/internal/signature"
 	"hifihub/server/internal/store"
 	"hifihub/server/internal/task"
@@ -93,6 +96,9 @@ func main() {
 	}
 	mntMgr := mount.NewBackend(mount.ExecRunner{}, cfg.MountCredDir)
 	lib := library.New(st, mntMgr, cfg.MountDir)
+	if err := lib.EnsureArtistIndex(context.Background()); err != nil {
+		logger.Warn("artist index", "err", err)
+	}
 	zat := zatserver.New(cfg.ZATAddr, nodes, lib, st)
 
 	// Version convergence: self-upgrade from the official release feed and poll
@@ -141,6 +147,13 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// Server-driven address configuration: when a terminal is offline (for
+	// example after the server's DHCP address changed), push our reachable
+	// address to its local console. The agent proves its identity first.
+	go pushLoop(ctx, nodes, cfg)
+	// Recover saved music sources after a reboot (Windows loses its SMB session).
+	go reconnectSources(ctx, lib)
 
 	go backgroundLoop(ctx, nodes, tasks, alts)
 	go updateLoop(ctx, upd, cfg.UpdateInterval)
@@ -222,6 +235,85 @@ func backgroundLoop(ctx context.Context, nodes *node.Service, tasks *task.Servic
 					}
 				}
 			}
+		}
+	}
+}
+
+// pushLoop periodically offers the current server address to offline terminals.
+func pushLoop(ctx context.Context, nodes *node.Service, cfg config.Config) {
+	last := map[string]time.Time{}
+	tick := time.NewTicker(20 * time.Second)
+	defer tick.Stop()
+	for {
+		pushOffline(ctx, nodes, cfg, last)
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+		}
+	}
+}
+
+func pushOffline(ctx context.Context, nodes *node.Service, cfg config.Config, last map[string]time.Time) {
+	ns, err := nodes.List()
+	if err != nil {
+		return
+	}
+	for _, n := range ns {
+		if !n.Authorized || n.Secret == "" || n.IP == "" || n.Status == "online" {
+			continue
+		}
+		if time.Since(last[n.NodeID]) < 45*time.Second {
+			continue
+		}
+		last[n.NodeID] = time.Now()
+		go func(n domain.Node) {
+			pctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+			defer cancel()
+			res, err := serverpush.Push(pctx, n.NodeID, n.IP, n.Secret, listenPort(cfg.ListenAddr), listenPort(cfg.ZATAddr))
+			if err != nil {
+				slog.Debug("server endpoint push", "node", n.NodeID, "ip", n.IP, "err", err)
+				return
+			}
+			if res.Changed {
+				slog.Info("server endpoint pushed", "node", n.NodeID, "url", res.ServerURL)
+			}
+		}(n)
+	}
+}
+
+func listenPort(addr string) int {
+	_, p, err := net.SplitHostPort(addr)
+	if err != nil {
+		return 0
+	}
+	n, err := strconv.Atoi(p)
+	if err != nil || n <= 0 {
+		return 0
+	}
+	return n
+}
+
+// reconnectSources restores shares whose saved state is mounted. Failures are
+// retried a few times because a NAS may still be booting when the server starts.
+func reconnectSources(ctx context.Context, lib *library.Service) {
+	for attempt := 1; attempt <= 3; attempt++ {
+		rctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		attempted, restored, failures := lib.Reconnect(rctx)
+		cancel()
+		if attempted > 0 {
+			slog.Info("music sources reconnect", "attempt", attempt, "attempted", attempted, "restored", restored, "failed", len(failures))
+		}
+		for _, f := range failures {
+			slog.Warn("music source reconnect failed", "err", f)
+		}
+		if len(failures) == 0 || ctx.Err() != nil {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(30 * time.Second):
 		}
 	}
 }

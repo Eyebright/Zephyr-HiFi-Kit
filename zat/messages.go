@@ -18,6 +18,10 @@ type Caps struct {
 	MaxChannels    int          `json:"max_channels,omitempty"`
 	ALSADevices    []string     `json:"alsa_devices,omitempty"`
 	ALSADeviceInfo []ALSADevice `json:"alsa_device_info,omitempty"`
+	// MQA reports bit-perfect MQA passthrough support (strict ALSA hw path).
+	MQA bool `json:"mqa,omitempty"`
+	// DoP reports DSD-over-PCM passthrough support (strict 24-bit hw path).
+	DoP bool `json:"dop,omitempty"`
 }
 
 // Hello is sent sink→source to authenticate and declare capabilities.
@@ -47,6 +51,12 @@ type Setup struct {
 	ALSADevice   string  `json:"alsa_device"`
 	TotalSamples uint64  `json:"total_samples"`
 	GainDB       float64 `json:"gain_db"`
+	// MQA asks the sink for strict bit-perfect output; software volume and
+	// converting plugins are not allowed for this session.
+	MQA bool `json:"mqa,omitempty"`
+	// DoP marks the PCM as DSD-over-PCM; DSDRate is the source 1-bit rate.
+	DoP     bool `json:"dop,omitempty"`
+	DSDRate int  `json:"dsd_rate,omitempty"`
 }
 
 // OpenedParams echoes the ALSA hw params the sink actually opened.
@@ -63,6 +73,9 @@ type SetupAck struct {
 	Opened       OpenedParams `json:"opened"`
 	BufferFrames int          `json:"buffer_frames"`
 	Detail       string       `json:"detail,omitempty"`
+	// BitPerfect is set when the sink opened a strict hw path without format
+	// conversion, resampling or software gain.
+	BitPerfect bool `json:"bit_perfect,omitempty"`
 }
 
 // Play starts or resumes playback, optionally from a sample position.
@@ -123,6 +136,9 @@ type TrackMeta struct {
 	Rate       int    `json:"rate"`
 	Channels   int    `json:"channels"`
 	CoverURL   string `json:"cover_url,omitempty"`
+	MQA        bool   `json:"mqa,omitempty"`
+	DoP        bool   `json:"dop,omitempty"`
+	DSDRate    int    `json:"dsd_rate,omitempty"`
 }
 
 // Teardown closes a session.

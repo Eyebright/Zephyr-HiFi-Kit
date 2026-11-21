@@ -108,7 +108,7 @@ func (a *API) route(pattern string, h http.HandlerFunc) {
 		"POST /api/v1/nodes/token", "POST /api/v1/nodes/restore", "PATCH /api/v1/nodes/{id}", "DELETE /api/v1/nodes/{id}",
 		"POST /api/v1/nodes/{id}/authorize", "POST /api/v1/nodes/{id}/revoke",
 		"POST /api/v1/nodes/{id}/commands", "POST /api/v1/nodes/{id}/apt-sources/apply",
-		"POST /api/v1/nodes/{id}/upgrade",
+		"POST /api/v1/nodes/{id}/upgrade", "POST /api/v1/nodes/{id}/server-endpoint",
 		"/api/v1/nodes/{id}/console/{rest...}", "/api/v1/nodes/{id}/local/api/{rest...}",
 		"POST /api/v1/boms", "POST /api/v1/boms/import", "POST /api/v1/boms/{id}/versions/{ver}/publish", "POST /api/v1/boms/{id}/rollback",
 		"POST /api/v1/jobs", "POST /api/v1/jobs/{id}/advance",
@@ -122,6 +122,7 @@ func (a *API) route(pattern string, h http.HandlerFunc) {
 
 func (a *API) routes() {
 	a.route("GET /api/v1/health", a.health)
+	a.route("GET /api/v1/discover", a.discoverNode)
 	a.route("GET /api/v1/settings/session", a.settingsSession)
 	a.route("POST /api/v1/settings/setup", a.setupSettingsAdmin)
 	a.route("POST /api/v1/settings/login", a.loginSettingsAdmin)
@@ -255,6 +256,7 @@ func (a *API) routes() {
 	a.route("POST /api/v1/mounts/{id}/archive", a.archiveMount)
 	a.route("GET /api/v1/library/browse", a.browseLibrary)
 	a.route("GET /api/v1/library/select", a.selectLibraryTracks)
+	a.route("GET /api/v1/library/artist-index", a.artistIndex)
 	a.route("GET /api/v1/tracks", a.listTracks)
 	a.route("GET /api/v1/tracks/{id}", a.getTrack)
 	a.route("GET /api/v1/covers/{hash}", a.getCover)
@@ -276,6 +278,8 @@ func (a *API) routes() {
 	a.route("POST /api/v1/nodes/{id}/queue/next", a.queueNext)
 	a.route("POST /api/v1/nodes/{id}/queue/prev", a.queuePrev)
 	a.route("POST /api/v1/nodes/{id}/queue/jump", a.queueJump)
+	a.route("POST /api/v1/nodes/{id}/queue/mode", a.setQueueMode)
+	a.route("POST /api/v1/nodes/{id}/server-endpoint", a.pushServerEndpoint)
 
 	// Playlists + play history (music-centric console).
 	a.route("GET /api/v1/history", a.listHistory)
@@ -479,6 +483,18 @@ func serviceErrorCode(err error, fallback string) string {
 		return "queue_end"
 	case errors.Is(err, zatserver.ErrQueueIndex):
 		return "queue_index_invalid"
+	case errors.Is(err, zatserver.ErrMQACapability):
+		return "mqa_unsupported"
+	case errors.Is(err, zatserver.ErrMQADevice):
+		return "mqa_device_requires_hw"
+	case errors.Is(err, zatserver.ErrMQALocked):
+		return "mqa_volume_locked"
+	case errors.Is(err, zatserver.ErrDoPCapability):
+		return "dop_unsupported"
+	case errors.Is(err, zatserver.ErrDoPDevice):
+		return "dop_device_requires_hw"
+	case errors.Is(err, zatserver.ErrDoPLocked):
+		return "dop_volume_locked"
 	case errors.Is(err, library.ErrNotMounted):
 		return "source_not_mounted"
 	case errors.Is(err, library.ErrLibraryBusy):

@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -21,6 +23,7 @@ import (
 	"hifihub/agent/internal/config"
 	"hifihub/agent/internal/executor"
 	"hifihub/agent/internal/model"
+	"hifihub/agent/internal/serveraddr"
 	"hifihub/agent/internal/serverclient"
 	"hifihub/agent/internal/state"
 	"hifihub/agent/internal/sysinfo"
@@ -44,8 +47,9 @@ type Core struct {
 	arch      string
 	machineID string
 
-	policyMu sync.RWMutex
-	policy   serverclient.Policy
+	policyMu   sync.RWMutex
+	policy     serverclient.Policy
+	endpointMu sync.Mutex
 }
 
 // New builds the agent core from configuration.
@@ -96,6 +100,42 @@ func (c *Core) State() *state.Store { return c.st }
 
 // Secret returns the persisted per-node secret (never logged).
 func (c *Core) Secret() string { return c.st.Snapshot().Secret }
+
+// SetServerEndpoint applies the address pushed by the management server. It
+// persists the choice and restarts the agent so HTTP and ZAT reconnect.
+func (c *Core) SetServerEndpoint(serverURL, zatAddr string) (bool, error) {
+	serverURL = strings.TrimRight(strings.TrimSpace(serverURL), "/")
+	u, err := url.Parse(serverURL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" ||
+		u.User != nil || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
+		return false, fmt.Errorf("无效的服务端地址 %q", serverURL)
+	}
+	if zatAddr == "" {
+		zatAddr = net.JoinHostPort(u.Hostname(), "7800")
+	} else if _, _, err := net.SplitHostPort(zatAddr); err != nil {
+		return false, fmt.Errorf("无效的 ZAT 地址 %q", zatAddr)
+	}
+	c.endpointMu.Lock()
+	changed := serverURL != c.cfg.ServerURL || zatAddr != c.cfg.ZATAddr
+	if changed {
+		if err := serveraddr.Save(c.cfg.DataDir, serveraddr.State{ServerURL: serverURL, ZATAddr: zatAddr}); err != nil {
+			c.endpointMu.Unlock()
+			return false, err
+		}
+		c.cfg.ServerURL, c.cfg.ZATAddr = serverURL, zatAddr
+	}
+	c.endpointMu.Unlock()
+	if changed {
+		log.Printf("server endpoint updated to %s; restarting", serverURL)
+		go func() {
+			time.Sleep(300 * time.Millisecond)
+			if err := exec.Command("systemctl", "restart", "hifihub-agent.service").Run(); err != nil {
+				log.Printf("restart after endpoint update: %v", err)
+			}
+		}()
+	}
+	return changed, nil
+}
 
 func (c *Core) setPolicy(p serverclient.Policy) {
 	c.policyMu.Lock()

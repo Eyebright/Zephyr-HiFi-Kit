@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"hifihub/agent/internal/serveraddr"
 )
 
 // Config holds all runtime settings for the terminal agent.
@@ -30,13 +32,14 @@ type Config struct {
 	CommandPoll  time.Duration // server command poll interval
 	AllowPower   bool          // expose shutdown/reboot in the local UI
 	AllowLocal   bool          // allow local install/uninstall from the UI
+	Discovery    bool          // auto-discover the server when it becomes unreachable
 	AgentVersion string
 	BuildFlavor  string // management|audio; audio builds report ALSA playback capability
 }
 
 // BuildVersion is injected by release builds (-ldflags -X ...config.BuildVersion=x.y.z);
 // a stale value makes fleet upgrades reinstall the same deb on every restart.
-var BuildVersion = "0.58"
+var BuildVersion = "0.62"
 
 // BuildFlavor is injected for audio builds (-ldflags -X ...config.BuildFlavor=audio)
 // so the server can pick the matching terminal package during upgrades.
@@ -54,6 +57,7 @@ func Default() Config {
 		CommandPoll:  10 * time.Second,
 		AllowPower:   true,
 		AllowLocal:   true,
+		Discovery:    true,
 		AgentVersion: BuildVersion,
 		BuildFlavor:  BuildFlavor,
 	}
@@ -90,6 +94,16 @@ func Load() Config {
 		k, v, ok := strings.Cut(kv, "=")
 		if ok && strings.HasPrefix(k, "HIFIHUB_AGENT_") {
 			apply(&c, strings.TrimPrefix(k, "HIFIHUB_AGENT_"), v)
+		}
+	}
+	// A previously discovered server address wins over the shipped default so
+	// a DHCP change heals across restarts.
+	// A server-pushed or discovered address always wins; Discovery only
+	// controls whether the agent scans when it cannot reach that address.
+	if st, ok := serveraddr.Load(c.DataDir); ok {
+		c.ServerURL = strings.TrimRight(st.ServerURL, "/")
+		if st.ZATAddr != "" {
+			c.ZATAddr = st.ZATAddr
 		}
 	}
 	// Derive the console bind address from LOCAL_BIND unless LISTEN_ADDR was
@@ -152,6 +166,8 @@ func apply(c *Config, key, val string) {
 		c.AllowPower = parseBool(val)
 	case "ALLOW_LOCAL":
 		c.AllowLocal = parseBool(val)
+	case "SERVER_DISCOVERY":
+		c.Discovery = parseBool(val)
 	}
 }
 

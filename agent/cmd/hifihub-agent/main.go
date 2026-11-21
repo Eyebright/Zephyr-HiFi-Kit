@@ -8,13 +8,17 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
+	"os/exec"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
 	"hifihub/agent/internal/config"
 	"hifihub/agent/internal/core"
+	"hifihub/agent/internal/discover"
 	"hifihub/agent/internal/ui"
 )
 
@@ -71,6 +75,30 @@ func main() {
 	})
 	// ZAT sink: maintain the outbound audio connection (reconnects automatically).
 	go c.RunZAT(ctx)
+
+	// The server's LAN address is DHCP and may change. When it is unreachable,
+	// scan the local subnet and switch to the address whose reply is signed with
+	// this terminal's node secret.
+	if cfg.Discovery {
+		port := 8080
+		if u, err := url.Parse(cfg.ServerURL); err == nil {
+			if p, err := strconv.Atoi(u.Port()); err == nil && p > 0 {
+				port = p
+			}
+		}
+		go discover.Run(ctx, discover.Settings{
+			NodeID:     func() string { return c.State().Snapshot().NodeID },
+			Secret:     c.Secret,
+			CurrentURL: func() string { return cfg.ServerURL },
+			DataDir:    cfg.DataDir,
+			HTTPPort:   port,
+			Interval:   20 * time.Second,
+			Restart: func() error {
+				return exec.Command("systemctl", "restart", "hifihub-agent.service").Start()
+			},
+			Logf: log.Printf,
+		})
+	}
 
 	<-ctx.Done()
 	log.Printf("shutting down")

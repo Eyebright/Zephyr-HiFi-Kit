@@ -12,8 +12,8 @@ import (
 )
 
 func TestParseBrowseQueryUnknownAndValidation(t *testing.T) {
-	q, err := parseBrowseQuery(url.Values{"category": {"artists"}, "artist": {""}, "year": {"0"}, "page_size": {"48"}})
-	if err != nil || q.Artist == nil || *q.Artist != "" || q.Year == nil || *q.Year != 0 || q.PageSize != 48 {
+	q, err := parseBrowseQuery(url.Values{"category": {"artists"}, "artist": {""}, "year": {"0"}, "page_size": {"48"}, "offset": {"96"}})
+	if err != nil || q.Artist == nil || *q.Artist != "" || q.Year == nil || *q.Year != 0 || q.PageSize != 48 || q.Offset != 96 {
 		t.Fatalf("unknown filter: %+v %v", q, err)
 	}
 	q, err = parseBrowseQuery(url.Values{"category": {"albums"}, "artist": {"Band"}, "album": {"Shared"}, "year_from": {"1980"}, "year_to": {"1989"}})
@@ -21,7 +21,7 @@ func TestParseBrowseQueryUnknownAndValidation(t *testing.T) {
 		t.Fatalf("range filter: %+v %v", q, err)
 	}
 	for _, v := range []url.Values{
-		{"page": {"-1"}}, {"page": {"1", "2"}}, {"page_size": {"x"}}, {"year": {"oops"}}, {"recursive": {"maybe"}},
+		{"page": {"-1"}}, {"page": {"1", "2"}}, {"page_size": {"x"}}, {"offset": {"-1"}}, {"year": {"oops"}}, {"recursive": {"maybe"}},
 		{"year_from": {""}}, {"year_to": {""}}, {"year_from": {"oops"}}, {"year_to": {"1989.5"}},
 		{"year_from": {"0"}}, {"year_to": {"0"}}, {"year_from": {"-1"}}, {"year_to": {"-1"}},
 		{"year_from": {"10000"}}, {"year_to": {"10000"}}, {"year_from": {"9999999999999999999999999999"}},
@@ -109,7 +109,7 @@ func TestLibraryBrowseDecadeRangeContract(t *testing.T) {
 			t.Fatalf("decade search selection %q: %d %s", term, status, body)
 		}
 	}
-	query := "category=albums&artist=Band&year_from=1980&year_to=1989&page=2"
+	query := "category=albums&artist=Band&year_from=1980&year_to=1989&page=2&page_size=24"
 	status, body = doJSON(t, "GET", base+"/library/browse?"+query, nil)
 	if status != http.StatusOK {
 		t.Fatalf("range drilldown: %d %s", status, body)

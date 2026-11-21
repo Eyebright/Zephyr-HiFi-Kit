@@ -2,8 +2,12 @@ package ui
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -16,16 +20,18 @@ import (
 )
 
 type fakeBackend struct {
-	installed   map[string]bool
-	enabled     map[string]bool
-	lastVersion string
-	lastConfig  map[string]string
-	powerAction string
-	failInstall bool
-	gate        GateState
-	osChecks    int
-	upgPackages []string
-	netdiags    int
+	lastServerURL string
+	lastZATAddr   string
+	installed     map[string]bool
+	enabled       map[string]bool
+	lastVersion   string
+	lastConfig    map[string]string
+	powerAction   string
+	failInstall   bool
+	gate          GateState
+	osChecks      int
+	upgPackages   []string
+	netdiags      int
 
 	playback       PlaybackState
 	playbackErr    error
@@ -50,7 +56,7 @@ func newFake() *fakeBackend {
 }
 
 func (f *fakeBackend) Identity(context.Context) Identity {
-	return Identity{Alias: "living-pi", Arch: "arm64", Registered: true, ServerReachable: true, SystemAvailable: true, AllowPower: true, AllowLocal: true, AgentVersion: "0.1.0"}
+	return Identity{NodeID: "n-test", Alias: "living-pi", Arch: "arm64", Registered: true, ServerReachable: true, SystemAvailable: true, AllowPower: true, AllowLocal: true, AgentVersion: "0.1.0"}
 }
 func (f *fakeBackend) Services(context.Context) []ServiceStatus {
 	var out []ServiceStatus
@@ -96,6 +102,11 @@ func (f *fakeBackend) Configure(app string, cfg map[string]string) error {
 	f.lastConfig = cfg
 	return nil
 }
+func (f *fakeBackend) SetServerEndpoint(serverURL, zatAddr string) (bool, error) {
+	f.lastServerURL, f.lastZATAddr = serverURL, zatAddr
+	return true, nil
+}
+
 func (f *fakeBackend) Power(action string) error { f.powerAction = action; return nil }
 func (f *fakeBackend) GateState() GateState      { return f.gate }
 func (f *fakeBackend) Secret() string            { return f.gate.Secret }
@@ -480,5 +491,59 @@ func TestPlaybackErrorPropagates(t *testing.T) {
 	code, body := do(t, h, "POST", "/local/api/playback/stop", "")
 	if code != 400 || !strings.Contains(body, "ZAT") {
 		t.Fatalf("expected 400 playback error, got %d %s", code, body)
+	}
+}
+
+func TestIdentityEndpointSignsNonce(t *testing.T) {
+	f := newFake()
+	f.gate.Secret = "node-secret"
+	srv := httptest.NewServer(New(f).Handler())
+	defer srv.Close()
+	resp, err := http.Get(srv.URL + "/local/api/identity?nonce=abc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var out struct {
+		NodeID string `json:"node_id"`
+		HMAC   string `json:"hmac"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	mac := hmac.New(sha256.New, []byte("node-secret"))
+	fmt.Fprintf(mac, "%s|abc|server-endpoint", out.NodeID)
+	if out.NodeID == "" || out.HMAC != hex.EncodeToString(mac.Sum(nil)) {
+		t.Fatalf("identity = %+v", out)
+	}
+}
+
+func TestServerEndpointRequiresSecret(t *testing.T) {
+	f := newFake()
+	f.gate.Secret = "node-secret"
+	srv := httptest.NewServer(New(f).Handler())
+	defer srv.Close()
+	body := `{"server_url":"http://192.168.0.41:8080","zat_addr":"192.168.0.41:7800"}`
+	resp, err := http.Post(srv.URL+"/local/api/server-endpoint", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("without secret status = %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/local/api/server-endpoint", strings.NewReader(body))
+	req.Header.Set("X-Node-Secret", "node-secret")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("with secret status = %d", resp.StatusCode)
+	}
+	if f.lastServerURL != "http://192.168.0.41:8080" || f.lastZATAddr != "192.168.0.41:7800" {
+		t.Fatalf("endpoint not applied: %+v", f)
 	}
 }

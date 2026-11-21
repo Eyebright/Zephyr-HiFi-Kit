@@ -43,6 +43,10 @@ type Snapshot struct {
 	ALSADevice string `json:"alsa_device,omitempty"`
 	PrefDevice string `json:"pref_device,omitempty"`
 	Detail     string `json:"detail,omitempty"`
+	MQA        bool   `json:"mqa,omitempty"`
+	DoP        bool   `json:"dop,omitempty"`
+	DSDRate    int    `json:"dsd_rate,omitempty"`
+	BitPerfect bool   `json:"bit_perfect,omitempty"`
 }
 
 // Client maintains one outbound ZAT connection with automatic reconnect.
@@ -208,7 +212,7 @@ func (c *Client) connectAndServe(ctx context.Context, nodeID, secret string) err
 		Caps: zat.Caps{
 			Codecs: []string{"pcm"}, Formats: []zat.Format{zat.S16LE, zat.S24LE, zat.S32LE},
 			Rates: []int{44100, 48000, 88200, 96000, 176400, 192000}, MaxChannels: 2,
-			ALSADevices: hws, ALSADeviceInfo: info,
+			ALSADevices: hws, ALSADeviceInfo: info, MQA: player.SupportsBitPerfect(), DoP: player.SupportsBitPerfect(),
 		},
 	}
 	if err := s.write(zat.TypeHello, hello); err != nil {

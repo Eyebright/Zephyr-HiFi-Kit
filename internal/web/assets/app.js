@@ -104,10 +104,22 @@ const ICONS = {
   eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>',
   stop: '<rect x="6" y="6" width="12" height="12" rx="2"/>',
   folder: '<path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/>',
-  pause: '<rect x="7" y="5" width="3.5" height="14" rx="1"/><rect x="13.5" y="5" width="3.5" height="14" rx="1"/>'
+  pause: '<rect x="7" y="5" width="3.5" height="14" rx="1"/><rect x="13.5" y="5" width="3.5" height="14" rx="1"/>',
+  modeSequence: '<path d="M4 7h10M4 12h10M4 17h6"/><path d="M17 9l3 3-3 3"/>',
+  modeLoopAll: '<path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/>',
+  modeLoopOne: '<path d="M17 2l3 3-3 3"/><path d="M3 10V9a4 4 0 014-4h13"/><path d="M7 22l-3-3 3-3"/><path d="M21 14v1a4 4 0 01-4 4H4"/><path d="M12 11v4"/><path d="M11 12h1"/>',
+  modeShuffle: '<path d="M16 3h5v5"/><path d="M4 20L21 3"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/>',
+  mqa: '<path d="M3 12h3l2-6 4 12 2-6h7"/>',
+  grid: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+  listView: '<path d="M9 6h12M9 12h12M9 18h12"/><path d="M4 6h.01M4 12h.01M4 18h.01"/>',
+  wave: '<path d="M4 9v6M8 5v14M12 8v8M16 4v16M20 9v6"/>'
 };
 function icon(name, size = 16, cls = "") {
   return `<svg class="ic ${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ICONS.info}</svg>`;
+}
+function codecMark(kind, label) {
+  const name = kind === "mqa" ? "mqa" : kind === "pcm" ? "refresh" : "wave";
+  return `<span class="codec-icon ${kind}" title="${esc(label)}">${icon(name, 12)}<b>${esc(label)}</b></span>`;
 }
 
 /* ---------- domain badges ---------- */
@@ -485,7 +497,7 @@ function paintBell() {
 const OV = {
   days: 7, node: "", data: null, error: "", statsBusy: false, statsSeq: 0,
   epoch: 0, busy: false, loaded: false, tracksError: false, playlistsError: false, nodesError: false,
-  recentMore: false, addedMore: false
+  recentMore: false, addedMore: false, recentTab: "tracks"
 };
 function cleanupOverview() {
   OV.epoch++; OV.statsSeq++;
@@ -643,18 +655,31 @@ function ovAlbumCard(g, info = {}) {
 }
 function paintOvRecent() {
   const el = $("#ov-recent"); if (!el) return;
-  const list = OV.data ? OV.data.recent_albums.filter(g => hit(g.artist, g.album)) : [];
-  const head = ovAlbumHead(appT("m132"), "recent", OV.recentMore, list.length);
-  if (!OV.data) { el.innerHTML = head + ovStatEmpty(); return; }
-  const groups = new Map(OV.loaded && !OV.tracksError ? albumGroups().map(g => [albumKey(g), g]) : []);
+  const tab = OV.recentTab || "tracks";
+  const tracks = OV.data && Array.isArray(OV.data.recent_tracks) ? OV.data.recent_tracks.filter(t => hit(t.title, t.artist, t.album)) : [];
+  const albums = OV.data ? OV.data.recent_albums.filter(g => hit(g.artist, g.album)) : [];
+  const list = tab === "tracks" ? tracks : albums;
+  const head = ovAlbumHead(appT("recentListened"), "recent", OV.recentMore, list.length);
+  const tabs = `<div class="ov-recent-tabs" role="tablist">${[["tracks", appT("recentTracksTab"), tracks.length], ["albums", appT("recentAlbumsTab"), albums.length]].map(([id, label, count]) => `<button class="chip ${tab === id ? "active" : ""}" role="tab" aria-selected="${tab === id}" data-act="ov-recent-tab" data-tab="${id}">${esc(label)}<span class="cnt">${esc(I18n.number(count))}</span></button>`).join("")}</div>`;
+  if (!OV.data) { el.innerHTML = head + tabs + ovStatEmpty(); return; }
   const note = `<p class="ov-note">${appH("m134")}${OV.tracksError ? appH("m133") + " " + ovRetry("ov-library-retry") : ""}</p>`;
-  el.innerHTML = head + note + (list.length ? `<div class="ov-album-row ${OV.recentMore ? "expanded" : ""}">${list.slice(0, OV.recentMore ? 50 : 8).map(a => ovAlbumCard(groups.get(albumKey(a)), Object.assign({}, a, { history: true, time: a.last_played_at }))).join("")}</div>` : empty("disc", S.search ? appT("m135") : appT("m136"), "", true));
+  if (tab === "tracks") {
+    const rows = tracks.slice(0, OV.recentMore ? 50 : 8).map(t => `<div class="ov-recent-track"><span class="ov-recent-cover">${coverArt(t.album, t.artist, "thumb", 16, t.cover_hash)}</span><span class="ov-recent-info"><strong class="truncate">${esc(t.title || appT("m171"))}</strong><span class="hint truncate">${esc([t.artist, t.album].filter(Boolean).join(" · "))}</span></span><span class="hint nowrap">${t.last_played_at ? ago(t.last_played_at) : ""}</span><button class="btn xs ghost" data-act="ov-track-play" data-id="${esc(t.track_id)}" aria-label="${appH("playTrack")}" title="${appH("playTrack")}">${icon("send", 12)}</button></div>`).join("");
+    el.innerHTML = head + tabs + note + (rows ? `<div class="ov-recent-tracks ${OV.recentMore ? "expanded" : ""}">${rows}</div>` : empty("music", S.search ? appT("noMatchingTracks") : appT("noRecentTracks"), "", true));
+    return;
+  }
+  const groups = new Map(OV.loaded && !OV.tracksError ? albumGroups().map(g => [albumKey(g), g]) : []);
+  el.innerHTML = head + tabs + note + (albums.length ? `<div class="ov-album-row ${OV.recentMore ? "expanded" : ""}">${albums.slice(0, OV.recentMore ? 50 : 8).map(a => ovAlbumCard(groups.get(albumKey(a)), Object.assign({}, a, { history: true, time: a.last_played_at }))).join("")}</div>` : empty("disc", S.search ? appT("m135") : appT("m136"), "", true));
 }
 function ovAddedAlbums(groups) {
-  return groups.map(g => {
-    const times = g.tracks.map(t => ts(t.added_at));
-    return { g, added: times.every(t => t > 0) ? Math.min(...times) : 0 };
+  const cached = ALBUM_ADDED_CACHE.get(groups);
+  if (cached) return cached;
+  const list = groups.map(g => {
+    const times = g.tracks.map(t => ts(t.added_at)).filter(t => t > 0);
+    return { g, added: times.length ? Math.max(...times) : 0 };
   }).sort((a, b) => b.added - a.added || albumKey(a.g).localeCompare(albumKey(b.g), "zh"));
+  ALBUM_ADDED_CACHE.set(groups, list);
+  return list;
 }
 function paintOvAlbums() {
   const el = $("#ov-albums"); if (!el) return;
@@ -664,7 +689,8 @@ function paintOvAlbums() {
   const head = ovAlbumHead(appT("m137"), "added", OV.addedMore, list.length);
   if (!OV.loaded || OV.tracksError) { el.innerHTML = head + empty(OV.tracksError ? "alert" : "disc", OV.tracksError ? appT("m138") : appT("m139"), OV.tracksError ? ovRetry("ov-library-retry") : "", true); return; }
   const note = `<p class="ov-note">${appH("m141")}${unknown ? appH("m140", { count: unknown }) : ""}</p>`;
-  el.innerHTML = head + note + (list.length ? `<div class="ov-album-row ${OV.addedMore ? "expanded" : ""}">${list.slice(0, OV.addedMore ? list.length : 8).map(a => ovAlbumCard(a.g, { time: a.added })).join("")}</div>` : empty("disc", S.search ? appT("m142") : unknown ? appT("m143") : appT("m144"), `<button class="btn xs ghost" data-act="ov-goto" data-tab="albums">${appH("m145")}</button>`, true));
+  const shown = list.slice(0, OV.addedMore ? NEW_ALBUM_LIMIT : 8);
+  el.innerHTML = head + note + (shown.length ? `<div class="ov-album-row ${OV.addedMore ? "expanded" : ""}">${shown.map(a => ovAlbumCard(a.g, { time: a.added })).join("")}</div>` : empty("disc", S.search ? appT("m142") : unknown ? appT("m143") : appT("m144"), `<button class="btn xs ghost" data-act="ov-goto" data-tab="albums">${appH("m145")}</button>`, true));
 }
 function paintOvPlaylists() {
   const el = $("#ov-playlists"); if (!el) return;
@@ -674,6 +700,10 @@ function paintOvPlaylists() {
     `<div class="ov-playlist-links">${list.length ? list.slice(0, 6).map(p => `<button class="btn ghost sm" data-act="pl-open" data-id="${esc(p.id)}">${icon("layers", 13)}<span class="truncate">${esc(p.name)}</span><span class="hint">${appH("m151", { count: p.count })}</span></button>`).join("") : `<span class="hint">${S.search ? appH("m152") : appH("m153")}</span>`}</div>`);
 }
 // Keep focused controls mounted while live playback fields update.
+const PB_MODES = [["sequence", "modeSequence", "queueModeSequence"], ["loop_all", "modeLoopAll", "queueModeLoopAll"], ["loop_one", "modeLoopOne", "queueModeLoopOne"], ["shuffle", "modeShuffle", "queueModeShuffle"]];
+function pbModeShell() {
+  return `<details class="pb-mode" id="pb-mode" data-disabled="1"><summary id="pb-mode-btn" aria-label="${appH("queueMode")}" title="${appH("queueMode")}">${icon("modeSequence", 18)}</summary><div class="pb-mode-menu" role="menu">${PB_MODES.map(([m, ic, k]) => `<button class="pb-mode-item" role="menuitemradio" aria-checked="false" data-act="pb-mode-set" data-mode="${m}">${icon(ic, 16)}<span>${appT(k)}</span><span class="pb-mode-check">${icon("check", 13)}</span></button>`).join("")}</div></details>`;
+}
 const PB = {
   id: "", chosen: false, nodes: [], loaded: false, nodesError: false, nodesAt: 0,
   seq: 0, busy: null, fresh: false, trackID: "", track: null, dragging: false, volDrag: false,
@@ -681,7 +711,7 @@ const PB = {
 };
 function playerBarShell() {
   return `<section class="player-bar" id="player-bar" aria-label="${appH("m154")}">
-    <div class="player-bar-meta"><div id="pb-cover"></div><div class="player-bar-text"><div class="player-bar-title truncate" id="pb-title">${appH("m155")}</div><div class="player-bar-sub truncate" id="pb-sub">${appH("m156")}</div><div class="player-bar-state" id="pb-state" role="status">${appH("m157")}</div></div>${typeof favoritePlayerShell === "function" ? favoritePlayerShell() : ""}</div>
+    <div class="player-bar-meta"><div id="pb-cover"></div><div class="player-bar-text"><div class="player-bar-title truncate" id="pb-title">${appH("m155")}</div><div class="player-bar-sub truncate" id="pb-sub">${appH("m156")}</div><div class="player-bar-state" id="pb-state" role="status">${appH("m157")}</div><span class="codec-icon" id="pb-mqa" hidden></span></div>${typeof favoritePlayerShell === "function" ? favoritePlayerShell() : ""}${pbModeShell()}</div>
     <div class="player-bar-transport"><button class="btn ghost" id="pb-prev" data-act="queue-prev" aria-label="${appH("m158")}" title="${appH("m158")}" disabled>${icon("chevL", 17)}</button><button class="btn primary pc-play" id="pb-pause" data-act="play-pause" aria-label="${appH("m159")}" title="${appH("m159")}" disabled>${icon("play", 18)}</button><button class="btn ghost" id="pb-next" data-act="queue-next" aria-label="${appH("m160")}" title="${appH("m160")}" disabled>${icon("chevR", 17)}</button></div>
     <div class="player-bar-tools" tabindex="0" aria-label="${appH("m161")}">
       <div class="player-bar-seek"><span id="pb-elapsed" class="mono">0:00</span><input id="pb-seek" type="range" min="0" max="0" step="500" value="0" data-change="pb-seek" aria-label="${appH("m162")}" disabled><span id="pb-total" class="mono">0:00</span></div>
@@ -694,6 +724,11 @@ function playerBarShell() {
 }
 function initPlayerBar() {
   $("#player-bar-root").innerHTML = playerBarShell();
+  const bar = $("#player-bar");
+  if (bar && typeof bar.addEventListener === "function") bar.addEventListener("click", e => {
+    if (e.target.closest("button,input,select,label,a,summary")) return;
+    if (PB.id && typeof openPlayer === "function") openPlayer(PB.id);
+  });
   new ResizeObserver(entries => {
     document.documentElement.style.setProperty("--player-bar-height", Math.ceil(entries[0].target.getBoundingClientRect().height) + "px");
   }).observe($("#player-bar"));
@@ -781,12 +816,40 @@ function paintPlayerBar() {
   if (cover && cover.dataset.sig !== sig) { cover.innerHTML = coverArt(album, artist, "thumb", 22, hash); cover.dataset.sig = sig; }
   const q = S.nodeQueue[id], tracks = (q && q.tracks) || [], pos = (q && q.position) || 0;
   const button = (sel, disabled) => { const b = $(sel); if (b) { b.disabled = disabled; b.dataset.id = id; } return b; };
+  const mode = (q && q.mode) || "sequence";
+  const wraps = mode === "loop_all" || mode === "shuffle";
   button("#pb-prev", !connected || !tracks.length);
-  button("#pb-next", !connected || !tracks.length || pos >= tracks.length - 1);
+  button("#pb-next", !connected || !tracks.length || (!wraps && pos >= tracks.length - 1));
   const pp = button("#pb-pause", !active);
   const ppLabel = active && p.playing ? appT("m183") : appT("m159");
   if (pp && pp.title !== ppLabel) { pp.innerHTML = icon(active && p.playing ? "pause" : "play", 18); pp.title = ppLabel; pp.setAttribute("aria-label", ppLabel); }
   button("#pb-console", !connected);
+  const modeDef = PB_MODES.find(x => x[0] === mode) || PB_MODES[0];
+  const modeWrap = $("#pb-mode"), modeBtn = $("#pb-mode-btn");
+  if (modeWrap) {
+    modeWrap.dataset.disabled = connected ? "0" : "1";
+    if (!connected) modeWrap.open = false;
+    if (modeBtn) {
+      modeBtn.innerHTML = icon(modeDef[1], 18);
+      const label = `${appT("queueMode")}：${appT(modeDef[2])}`;
+      modeBtn.title = label;
+      modeBtn.setAttribute("aria-label", label);
+    }
+    modeWrap.querySelectorAll("[data-mode]").forEach(b => {
+      const on = b.dataset.mode === mode;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-checked", String(on));
+    });
+  }
+  const mqa = !!(active && p.mqa), dop = !!(active && p.dop), converted = !!(active && p.converted), strict = mqa || dop;
+  const mqaBadge = $("#pb-mqa");
+  if (mqaBadge) {
+    mqaBadge.hidden = !(strict || converted);
+    if (converted) mqaBadge.innerHTML = codecMark("pcm", "DSD→PCM");
+    else if (dop) mqaBadge.innerHTML = codecMark("dsd", "DSD");
+    else if (mqa) mqaBadge.innerHTML = codecMark("mqa", "MQA");
+    mqaBadge.title = converted ? appT("dsdConverted") : dop ? (p.bit_perfect ? appT("dopBitPerfect") : appT("dopBadge")) : (p.bit_perfect ? appT("mqaBitPerfect") : appT("mqaBadge"));
+  }
   const rate = p.rate || (t && t.rate) || 0;
   const total = active ? Math.max(0, p.duration_ms || (t && t.duration_ms) || 0) : 0;
   const elapsed = active && rate && p.pts ? clamp(p.pts / rate * 1000, 0, total || Infinity) : 0;
@@ -798,7 +861,8 @@ function paintPlayerBar() {
     set("#pb-total", fmtDur(total));
   }
   if (vol) {
-    vol.disabled = !active;
+    vol.disabled = !active || strict;
+    vol.title = strict ? appT(dop ? "dopVolumeLocked" : "mqaVolumeLocked") : "";
     if (!PB.volDrag && !PB.volPending && document.activeElement !== vol) { vol.value = String(clamp(p.volume == null ? 100 : Number(p.volume), 0, 100)); set("#pb-volume-value", appN(Number(vol.value))); }
     vol.setAttribute("aria-valuetext", appN(Number(vol.value) / 100, { style: "percent" }));
   }
@@ -879,7 +943,12 @@ function sysDetail() {
 }
 
 /* ---- album aggregation (shared by overview & library) ---- */
+const ALBUM_GROUPS_CACHE = new WeakMap();
+const ALBUM_ADDED_CACHE = new WeakMap();
+const NEW_ALBUM_LIMIT = 50;
 function albumGroups() {
+  const cached = ALBUM_GROUPS_CACHE.get(S.tracks);
+  if (cached) return cached;
   const map = new Map();
   for (const t of S.tracks) {
     const artist = t.artist || "", album = t.album || "";
@@ -890,6 +959,7 @@ function albumGroups() {
   }
   const out = [...map.values()];
   out.sort((a, b) => String(a.artist).localeCompare(String(b.artist), "zh") || String(a.album).localeCompare(String(b.album), "zh"));
+  ALBUM_GROUPS_CACHE.set(S.tracks, out);
   return out;
 }
 function filteredAlbums() { return albumGroups().filter(g => hit(g.artist, g.album)); }
@@ -2840,7 +2910,7 @@ async function libDelete(id) {
   try { await api("DELETE", `/mounts/${enc(id)}`); toast(appT("m806", { value: label }), "ok"); await refreshCurrent(); }
   catch (e) { toast(e.message, "err"); }
 }
-async function libRefresh() { try { await refreshCurrent(); toast(appT("m807"), "ok"); } catch (e) { toast(e.message, "err"); } }
+async function libRefresh() { if (typeof LB !== "undefined") { LB.artist = null; LB.artistAt = 0; } try { await refreshCurrent(); toast(appT("m807"), "ok"); } catch (e) { toast(e.message, "err"); } }
 
 /* ---- push playback: terminal picker (single track / album / playlist) ---- */
 const TP = { cur: null, trackIDs: [], track: null, label: "", playlistID: "", sel: "", busy: false };
@@ -3064,7 +3134,7 @@ function paintPlaylist() {
     <div class="q-row">
       <span class="q-idx mono">${i + 1}</span>
       <span class="q-info">
-        <span class="q-title truncate">${esc(t.title || t.track_id)}${t.missing ? " " + badge(appT("m348"), "warn") : ""}</span>
+        <span class="q-title truncate">${esc(t.title || t.track_id)}${t.mqa ? " " + badge("MQA", "gold") : ""}${t.codec === "dsd" ? " " + badge("DSD", "gold") : ""}${t.missing ? " " + badge(appT("m348"), "warn") : ""}</span>
         <span class="q-sub txt-faint">${esc([t.artist, t.album].filter(Boolean).join(" · ") || "—")}${t.duration_ms ? " · " + fmtDur(t.duration_ms) : ""}</span>
       </span>
       <span class="q-acts">
@@ -3221,6 +3291,7 @@ function playerShell() {
       <button class="btn danger" id="ply-stop" data-act="play-stop" data-id="${esc(id)}" title="${appH("m390")}">${icon("stop", 16)}</button>
       <div class="ply-vol">${icon("speaker", 15)}<input type="range" id="ply-vol" min="0" max="100" step="1" value="100" data-change="ply-vol" disabled><span class="ply-time mono" id="ply-vol-v">100</span></div>
     </div>
+    <div class="ply-mode-row"><span class="f-hint">${appH("queueMode")}</span><div class="ply-modes" role="group" aria-label="${appH("queueMode")}">${PB_MODES.map(([m, ic, k]) => `<button class="ply-mode-item" data-act="pb-mode-set" data-mode="${m}" title="${esc(appT(k))}" aria-label="${esc(appT(k))}" aria-pressed="false">${icon(ic, 17)}</button>`).join("")}</div></div>
     <div class="divider"></div>
     <div class="sec-head">
       <div class="sec-title">${icon("layers", 16)} ${appH("m869")} <span class="txt-faint" id="ply-qcnt"></span></div>
@@ -3264,6 +3335,9 @@ function paintPlayerLive() {
   set("#ply-album", hasTrack ? `${icon("disc", 13)}<span class="truncate">${esc(album || appT("m128"))}</span>` : "");
   set("#ply-fmt", hasTrack ? `${esc(p.codec || (t && t.codec) || "—")} · ${rate ? appFixed(rate / 1000, 1) + " kHz" : "—"} · ${p.channels || (t && t.channels) || "—"} ch${p.buffer_ms != null ? appT("m876") + p.buffer_ms + " ms" : ""}` : "");
   set("#ply-badges", (connected ? badge(appT("m817"), "ok") : badge(appT("m877"), "muted")) +
+    (p.mqa ? " " + codecMark("mqa", "MQA") + (p.bit_perfect ? " " + badge(appT("mqaBitPerfect"), "ok") : " " + badge(appT("mqaNotBitPerfect"), "warn")) : "") +
+    (p.dop ? " " + codecMark("dsd", "DSD") + (p.bit_perfect ? " " + badge(appT("dopBitPerfect"), "ok") : " " + badge(appT("mqaNotBitPerfect"), "warn")) : "") +
+    (p.converted ? " " + codecMark("pcm", "DSD→PCM") : "") +
     (playing ? " " + badge(appT("m819"), "ok") : paused ? " " + badge(appT("m181"), "warn") : "") +
     (p.underruns ? " " + badge("underrun ×" + p.underruns, "warn") : ""));
   const seek = $("#ply-seek");
@@ -3276,7 +3350,8 @@ function paintPlayerLive() {
   }
   const vol = $("#ply-vol");
   if (vol) {
-    vol.disabled = !connected || !active;
+    vol.disabled = !connected || !active || !!(p.mqa || p.dop);
+    vol.title = (p.mqa || p.dop) ? appT(p.dop ? "dopVolumeLocked" : "mqaVolumeLocked") : "";
     const v = p.volume != null ? p.volume : 100;
     if (!PLY.volDrag && document.activeElement !== vol) {
       vol.value = String(v);
@@ -3289,6 +3364,12 @@ function paintPlayerLive() {
   if (prev) prev.disabled = !connected || !tracks.length;
   if (next) next.disabled = !connected || !tracks.length || pos >= tracks.length - 1;
   if (stop) stop.disabled = !active;
+  const mode = q.mode || "sequence";
+  document.querySelectorAll(".ply-mode-item").forEach(b => {
+    const on = b.dataset.mode === mode;
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-pressed", String(on));
+  });
   const nsel = $("#ply-node");
   if (nsel) {
     const online = PB.nodes.filter(x => x.status === "online");
@@ -3318,7 +3399,7 @@ function playerQueueList(id, q) {
     <div class="q-row ${i === pos ? "cur" : ""}">
       <span class="q-idx mono">${i === pos ? icon("speaker", 12) : i + 1}</span>
       <span class="q-info">
-        <span class="q-title truncate">${esc(t.title || t.track_id)}${t.missing ? " " + badge(appT("m348"), "warn") : ""}</span>
+        <span class="q-title truncate">${esc(t.title || t.track_id)}${t.mqa ? " " + badge("MQA", "gold") : ""}${t.codec === "dsd" ? " " + badge("DSD", "gold") : ""}${t.missing ? " " + badge(appT("m348"), "warn") : ""}</span>
         <span class="q-sub txt-faint">${esc([t.artist, t.album].filter(Boolean).join(" · ") || "—")}${t.duration_ms ? " · " + fmtDur(t.duration_ms) : ""}</span>
       </span>
       <span class="q-acts">
@@ -3528,6 +3609,8 @@ Object.assign(ACT, {
   "ov-retry": () => refreshListening(true),
   "ov-library-retry": () => refreshOverview(),
   "ov-more": ds => { if (ds.kind === "recent") { OV.recentMore = !OV.recentMore; paintOvRecent(); } else { OV.addedMore = !OV.addedMore; paintOvAlbums(); } },
+  "ov-recent-tab": ds => { OV.recentTab = ds.tab === "albums" ? "albums" : "tracks"; OV.recentMore = false; paintOvRecent(); },
+  "ov-track-play": ds => openTrackPlay(ds.id),
   "album-open": ds => openAlbum(ds.ak),
   "album-push": ds => albumPush(ds.ak),
   "album-pl": ds => { const g = albumByKey(ds.ak); if (g) openPlPicker(g.tracks.map(t => t.id)); },
@@ -3562,6 +3645,20 @@ Object.assign(ACT, {
   "ply-q-down": ds => plyQueueMove(Number(ds.idx), 1),
   "ply-add-toggle": () => plyAddToggle(),
   "ply-add-go": () => plyAddGo(),
+  "pb-mode-set": async ds => {
+    const inConsole = !!$("#ply-body");
+    const id = (inConsole && PLY.id) || PB.id;
+    if (!id || !ds.mode) return;
+    const def = PB_MODES.find(x => x[0] === ds.mode) || PB_MODES[0];
+    try {
+      await api("POST", `/nodes/${enc(id)}/queue/mode`, { mode: ds.mode });
+      if (S.nodeQueue[id]) S.nodeQueue[id].mode = ds.mode;
+      toast(appT("queueModeChanged", { mode: appT(def[2]) }), "ok");
+      const wrap = $("#pb-mode"); if (wrap) wrap.open = false;
+      await refreshPlayerBar();
+      if (inConsole && PLY.id === id) paintPlayerLive();
+    } catch (e) { toast(e.message, "err"); paintPlayerBar(); }
+  },
   "ply-save": () => plySaveQueue()
 });
 
@@ -3726,6 +3823,13 @@ function paintSearch() {
 function boot() {
   renderSidebarNav();
   document.addEventListener("click", onClick);
+  document.addEventListener("click", e => {
+    const wrap = $("#pb-mode");
+    if (wrap && wrap.open && !wrap.contains(e.target)) wrap.open = false;
+    if (e.target.closest && e.target.closest("#pb-mode summary")) {
+      const fav = $("#pb-favorite-menu"); if (fav) fav.open = false;
+    }
+  });
   document.addEventListener("change", onChange);
   document.addEventListener("input", onInput);
   document.addEventListener("keydown", onKey);

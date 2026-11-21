@@ -171,11 +171,12 @@ TCP 保证有序可靠，简化垂直切片）。v0.2 再拆分控制/音频通�
 // SETUP (source→sink)
 { "session_id": "s-123", "track_id": "t-1", "format": "S24_LE",
   "rate": 96000, "channels": 2, "prebuffer_ms": 250,
-  "alsa_device": "hw:1,0", "total_samples": 12345678, "gain_db": 0 }
+  "alsa_device": "hw:1,0", "total_samples": 12345678, "gain_db": 0, "mqa": true,
+  "dop": false, "dsd_rate": 0 }
 
 // SETUP_ACK (sink→source)
 { "session_id": "s-123", "ok": true, "opened": { "format":"S24_LE","rate":96000,"channels":2 },
-  "buffer_frames": 4096 }
+  "buffer_frames": 4096, "bit_perfect": true }
 
 // PLAY / PAUSE / STOP / SEEK / VOLUME
 { "session_id": "s-123", "start_pts": 0 }          // PLAY
@@ -193,7 +194,18 @@ TCP 保证有序可靠，简化垂直切片）。v0.2 再拆分控制/音频通�
 
 // TRACK_META (source→sink)
 { "track_id":"t-1","title":"…","artist":"…","album":"…",
-  "duration_ms":210000,"codec":"flac","rate":96000,"channels":2,"cover_url":"…" }
+  "duration_ms":210000,"codec":"flac","rate":96000,"channels":2,"cover_url":"…","mqa":true,
+  "dop":false,"dsd_rate":0 }
+
+// MQA：HELLO.caps.mqa 声明终端支持位完美直通；SETUP.mqa=true 要求直连 hw:
+// 设备、禁用插件/重采样与软件音量，SETUP_ACK.bit_perfect 确认零转换路径。
+// DSD：服务端把 DSF/DFF 打包为 DoP（24-bit，0x05/0xFA 逐帧交替），SETUP.dop=true
+// 并给出源 dsd_rate，载波速率=dsd_rate/16；终端同样走严格 hw 路径。
+// 发现：GET /api/v1/discover?node_id=…&nonce=… 返回 server_id、zat_port 与
+// HMAC-SHA256(node_secret, node_id|nonce|server_id|host|zat_port)，终端校验后切换地址。
+// 服务端主动配置：GET /local/api/identity?nonce=… 返回 node_id 与
+// HMAC-SHA256(node_secret, node_id|nonce|server-endpoint)；服务端校验通过后才用
+// X-Node-Secret 调用 POST /local/api/server-endpoint 下发 server_url/zat_addr。
 
 // ERROR
 { "session_id":"s-123","code":"decode_failed","detail":"…","fatal":true }

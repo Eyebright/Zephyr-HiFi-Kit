@@ -3,6 +3,72 @@
 和风HiFi音乐播放套件。最新版本在前，版本号与 Git 标签、GitHub Releases 一致。
 Newest first; version numbers match Git tags and GitHub Releases.
 
+## 0.62 — 2026-11-21
+
+**中文**
+- 修复：仅接受 32 位 ALSA 槽位的直连 DAC（如 AUDIO）无法播放 16-bit MQA-CD；严格直通现将 16 位样本零损失左对齐装入 32 位 hw。
+- 启动时自动重连状态为“已挂载”的音乐源（支持 NAS 启动较晚的重试），避免重启后 SMB 会话丢失。
+- DSD→PCM 回退可使用已安装的 ffmpeg；服务端通过 `HIFIHUB_FFMPEG` 指定可执行文件。
+- 播放控制：模式选择改为收藏旁的模式图标，点击展开顺序/列表循环/单曲循环/随机四种线性图标；MQA 仅在检测到 MQA 音源时显示金色图标。
+- 播放模式权限：按终端切换播放模式不再要求管理员登录，底栏快捷图标与弹出控制台内的模式图标均可直接切换。
+- 艺术家索引：扫描时物化艺术家索引（排序键、首字母、曲目数），前端一次缓存并按 A–Z/0–9/# 平铺瓦片筛选，艺术家检索从数百毫秒降至毫秒级；艺术家以首字图标墙展示。
+- 分页：暂时固定每页数量（艺术家 27、专辑 28、曲目 24），移除自适应档位；新增首页/末页、上一页/下一页、页码输入跳转和当前范围显示。
+- 曲目视图：默认瓦片式封面网格（标题、艺术家/专辑、时长、编码与 MQA/DSD 标记），可在工具栏切换列表并记住选择。
+- 首页“新添加的专辑”改为按专辑内最晚入库曲目时间倒序，展开最多显示 50 张；分组与排序结果缓存，减少总览重绘开销。
+
+**English**
+- Fix: bit-perfect playback failed on direct DACs that only expose 32-bit ALSA slots (for example MQA-CD 16-bit on AUDIO); 16-bit samples are now zero-padded into 32-bit hw slots without losing payload bits.
+- Saved music sources marked mounted are reconnected on startup, with retries while a NAS finishes booting, so a reboot no longer loses the SMB session.
+- The DSD→PCM fallback can use an installed ffmpeg; `HIFIHUB_FFMPEG` points the server at the executable.
+- Playback controls: the text mode selector is now a mode icon beside the favorite button, opening four linear icons (sequence, repeat all, repeat one, shuffle); the gold MQA icon appears only for detected MQA sources.
+- Playback mode no longer requires an admin login; both the player-bar shortcut and the icons inside the player console switch immediately.
+- Artist index: a materialized artist index (sort key, initial, track count) is built during scans and cached once by the client, with A–Z/0–9/# tiles and a monogram artist wall; artist lookup drops from hundreds of milliseconds to milliseconds.
+- Pagination: per-page counts are temporarily fixed (artists 27, albums 28, tracks 24), with first/last, previous/next, page-number jump and a visible result range.
+- Tracks: a tile view with cover, title, artist/album, duration and codec/MQA/DSD badges is now the default, with a remembered list-view toggle.
+- Home "Newly added albums" now sorts by the album's latest-added track (newest first) and expands to at most 50; grouping and ordering are cached across overview repaints.
+
+## 0.61 — 2026-11-21
+
+**中文**
+- DSD 透传：服务端解析 DSF/DFF，按 DoP（DSD over PCM）打包 24 位帧（0x05/0xFA 标记逐帧交替），ZAT 以 176.4/352.8kHz 等载波速率推流；终端只用严格 `hw:` 直通并锁定软件音量。
+- DSD 回退：终端不接受 DoP 时自动改用 ffmpeg 解码为 PCM（标记为“DSD→PCM 回退”），保证可播放；未安装 ffmpeg 时给出明确错误。
+- 服务端主动配置：终端离线时，服务端先以节点密钥 HMAC 校验终端身份，再向其本地接口下发当前服务端地址，终端持久化并自动重连；终端侧扫描作为兜底。无需手动修改终端配置。
+- 音乐库与播放栏显示 DSD/DoP 状态；DSD 曲目首次播放后会补齐时长与规格。
+
+**English**
+- DSD passthrough: the server parses DSF/DFF and packs 24-bit DoP frames (0x05/0xFA markers alternating per frame) over ZAT at 176.4/352.8 kHz carriers; terminals use a strict `hw:` path with software volume locked.
+- Fallback: when the terminal cannot take DoP, the server decodes with ffmpeg to PCM and marks the session as converted; a clear error is returned when ffmpeg is absent.
+- Server-driven configuration: for an offline terminal the server first verifies the terminal with a node-secret HMAC, then pushes its current address to the terminal's local API; the terminal persists it and reconnects. Client-side scanning remains a fallback; no manual terminal configuration is needed.
+- DSD/DoP state is shown in the library and player bar; first play fills in DSD duration and format metadata.
+
+## 0.60 — 2026-11-20
+
+**中文**
+- MQA（含 MQA-CD）：扫描识别标签，并在曲库扫描/首次播放时解析前 3 秒 PCM 的 36 位同步字，无标签文件也能识别。
+- 位完美直通：MQA 曲目只允许 `hw:` 直连设备，禁用插件回退、重采样与软件音量（锁定 100%），24 位音频可零损失装入 32 位 hw 槽位。
+- 终端与界面：ZAT 协商新增 MQA 能力与 `bit_perfect` 回执；音乐库、队列、播放栏显示 MQA 标记并锁定音量。MQA 展开仍由 DAC 完成，不做软件 unfolding。
+- 不满足条件的终端或输出设备会拒绝播放并给出明确原因，避免无声降级。
+
+**English**
+- MQA / MQA-CD detection from tags and, for untagged files, the 36-bit sync word in the first three seconds of PCM, both at scan time and on first play.
+- Bit-perfect passthrough: MQA tracks only play on direct `hw:` devices with no plug fallback, resampling or software volume (locked at 100%); 24-bit payloads may use zero-padded 32-bit hw slots.
+- ZAT exposes MQA capability and a `bit_perfect` acknowledgement; library, queue and player bar show MQA and lock the volume. Unfolding stays in the DAC.
+- Endpoints or outputs that cannot guarantee the path refuse playback with an explicit reason instead of degrading silently.
+
+## 0.59 — 2026-11-20
+
+**中文**
+- 音乐库：曲目支持逐项勾选，新增批量操作栏，可加入队列、下一首播放、替换队列、加入播放列表，并支持选择当前页或全部筛选结果。
+- 播放模式：按终端保存顺序 / 列表循环 / 单曲循环 / 固定随机顺序，跨浏览器与终端一致，自动续播遵循该模式。
+- 播放栏：点击控制栏空白区域可打开播放控制台。
+- 总览：最近听过拆分为“歌曲 / 专辑”两个标签页，新增基于播放历史的最近歌曲。
+
+**English**
+- Library: per-track checkboxes with a bulk bar for enqueue, play next, replace queue, add to playlist, plus select-page and select-all-filtered.
+- Playback modes per endpoint: sequence / loop-all / loop-one / frozen shuffle, persisted server-side and honored by auto-advance.
+- Player bar: clicking the bar (outside controls) opens the player console.
+- Overview: "Recently played" now has Songs / Albums tabs with track-level history.
+
 ## 0.58 — 2026-11-20
 
 **中文**

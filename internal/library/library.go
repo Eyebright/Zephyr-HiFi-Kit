@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,6 +28,7 @@ import (
 	"hifihub/server/internal/catalog"
 	"hifihub/server/internal/media"
 	"hifihub/server/internal/mount"
+	"hifihub/server/internal/mqa"
 	"hifihub/server/internal/store"
 )
 
@@ -106,6 +108,8 @@ type Track struct {
 	TotalSamples uint64 `json:"total_samples"`
 	DurationMS   int    `json:"duration_ms"`
 	Decodable    bool   `json:"decodable"`
+	MQA          bool   `json:"mqa"`
+	MQAChecked   bool   `json:"-"`
 	Size         int64  `json:"size"`
 	MtimeNS      int64  `json:"mtime_ns"`
 	ScannedAt    int64  `json:"scanned_at"`
@@ -115,6 +119,7 @@ type Track struct {
 // Service manages mounts and the scanned track catalog.
 type Service struct {
 	sourceMu  sync.Mutex // serialize source lifecycle changes and scans
+	artistMu  sync.Mutex // serialize artist-index rebuilds
 	db        *sql.DB
 	mounts    mount.Backend
 	mountRoot string
@@ -273,6 +278,33 @@ func (s *Service) DeleteMount(ctx context.Context, id string) error {
 	}
 	s.pruneCovers()
 	return nil
+}
+
+// Reconnect restores sources whose saved state is mounted, which recovers the
+// Windows SMB session after a reboot. Intentionally unmounted or archived
+// sources are left alone.
+func (s *Service) Reconnect(ctx context.Context) (attempted, restored int, failures []string) {
+	ms, err := s.ListMounts()
+	if err != nil {
+		return 0, 0, []string{err.Error()}
+	}
+	for _, m := range ms {
+		if m.Status != StatusMounted {
+			continue
+		}
+		attempted++
+		mounted, err := s.Mount(ctx, m.ID)
+		if err != nil {
+			failures = append(failures, err.Error())
+			continue
+		}
+		if mounted.Status != StatusMounted {
+			failures = append(failures, mounted.Detail)
+			continue
+		}
+		restored++
+	}
+	return attempted, restored, failures
 }
 
 // Mount performs the kernel CIFS mount and records the outcome.
@@ -436,6 +468,16 @@ func (s *Service) ScanChanges(ctx context.Context, id string, full bool) (ScanRe
 		if err != nil {
 			return fmt.Errorf("probe %s: %w", p, err)
 		}
+		// Tagged MQA is cheap to spot; untagged streams need the first seconds of
+		// PCM. Only new/changed files pay for the sample scan, and the result is
+		// persisted so later plays never repeat it.
+		mqaChecked := pr.MQA
+		if !pr.MQA && pr.Codec == "flac" && pr.Channels == 2 && mqaRate(pr.Rate) {
+			mqaChecked = true
+			if res, derr := mqa.DetectFile(p); derr == nil && res.Detected {
+				pr.MQA = true
+			}
+		}
 		tags, err := media.ReadTagsWithEncoding(p, m.TextEncoding)
 		var pathErr *os.PathError
 		if errors.As(err, &pathErr) {
@@ -457,7 +499,7 @@ func (s *Service) ScanChanges(ctx context.Context, id string, full bool) (ScanRe
 			DiscNumber: tags.DiscNumber, TrackNumber: tags.TrackNumber,
 			Codec: pr.Codec, Container: pr.Container, Rate: pr.Rate, Channels: pr.Channels,
 			Bits: pr.Bits, TotalSamples: pr.TotalSamples, DurationMS: pr.DurationMS,
-			Decodable: pr.Decodable, Size: info.Size(), MtimeNS: info.ModTime().UnixNano(), ScannedAt: now,
+			Decodable: pr.Decodable, MQA: pr.MQA, MQAChecked: mqaChecked, Size: info.Size(), MtimeNS: info.ModTime().UnixNano(), ScannedAt: now,
 		})
 		if live {
 			result.Updated++
@@ -490,18 +532,19 @@ func (s *Service) ScanChanges(ctx context.Context, id string, full bool) (ScanRe
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO tracks
 			(id,mount_id,path,rel_path,title,artist,album,codec,container,rate,channels,bits,
-			 total_samples,duration_ms,decodable,size,scanned_at,cover_hash,added_at,genre,
+			 total_samples,duration_ms,decodable,mqa,mqa_checked,size,scanned_at,cover_hash,added_at,genre,
 			 album_artist,composer,year,disc_number,track_number,mtime_ns)
-			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 			ON CONFLICT(id) DO UPDATE SET path=excluded.path,title=excluded.title,artist=excluded.artist,
 			album=excluded.album,codec=excluded.codec,container=excluded.container,rate=excluded.rate,
 			channels=excluded.channels,bits=excluded.bits,total_samples=excluded.total_samples,
-			duration_ms=excluded.duration_ms,decodable=excluded.decodable,size=excluded.size,
+			duration_ms=excluded.duration_ms,decodable=excluded.decodable,mqa=excluded.mqa,
+			mqa_checked=excluded.mqa_checked,size=excluded.size,
 			scanned_at=excluded.scanned_at,cover_hash=excluded.cover_hash,genre=excluded.genre,
 			album_artist=excluded.album_artist,composer=excluded.composer,year=excluded.year,
 			disc_number=excluded.disc_number,track_number=excluded.track_number,mtime_ns=excluded.mtime_ns`,
 			t.ID, t.MountID, t.Path, t.RelPath, t.Title, t.Artist, t.Album, t.Codec, t.Container,
-			t.Rate, t.Channels, t.Bits, t.TotalSamples, t.DurationMS, boolInt(t.Decodable), t.Size,
+			t.Rate, t.Channels, t.Bits, t.TotalSamples, t.DurationMS, boolInt(t.Decodable), boolInt(t.MQA), boolInt(t.MQAChecked), t.Size,
 			t.ScannedAt, t.CoverHash, t.AddedAt, t.Genre, t.AlbumArtist, t.Composer,
 			t.Year, t.DiscNumber, t.TrackNumber, t.MtimeNS); err != nil {
 			return ScanResult{}, err
@@ -543,6 +586,11 @@ func (s *Service) ScanChanges(ctx context.Context, id string, full bool) (ScanRe
 	}
 	if err := tx.Commit(); err != nil {
 		return ScanResult{}, err
+	}
+	if len(changed) > 0 || len(remaining) > 0 {
+		if err := s.RebuildArtistIndex(ctx); err != nil {
+			slog.Warn("rebuild artist index", "err", err)
+		}
 	}
 	s.pruneCovers()
 	return result, nil
@@ -662,17 +710,19 @@ func (s *Service) GetCover(hash string) (string, []byte, error) {
 }
 
 const trackCols = `id,mount_id,path,rel_path,title,artist,album,codec,container,rate,channels,bits,
-	total_samples,duration_ms,decodable,size,scanned_at,cover_hash,added_at,genre,
+	total_samples,duration_ms,decodable,mqa,mqa_checked,size,scanned_at,cover_hash,added_at,genre,
 	album_artist,composer,year,disc_number,track_number,mtime_ns`
 
 func scanTrack(row interface{ Scan(...any) error }) (Track, error) {
 	var t Track
-	var decodable int
+	var decodable, mqa, checked int
 	err := row.Scan(&t.ID, &t.MountID, &t.Path, &t.RelPath, &t.Title, &t.Artist, &t.Album,
 		&t.Codec, &t.Container, &t.Rate, &t.Channels, &t.Bits, &t.TotalSamples, &t.DurationMS,
-		&decodable, &t.Size, &t.ScannedAt, &t.CoverHash, &t.AddedAt, &t.Genre,
+		&decodable, &mqa, &checked, &t.Size, &t.ScannedAt, &t.CoverHash, &t.AddedAt, &t.Genre,
 		&t.AlbumArtist, &t.Composer, &t.Year, &t.DiscNumber, &t.TrackNumber, &t.MtimeNS)
 	t.Decodable = decodable == 1
+	t.MQA = mqa == 1
+	t.MQAChecked = checked == 1
 	return t, err
 }
 
@@ -710,6 +760,28 @@ func (s *Service) GetTrack(id string) (Track, error) {
 		return t, catalog.ErrNotFound
 	}
 	return t, err
+}
+
+// MarkDSD refreshes a DSD track's technical metadata after a successful open,
+// so tracks scanned by older builds become playable and show real durations.
+func (s *Service) MarkDSD(trackID string, rate, channels, bits int, total uint64, durationMS int) error {
+	_, err := s.db.Exec(`UPDATE tracks SET rate=?,channels=?,bits=?,total_samples=?,duration_ms=?,decodable=1 WHERE id=?`,
+		rate, channels, bits, total, durationMS, trackID)
+	return err
+}
+
+// MarkMQA records a sample-analysis result so later plays skip the scan.
+func (s *Service) MarkMQA(trackID string, detected bool) error {
+	_, err := s.db.Exec(`UPDATE tracks SET mqa=?, mqa_checked=1 WHERE id=?`, boolInt(detected), trackID)
+	return err
+}
+
+func mqaRate(rate int) bool {
+	switch rate {
+	case 44100, 48000, 88200, 96000, 176400, 192000:
+		return true
+	}
+	return false
 }
 
 // PlaybackPath derives the path from the current source and relative identity,
