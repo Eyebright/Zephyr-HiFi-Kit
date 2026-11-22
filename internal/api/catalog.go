@@ -40,6 +40,23 @@ func (a *API) getApp(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, app)
 }
 
+// updateApp reclassifies how an app is obtained (public vs self-supplied).
+func (a *API) updateApp(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Origin domain.AppOrigin `json:"origin"`
+	}
+	if err := decode(r, &body); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_json", err.Error(), "")
+		return
+	}
+	app, err := a.cat.SetAppOrigin(r.PathValue("id"), body.Origin)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, app)
+}
+
 func (a *API) listVersions(w http.ResponseWriter, r *http.Request) {
 	vs, err := a.cat.ListVersions(r.PathValue("id"))
 	if err != nil {

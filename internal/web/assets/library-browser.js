@@ -223,7 +223,7 @@ async function lbBulkQueue(next, replace) {
   const id = lbBulkTarget(); if (!id || !LB.sel.size) return;
   const ids = Array.from(LB.sel);
   try {
-    if (replace) await api("PUT", `/nodes/${enc(id)}/queue`, { track_ids: ids, position: 0 });
+    if (replace) await api("PUT", `/nodes/${enc(id)}/queue`, { track_ids: ids, position: 0, play_if_idle: true });
     else await api("POST", `/nodes/${enc(id)}/queue/batch`, { track_ids: ids, next: !!next });
     toast(lbT(replace ? "libQueueReplaced" : next ? "libQueuedNext" : "libQueued", { count: I18n.number(ids.length) }), "ok");
     await refreshPlayerBar();

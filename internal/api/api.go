@@ -76,6 +76,10 @@ type API struct {
 	upd    *update.Service
 	admin  *settingsAdmin
 	mux    *http.ServeMux
+
+	sshMu   sync.Mutex
+	sshJobs map[string]*sshInstallJob
+	sshSem  chan struct{}
 }
 
 // New builds the API and registers routes.
@@ -84,6 +88,7 @@ func New(cfg config.Config, d Deps) *API {
 		cfg: cfg, cat: d.Cat, repo: d.Repo, boms: d.Boms, nodes: d.Nodes, tasks: d.Tasks,
 		lic: d.License, keys: d.Keys, aud: d.Audit, alerts: d.Alerts, cmds: d.Commands, apt: d.AptSrc,
 		rolls: d.Rollouts, met: d.Metrics, lib: d.Library, zat: d.ZAT, upd: d.Update, mux: http.NewServeMux(),
+		sshJobs: map[string]*sshInstallJob{}, sshSem: make(chan struct{}, 2),
 	}
 	a.admin = newSettingsAdmin(cfg)
 	if err := a.initializeSettingsProfile(); err != nil {
@@ -102,10 +107,11 @@ func (a *API) route(pattern string, h http.HandlerFunc) {
 	case "POST /api/v1/mounts", "PATCH /api/v1/mounts/{id}", "DELETE /api/v1/mounts/{id}",
 		"POST /api/v1/mounts/{id}/mount", "POST /api/v1/mounts/{id}/unmount", "POST /api/v1/mounts/{id}/scan", "POST /api/v1/mounts/{id}/test", "POST /api/v1/mounts/{id}/archive",
 		"POST /api/v1/license/activate", "POST /api/v1/keys/import", "POST /api/v1/keys/{id}/trust-root",
-		"POST /api/v1/apps", "POST /api/v1/apps/{id}/versions", "POST /api/v1/apps/{id}/versions/import-local",
+		"POST /api/v1/apps", "PATCH /api/v1/apps/{id}", "POST /api/v1/apps/{id}/versions", "POST /api/v1/apps/{id}/versions/import-local",
 		"POST /api/v1/apps/{id}/versions/{ver}/{arch}/ban", "POST /api/v1/apps/{id}/versions/{ver}/{arch}/lifecycle",
 		"POST /api/v1/apt-sources", "DELETE /api/v1/apt-sources/{id}",
 		"POST /api/v1/nodes/token", "POST /api/v1/nodes/restore", "PATCH /api/v1/nodes/{id}", "DELETE /api/v1/nodes/{id}",
+		"POST /api/v1/nodes/ssh/probe", "POST /api/v1/nodes/ssh/install", "GET /api/v1/nodes/ssh/jobs/{id}",
 		"POST /api/v1/nodes/{id}/authorize", "POST /api/v1/nodes/{id}/revoke",
 		"POST /api/v1/nodes/{id}/commands", "POST /api/v1/nodes/{id}/apt-sources/apply",
 		"POST /api/v1/nodes/{id}/upgrade", "POST /api/v1/nodes/{id}/server-endpoint",
@@ -142,6 +148,7 @@ func (a *API) routes() {
 	a.route("GET /api/v1/apps", a.listApps)
 	a.route("POST /api/v1/apps", a.createApp)
 	a.route("GET /api/v1/apps/{id}", a.getApp)
+	a.route("PATCH /api/v1/apps/{id}", a.updateApp)
 	a.route("GET /api/v1/apps/{id}/versions", a.listVersions)
 	a.route("POST /api/v1/apps/{id}/versions", a.addVersion)
 	a.route("POST /api/v1/apps/{id}/versions/import-local", a.importLocalVersion)
@@ -173,6 +180,10 @@ func (a *API) routes() {
 	// Nodes (FR-4)
 	a.route("POST /api/v1/nodes/token", a.issueToken)
 	a.route("GET /api/v1/nodes/token/{token}", a.tokenStatus)
+	// SSH-assisted onboarding: probe confirms the host key before install.
+	a.route("POST /api/v1/nodes/ssh/probe", a.sshProbe)
+	a.route("POST /api/v1/nodes/ssh/install", a.sshInstall)
+	a.route("GET /api/v1/nodes/ssh/jobs/{id}", a.sshInstallStatus)
 	a.route("POST /api/v1/nodes/register", a.registerNode)
 	a.route("POST /api/v1/nodes/restore", a.restoreNode)
 	a.route("GET /api/v1/nodes", a.listNodes)
@@ -274,6 +285,9 @@ func (a *API) routes() {
 	a.route("POST /api/v1/nodes/{id}/seek", a.seekPlay)
 	a.route("POST /api/v1/nodes/{id}/volume", a.setNodeVolume)
 	a.route("POST /api/v1/nodes/{id}/device", a.setNodeDevice)
+	// Sleep timer stops playback at a deadline; per-node and persisted.
+	a.route("PUT /api/v1/nodes/{id}/sleep", a.setSleepTimer)
+	a.route("DELETE /api/v1/nodes/{id}/sleep", a.cancelSleepTimer)
 	// Per-node playback queue (GET goes through the {sub} wildcard).
 	a.route("PUT /api/v1/nodes/{id}/queue", a.setNodeQueue)
 	a.route("POST /api/v1/nodes/{id}/queue/enqueue", a.enqueueTrack)

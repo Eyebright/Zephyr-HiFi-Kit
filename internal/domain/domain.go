@@ -29,11 +29,32 @@ const (
 	ProtoUPnP    = "upnp"
 )
 
+// AppOrigin classifies how an application's artifacts are obtained. The
+// console groups distro and vendor entries as public apps; self entries are
+// admin-supplied signed packages (for example Roon).
+type AppOrigin string
+
+const (
+	OriginDistro AppOrigin = "distro" // installs from distribution repositories
+	OriginVendor AppOrigin = "vendor" // public vendor download or repository
+	OriginSelf   AppOrigin = "self"   // admin-supplied signed package
+)
+
+// ValidAppOrigin reports whether origin is a supported classification.
+func ValidAppOrigin(o AppOrigin) bool {
+	switch o {
+	case OriginDistro, OriginVendor, OriginSelf:
+		return true
+	}
+	return false
+}
+
 // App is a catalog entry describing a distributable application (FR-3.1).
 type App struct {
 	AppID             string      `json:"app_id"`
 	Name              string      `json:"name"`
 	Category          AppCategory `json:"category"`
+	Origin            AppOrigin   `json:"origin"`
 	Upstream          string      `json:"upstream"`
 	License           string      `json:"license"`
 	MaintainerState   string      `json:"maintainer_state"`

@@ -179,29 +179,29 @@ function harness(t) {
 }
 
 function assertDisabled(h) {
-  for (const id of ["pb-prev", "pb-next", "pb-pause", "pb-seek", "pb-volume", "pb-device", "pb-console"]) assert.equal(h.el(id).disabled, true, id);
+  for (const id of ["pb-prev", "pb-next", "pb-pause", "pb-seek", "pb-volume"]) assert.equal(h.el(id).disabled, true, id);
   assert.equal(h.run("playerBarConnected()"), false);
 }
 function beginControl(h, kind, value) {
-  const id = kind === "volume" ? "pb-volume" : kind === "seek" ? "pb-seek" : "pb-device";
+  const id = kind === "volume" ? "pb-volume" : "pb-seek";
   h.el(id).value = String(value);
-  if (kind !== "device") h.run(`onInput({target: $('#${id}')})`);
+  h.run(`onInput({target: $('#${id}')})`);
   return h.run(`CHG['${id}']($('#${id}'))`);
 }
 
 test("language changes preserve live playback controls, pending work and selected metadata", async t => {
   const h = harness(t); await h.live();
-  h.run("setView('settings'); playerBarBeginRange($('#pb-seek')); PB.volPending=1; PB.devicePending=1");
+  h.run("setView('settings'); playerBarBeginRange($('#pb-seek')); PB.volPending=1");
   const seek = h.el("pb-seek"), bar = h.el("player-bar"), timer = h.run("polls.get('playback')");
   seek.value = "45000"; seek.focus();
-  const state = h.json("[PB.id, PB.seq, PB.seekContext, PB.dragging, PB.volPending, PB.devicePending, S.play.a.track_id, S.play.a.session_id]");
+  const state = h.json("[PB.id, PB.seq, PB.seekContext, PB.dragging, PB.volPending, S.play.a.track_id, S.play.a.session_id]");
   const calls = h.calls.length;
   for (const locale of ["en", "zh-TW", "zh-CN"]) {
     h.run(`I18n.setPreference('${locale}'); appLanguageChanged()`);
     assert.equal(h.el("player-bar"), bar); assert.equal(h.el("pb-seek"), seek);
     assert.equal(seek.value, "45000"); assert.equal(h.document.activeElement, seek);
     assert.equal(h.run("polls.get('playback')"), timer); assert.equal(h.calls.length, calls);
-    assert.deepEqual(h.json("[PB.id, PB.seq, PB.seekContext, PB.dragging, PB.volPending, PB.devicePending, S.play.a.track_id, S.play.a.session_id]"), state);
+    assert.deepEqual(h.json("[PB.id, PB.seq, PB.seekContext, PB.dragging, PB.volPending, S.play.a.track_id, S.play.a.session_id]"), state);
     assert.equal(h.el("pb-title").textContent, "Live title");
     assert.equal(h.el("pb-pause").getAttribute("aria-label"), h.run("appT('m183')"));
   }
@@ -273,17 +273,17 @@ test("boot pointer events capture seek context, preserve it through release, and
 
 test("real navigation preserves dock DOM, target, focus, drag context and pending state in every view", async t => {
   const h = harness(t); await h.live();
-  const bar = h.el("player-bar"), seek = h.el("pb-seek"), volume = h.el("pb-volume"), node = h.el("pb-node");
+  const bar = h.el("player-bar"), seek = h.el("pb-seek"), volume = h.el("pb-volume"), term = h.el("pb-term-wrap");
   seek.focus(); seek.value = "45000"; volume.value = "24";
-  h.run("playerBarBeginRange($('#pb-seek')); playerBarBeginRange($('#pb-volume')); PB.seekPending=1; PB.volPending=2; PB.devicePending=3");
+  h.run("playerBarBeginRange($('#pb-seek')); playerBarBeginRange($('#pb-volume')); PB.seekPending=1; PB.volPending=2");
   const state = h.json("PB"), timer = h.run("polls.get('playback')");
   for (const v of ["library", "nodes", "audit", "settings", "overview"]) {
     h.run(`setView('${v}')`); await h.tick();
     assert.equal(h.run("S.view"), v);
-    assert.equal(h.el("player-bar"), bar); assert.equal(h.el("pb-seek"), seek); assert.equal(h.el("pb-node"), node);
-    for (const field of ["id", "chosen", "seq", "dragging", "volDrag", "seekContext", "seekPending", "volPending", "devicePending"]) assert.deepEqual(h.json(`PB.${field}`), state[field], `${v}: ${field}`);
+    assert.equal(h.el("player-bar"), bar); assert.equal(h.el("pb-seek"), seek); assert.equal(h.el("pb-term-wrap"), term);
+    for (const field of ["id", "chosen", "seq", "dragging", "volDrag", "seekContext", "seekPending", "volPending"]) assert.deepEqual(h.json(`PB.${field}`), state[field], `${v}: ${field}`);
     assert.equal(h.document.activeElement, seek); assert.equal(seek.value, "45000"); assert.equal(volume.value, "24");
-    assert.equal(node.value, "a"); assert.equal(node.disabled, true); assert.equal(h.run("polls.get('playback')"), timer);
+    assert.equal(h.run("PB.id"), "a"); assert.equal(h.el("pb-node-label").textContent, "终端 a"); assert.equal(h.run("polls.get('playback')"), timer);
   }
 });
 
@@ -295,7 +295,7 @@ test("statistical terminal/date filters and playback target are independent in b
   assert.equal(h.run("PB.id"), "a"); assert.equal(h.run("PB.seq"), 0);
   assert.ok(h.calls.some(c => c.route === "/listening?days=30&node_id=stats-only"));
   const data = h.json("OV.data"), before = h.count("/listening?days=30&node_id=stats-only");
-  await h.run("CHG['pb-node']({value:'b'})");
+  await h.run("ACT['pb-node-pick']({id:'b'})");
   assert.equal(h.run("OV.node"), "stats-only"); assert.equal(h.run("OV.days"), 30); assert.deepEqual(h.json("OV.data"), data);
   assert.equal(h.count("/listening?days=30&node_id=stats-only"), before);
   h.run("S.nodes=[{node_id:'stats-list'}]; cleanupOverview()"); await h.run("refreshPlayerBar()");
@@ -393,7 +393,7 @@ test("offline, removed and reconnected targets retain identity without falling b
   ]) {
     h.nodes = nodes; h.calls.length = 0; await h.tick(5000);
     assert.equal(h.run("PB.id"), "a"); assert.match(h.el("pb-state").textContent, status); assertDisabled(h);
-    assert.equal(h.el("pb-node").value, "a"); assert.deepEqual(h.calls.map(c => c.route), ["/nodes"]);
+    assert.deepEqual(h.calls.map(c => c.route), ["/nodes"]);
   }
   h.nodes = [h.node("b"), h.node("a")]; h.plays.a = h.play({ title: "Reconnected" }); await h.tick(5000);
   assert.equal(h.run("PB.id"), "a"); assert.equal(h.el("pb-title").textContent, "Reconnected"); assert.equal(h.run("playerBarConnected()"), true);
@@ -439,9 +439,9 @@ test("a failed queue fetch clears stale queue controls without hiding valid play
   h.override = null; await h.tick(); assert.equal(h.el("pb-next").disabled, false);
 });
 
-test("focused or dragged ranges and focused node/device selects are not overwritten by live paint", async t => {
+test("focused or dragged ranges and focused terminal select are not overwritten by live paint", async t => {
   const h = harness(t); await h.live();
-  for (const id of ["pb-seek", "pb-volume", "pb-node", "pb-device"]) {
+  for (const id of ["pb-seek", "pb-volume"]) {
     const el = h.el(id); el.focus(); el.value = "user-input"; const writes = el.htmlWrites;
     h.run("paintPlayerBar()"); assert.equal(el.value, "user-input", id); assert.equal(el.htmlWrites, writes, id); el.blur();
   }
@@ -450,7 +450,6 @@ test("focused or dragged ranges and focused node/device selects are not overwrit
   await h.tick();
   assert.equal(h.el("pb-seek").value, "31000"); assert.equal(h.el("pb-elapsed").textContent, "0:31");
   assert.equal(h.el("pb-volume").value, "31"); assert.equal(h.el("pb-volume-value").textContent, "31");
-  assert.equal(h.el("pb-node").disabled, true);
   assert.deepEqual(h.json("PB.seekContext"), { id: "a", track: "song-a", session: "session-a" });
 });
 
@@ -473,7 +472,7 @@ test("seek without captured context or with a disabled/disconnected control neve
   h.el("pb-seek").disabled = true; h.run("playerBarBeginRange($('#pb-seek'))");
   assert.equal(h.run("PB.seekContext"), null); await h.run("CHG['pb-seek']($('#pb-seek'))");
   h.plays.a = h.play({ connected: false }); await h.tick();
-  await beginControl(h, "seek", 45000); await beginControl(h, "volume", 40); await beginControl(h, "device", "hw:2");
+  await beginControl(h, "seek", 45000); await beginControl(h, "volume", 40);
   assert.equal(h.posts().length, 0);
 });
 
@@ -487,22 +486,21 @@ test("a seek started before navigation still targets the captured track session 
 
 for (const [kind, value, field, body] of [
   ["seek", 42000, "seekPending", { position_ms: 42000 }],
-  ["volume", 35, "volPending", { volume: 35 }],
-  ["device", "hw:2", "devicePending", { device: "hw:2" }]
+  ["volume", 35, "volPending", { volume: 35 }]
 ]) {
   test(`${kind} routes to the selected terminal and its pending completion survives every view`, async t => {
     const h = harness(t); await h.live("room/a b"); const pending = deferred();
     h.override = (method, route) => method === "POST" && route.endsWith("/" + kind) ? pending.promise : undefined;
     const work = beginControl(h, kind, value);
-    assert.equal(h.run(`PB.${field}`), 1); assert.equal(h.el("pb-node").disabled, true);
+    assert.equal(h.run(`PB.${field}`), 1);
     assert.deepEqual(h.posts(), [{ method: "POST", route: `/nodes/room%2Fa%20b/${kind}`, body }]);
-    const el = h.el(kind === "device" ? "pb-device" : "pb-" + kind);
+    const el = h.el("pb-" + kind);
     for (const view of ["library", "nodes", "audit", "settings", "overview"]) {
       h.run(`setView('${view}')`); await h.tick();
       assert.equal(h.run(`PB.${field}`), 1); assert.equal(el.value, String(value)); assert.equal(el.isConnected, true);
     }
     pending.resolve({}); await work;
-    assert.equal(h.run(`PB.${field}`), 0); assert.equal(h.el("pb-node").disabled, false);
+    assert.equal(h.run(`PB.${field}`), 0);
     assert.equal(h.run("PB.id"), "room/a b");
   });
 
@@ -516,8 +514,8 @@ for (const [kind, value, field, body] of [
     const newWork = beginControl(h, kind, value); const count = h.calls.length;
     oldRequest.resolve({}); await oldWork;
     assert.equal(h.run(`PB.${field}`), 1); assert.equal(h.calls.length, count);
-    assert.equal(h.el("pb-node").disabled, true); assert.equal(h.run("PB.id"), "b");
-    newRequest.resolve({}); await newWork; assert.equal(h.run(`PB.${field}`), 0); assert.equal(h.el("pb-node").disabled, false);
+    assert.equal(h.run("PB.id"), "b");
+    newRequest.resolve({}); await newWork; assert.equal(h.run(`PB.${field}`), 0);
     assert.deepEqual(h.posts().map(c => c.route), [`/nodes/a/${kind}`, `/nodes/b/${kind}`]);
   });
 
@@ -525,7 +523,7 @@ for (const [kind, value, field, body] of [
     const h = harness(t); await h.live();
     h.override = method => { if (method === "POST") throw new Error(kind + " rejected"); };
     await beginControl(h, kind, value);
-    assert.equal(h.run(`PB.${field}`), 0); assert.equal(h.el("pb-node").disabled, false);
+    assert.equal(h.run(`PB.${field}`), 0);
     assert.ok(h.actions.some(a => a[0] === kind + " rejected" && a[1] === "err"));
     assert.equal(h.run("PB.id"), "a"); assert.equal(h.run("playerBarConnected()"), true);
   });
@@ -533,20 +531,20 @@ for (const [kind, value, field, body] of [
 
 test("selecting the same target shares in-flight refresh without clearing drag or pending state", async t => {
   const h = harness(t); await h.live(); const pending = deferred();
-  h.run("playerBarBeginRange($('#pb-seek')); PB.volPending=1; PB.devicePending=1");
+  h.run("playerBarBeginRange($('#pb-seek')); PB.volPending=1");
   h.override = (_, route) => route === "/nodes/a/play" ? pending.promise : undefined;
   const first = h.run("refreshPlayerBar()"), seq = h.run("PB.seq"), context = h.json("PB.seekContext");
   assert.equal(h.run("selectPlayerBar('a')"), first);
   assert.equal(h.run("PB.seq"), seq); assert.equal(h.run("PB.dragging"), true); assert.deepEqual(h.json("PB.seekContext"), context);
-  assert.equal(h.run("PB.volPending"), 1); assert.equal(h.run("PB.devicePending"), 1);
+  assert.equal(h.run("PB.volPending"), 1);
   pending.resolve(h.play()); await first;
 });
 
-test("volume clamps to the accepted range and output device changes do not start a new track", async t => {
+test("volume clamps to the accepted range without starting a new track", async t => {
   const h = harness(t); await h.live();
-  await beginControl(h, "volume", 150); await beginControl(h, "volume", -20); await beginControl(h, "device", "hw:2");
-  assert.deepEqual(h.posts().map(c => [c.route, c.body]), [["/nodes/a/volume", { volume: 100 }], ["/nodes/a/volume", { volume: 0 }], ["/nodes/a/device", { device: "hw:2" }]]);
-  assert.match(h.el("pb-device").title, /下次播放生效/); assert.equal(h.run("S.play.a.track_id"), "song-a");
+  await beginControl(h, "volume", 150); await beginControl(h, "volume", -20);
+  assert.deepEqual(h.posts().map(c => [c.route, c.body]), [["/nodes/a/volume", { volume: 100 }], ["/nodes/a/volume", { volume: 0 }]]);
+  assert.equal(h.run("S.play.a.track_id"), "song-a");
 });
 
 test("transport pause/resume and previous/next actions use the dock's selected terminal in other views", async t => {
@@ -572,7 +570,7 @@ test("terminal detail opens the selected console in place; closing it keeps the 
   await h.run("ACT['tc-player']({id:'b'})");
   assert.equal(h.run("S.view"), "nodes"); assert.equal(h.run("drawerCtx"), null); assert.equal(h.el("drawer-root").firstElementChild, null);
   assert.equal(h.run("PB.id"), "b"); assert.equal(h.run("PLY.id"), "b"); assert.ok(h.el("ply-body"));
-  assert.equal(h.el("pb-node").value, "b"); assert.equal(h.run("polls.has('player:poll')"), false);
+  assert.equal(h.run("PB.id"), "b"); assert.equal(h.run("polls.has('player:poll')"), false);
   h.run("closeModal()"); assert.equal(h.el("ply-body"), null); assert.equal(h.run("PLY.id"), "");
   assert.equal(h.run("PB.id"), "b"); assert.equal(h.el("player-bar"), bar); assert.equal(h.run("polls.get('playback')"), timer);
   h.plays.b = h.play({ title: "Still playing" }); await h.tick(); assert.equal(h.el("pb-title").textContent, "Still playing");
@@ -624,9 +622,9 @@ test("late optional console library data cannot repaint a newer same-target moda
 test("console terminal switch synchronizes the global dock without navigating or adding a timer", async t => {
   const h = harness(t); await h.live(); h.run("setView('settings')"); await h.run("openPlayer('a')");
   const timer = h.run("polls.get('playback')");
-  await h.run("CHG['ply-node']({value:'b'})");
-  assert.equal(h.run("PB.id"), "b"); assert.equal(h.run("PLY.id"), "b"); assert.equal(h.el("pb-node").value, "b");
-  assert.equal(h.el("ply-node").value, "b"); assert.equal(h.el("ply-pp").dataset.id, "b");
+  await h.run("ACT['ply-node-pick']({id:'b'})");
+  assert.equal(h.run("PB.id"), "b"); assert.equal(h.run("PLY.id"), "b");
+  assert.equal(h.el("ply-pp").dataset.id, "b"); assert.equal(h.el("ply-node-label").textContent, "终端 b");
   assert.equal(h.run("S.view"), "settings"); assert.equal(h.run("polls.get('playback')"), timer); assert.equal(h.run("polls.has('player:poll')"), false);
 });
 
@@ -636,10 +634,11 @@ test("offline or removed console targets disable all live transport controls des
     h.nodes = nodes; await h.tick(5000);
     assert.equal(h.run("S.play.a.connected"), true, "exercise stale cached playback, not a new disconnected response");
     assert.equal(h.run("PB.id"), "a"); assert.equal(h.run("PLY.id"), "a"); assertDisabled(h);
-    for (const id of ["ply-prev", "ply-next", "ply-pp", "ply-stop", "ply-seek", "ply-vol", "ply-dev"]) assert.equal(h.el(id).disabled, true, id);
+    for (const id of ["ply-prev", "ply-next", "ply-pp", "ply-stop", "ply-seek", "ply-volume"]) assert.equal(h.el(id).disabled, true, id);
+    assert.equal(h.el("ply-dev-wrap").dataset.disabled, "1");
   }
   h.nodes = [h.node("a"), h.node("b")]; await h.tick(5000);
-  assert.equal(h.el("ply-pp").disabled, false); assert.equal(h.el("ply-next").disabled, false); assert.equal(h.el("ply-dev").disabled, false);
+  assert.equal(h.el("ply-pp").disabled, false); assert.equal(h.el("ply-next").disabled, false); assert.equal(h.el("ply-dev-wrap").dataset.disabled, "0");
 });
 
 test("late playback for an earlier console target cannot replace a newly opened target", async t => {
@@ -656,9 +655,9 @@ test("late playback for an earlier console target cannot replace a newly opened 
 
 test("switching the dock while the console is open synchronizes its target and command routing", async t => {
   const h = harness(t); await h.live(); await h.run("openPlayer('a')");
-  await h.run("CHG['pb-node']({value:'b'})");
+  await h.run("ACT['pb-node-pick']({id:'b'})");
   assert.equal(h.run("PB.id"), "b"); assert.equal(h.run("PLY.id"), "b");
-  assert.equal(h.el("ply-node").value, "b"); assert.equal(h.el("ply-pp").dataset.id, "b");
+  assert.equal(h.el("ply-pp").dataset.id, "b");
   assert.equal(h.el("ply-title").innerHTML, "Target B");
   await h.run("ACT['play-pause']($('#ply-pp').dataset)");
   assert.deepEqual(h.posts().map(c => c.route), ["/nodes/b/pause"]);
@@ -666,7 +665,7 @@ test("switching the dock while the console is open synchronizes its target and c
 
 test("clearing the global target closes an open console instead of leaving commands bound to the old terminal", async t => {
   const h = harness(t); await h.live(); await h.run("openPlayer('a')");
-  await h.run("CHG['pb-node']({value:''})");
+  await h.run("ACT['pb-node-pick']({id:''})");
   assert.equal(h.run("PB.id"), ""); assert.equal(h.run("PLY.id"), "");
   assert.equal(h.el("ply-body"), null); assertDisabled(h);
 });

@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"hifihub/server/internal/domain"
 	"hifihub/server/internal/store"
 )
 
@@ -50,5 +51,53 @@ func TestSeedAptApps(t *testing.T) {
 	}
 	if _, err := s.ResolveVersion("mpd", "9.9", "arm64"); err == nil {
 		t.Fatal("missing version must not resolve")
+	}
+	if up.App.Origin != "distro" {
+		t.Fatalf("apt seed origin = %q, want distro", up.App.Origin)
+	}
+}
+
+func TestAppOriginSeedAndReclassify(t *testing.T) {
+	s := newSvc(t)
+	if err := s.SeedAptApps(); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SeedCommercialApps(); err != nil {
+		t.Fatal(err)
+	}
+	// Backfill simulates an upgraded catalog where origins default to self.
+	if _, err := s.db.Exec(`UPDATE apps SET origin='self'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SeedAppOrigins(); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"upmpdcli": "distro", "networkaudiod": "vendor", "roonbridge": "self"}
+	for id, origin := range want {
+		app, err := s.GetApp(id)
+		if err != nil {
+			t.Fatalf("get %s: %v", id, err)
+		}
+		if string(app.Origin) != origin {
+			t.Fatalf("%s origin = %q, want %q", id, app.Origin, origin)
+		}
+	}
+	// The one-time marker must not override later admin changes.
+	if _, err := s.SetAppOrigin("roonbridge", "vendor"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SeedAppOrigins(); err != nil {
+		t.Fatal(err)
+	}
+	if app, _ := s.GetApp("roonbridge"); app.Origin != "vendor" {
+		t.Fatalf("reclassification overwritten: %q", app.Origin)
+	}
+	if _, err := s.SetAppOrigin("roonbridge", "bogus"); err == nil {
+		t.Fatal("invalid origin accepted")
+	}
+	// New apps default to self when the caller omits an origin.
+	app, err := s.CreateApp(domain.App{AppID: "custom", Name: "Custom"})
+	if err != nil || app.Origin != domain.OriginSelf {
+		t.Fatalf("default origin: %+v %v", app, err)
 	}
 }

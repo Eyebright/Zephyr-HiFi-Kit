@@ -111,6 +111,8 @@ func (s *Store) additiveMigrate() error {
 		{"play_history", "measured", "INTEGER NOT NULL DEFAULT 0"},
 		// app_versions: distro package name for format=apt entries.
 		{"app_versions", "apt_package", "TEXT NOT NULL DEFAULT ''"},
+		// apps: how the artifact is obtained (distro | vendor | self).
+		{"apps", "origin", "TEXT NOT NULL DEFAULT 'self'"},
 		// node_queue: per-terminal playback mode + frozen shuffle order.
 		{"node_queue", "mode", "TEXT NOT NULL DEFAULT 'sequence'"},
 		{"node_queue", "shuffle_order", "TEXT NOT NULL DEFAULT '[]'"},
@@ -187,6 +189,7 @@ CREATE TABLE IF NOT EXISTS apps (
   app_id              TEXT PRIMARY KEY,
   name                TEXT NOT NULL,
   category            TEXT NOT NULL,
+  origin              TEXT NOT NULL DEFAULT 'self',
   upstream            TEXT,
   license             TEXT,
   maintainer_state    TEXT,
@@ -522,6 +525,11 @@ CREATE TABLE IF NOT EXISTS node_queue (
   updated_at    INTEGER NOT NULL DEFAULT 0,
   mode          TEXT NOT NULL DEFAULT 'sequence',
   shuffle_order TEXT NOT NULL DEFAULT '[]'
+);
+
+CREATE TABLE IF NOT EXISTS node_sleep_timer (
+  node_id TEXT PRIMARY KEY,
+  stop_at INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS play_history (

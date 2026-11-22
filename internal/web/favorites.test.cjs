@@ -48,9 +48,10 @@ test("translations never rewrite or interpret music metadata", () => {
   }
 });
 
-test("player has a distinct heart and a separate album action", () => {
+test("player has a distinct heart", () => {
   const h = harness(), html = h.run("playerBarShell()");
-  assert.match(html, /id="pb-favorite"/); assert.match(html, /favorite-current-album/);
+  assert.match(html, /id="pb-favorite"/);
+  assert.doesNotMatch(html, /pb-favorite-menu/);
   assert.equal(h.run("new Set(NAV.map(n=>n.icon)).size===NAV.length"), true);
   assert.equal(h.run("NAV.at(-1).id"), "settings");
 });

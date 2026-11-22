@@ -77,6 +77,9 @@ func main() {
 	if err := cat.SeedCommercialApps(); err != nil {
 		logger.Warn("seed commercial apps", "err", err)
 	}
+	if err := cat.SeedAppOrigins(); err != nil {
+		logger.Warn("seed app origins", "err", err)
+	}
 	aud := audit.New(st)
 	alts := alerts.New(st, nodes, lic, cmds)
 	tasks := task.New(st, nodes, boms, cat, cfg.PlayGateEnabled, cfg.IdleWaitTimeout)

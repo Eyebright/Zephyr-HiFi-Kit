@@ -52,7 +52,7 @@ const SETTINGS = {
 };
 const SETTINGS_SECTIONS = settingsTranslatedList([
   ["profile", "管理员与偏好", "user", "管理员称呼、会话安全与首次使用引导"],
-  ["authorization", "授权信息", "shield", "许可证、信任根与终端席位"],
+  ["authorization", "授权信息", "shield", "终端席位、许可证扩容与验签公钥"],
   ["folders", "音乐文件夹", "folder", "服务端本地目录与 NAS 音乐源"],
   ["packages", "软件包与源", "box", "应用版本、软件包、签名与安装源；安装执行见终端中心"],
   ["maintenance", "备份与维护", "database", "服务端自升级、音乐数据备份、恢复与操作日志清理"],
@@ -184,7 +184,7 @@ function settingsSyncSpy() {
 function settingsSectionShell(id = SETTINGS.section) {
   switch (id) {
     case "profile": return typeof experienceProfileShell === "function" ? experienceProfileShell() : settingsNote("管理员资料界面尚未加载，请刷新页面。", "warn");
-    case "authorization": return settingsNote("服务端内置 3 台终端席位，可用许可证扩容。管理员登录与许可证授权相互独立；这里只导入验证用公钥，不生成、上传或导出签发私钥。") + shellKeys();
+    case "authorization": return settingsNote("服务端内置 3 台终端席位，日常无需许可证；席位扩容已收进高级项。此处公钥仅用于验证第三方签名的应用包，不生成、上传或导出签发私钥。") + shellKeys();
     case "packages": return settingsNote("这里只维护应用版本、软件包、签名与安装源；安装执行请前往终端中心。当前交付支持 Linux DEB、APT 与受支持的 Linux 归档包，架构相同不代表操作系统兼容：Windows/macOS 文件不能当作 Linux 可安装包。") + settingsHTML`<section class="card mb12"><div class="settings-card-head"><h3>${icon("globe", 17)} 安装源管理</h3>${settingsButton("apt-sources", "安装源管理", { icon: "globe" })}</div><p>可只读浏览 APT 安装源，添加或删除源需解锁管理员。应用名仍打开原版本与入库流程；BOM 高级管理保留在下方，不在这里执行终端安装。</p></section>` + shellCatalog();
     case "about": return settingsAboutShell();
     case "maintenance": return settingsMaintenanceShell();

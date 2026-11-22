@@ -201,24 +201,21 @@ func TestQueueLifecycleAndAutoAdvance(t *testing.T) {
 	}
 	waitPlaying(t, h.nodes, nodeID, false)
 
-	// Appending to a non-empty queue does not interrupt or start playback.
+	// Appending while idle starts the appended track and moves the cursor to it.
 	q, sessionID, err = h.srv.Enqueue(context.Background(), nodeID, b)
-	if err != nil || sessionID != "" {
-		t.Fatalf("enqueue append: %v session=%q", err, sessionID)
+	if err != nil || sessionID == "" {
+		t.Fatalf("enqueue while idle: %v session=%q", err, sessionID)
 	}
-	if len(q.Tracks) != 2 || q.Position != 0 {
+	if len(q.Tracks) != 2 || q.Position != 1 {
 		t.Fatalf("queue after append: %+v", q)
-	}
-
-	// next -> beta, then next at the end errors without wrapping.
-	if _, err := h.srv.QueueNext(context.Background(), nodeID); err != nil {
-		t.Fatalf("next: %v", err)
 	}
 	res = nextResult(t, results)
 	if res.setup.TrackID != b || string(res.pcm) != string(pcmB) {
-		t.Fatalf("next played wrong track: %s bytes=%d", res.setup.TrackID, len(res.pcm))
+		t.Fatalf("appended track did not play: %s bytes=%d", res.setup.TrackID, len(res.pcm))
 	}
 	waitPlaying(t, h.nodes, nodeID, false)
+
+	// At the last entry, next errors without wrapping.
 	if _, err := h.srv.QueueNext(context.Background(), nodeID); err != ErrQueueEnd {
 		t.Fatalf("expected ErrQueueEnd, got %v", err)
 	}
@@ -306,6 +303,72 @@ func TestQueueLifecycleAndAutoAdvance(t *testing.T) {
 	}
 }
 
+func TestQueueEditsStartPlaybackWhenIdle(t *testing.T) {
+	h := setup(t)
+	nodeID, secret := h.register(t, "ep-idle", true)
+	a, b, _, pcmB := h.addTwoTracks(t)
+
+	ready := make(chan struct{}, 1)
+	results := make(chan epResult, 8)
+	go runEndpointMulti(t, h.srv.Addr(), nodeID, secret, ready, results)
+	<-ready
+
+	// A pre-existing queue must not suppress playback of newly added tracks.
+	if err := h.srv.SetQueue(nodeID, []string{a}, 0); err != nil {
+		t.Fatal(err)
+	}
+	q, sessionID, err := h.srv.EnqueueMany(context.Background(), nodeID, []string{b}, false)
+	if err != nil || sessionID == "" {
+		t.Fatalf("enqueue-many while idle: %v session=%q", err, sessionID)
+	}
+	if len(q.Tracks) != 2 || q.Position != 1 {
+		t.Fatalf("queue after append: %+v", q)
+	}
+	res := nextResult(t, results)
+	if res.setup.TrackID != b || string(res.pcm) != string(pcmB) {
+		t.Fatalf("appended track did not play: %s", res.setup.TrackID)
+	}
+	waitPlaying(t, h.nodes, nodeID, false)
+
+	// play-next while idle plays the inserted track at pos+1 (last entry, so its
+	// natural end does not auto-advance and cannot leak into later assertions).
+	if err := h.srv.SetQueue(nodeID, []string{a}, 0); err != nil {
+		t.Fatal(err)
+	}
+	q, sessionID, err = h.srv.EnqueueMany(context.Background(), nodeID, []string{b}, true)
+	if err != nil || sessionID == "" {
+		t.Fatalf("play-next while idle: %v session=%q", err, sessionID)
+	}
+	if len(q.Tracks) != 2 || q.Position != 1 {
+		t.Fatalf("queue after play-next: %+v", q)
+	}
+	res = nextResult(t, results)
+	if res.setup.TrackID != b {
+		t.Fatalf("play-next played %s", res.setup.TrackID)
+	}
+	waitPlaying(t, h.nodes, nodeID, false)
+
+	// Replacing the queue while idle starts the new first entry.
+	sessionID, err = h.srv.ReplaceQueue(context.Background(), nodeID, []string{b}, 0)
+	if err != nil || sessionID == "" {
+		t.Fatalf("replace while idle: %v session=%q", err, sessionID)
+	}
+	res = nextResult(t, results)
+	if res.setup.TrackID != b || string(res.pcm) != string(pcmB) {
+		t.Fatalf("replace played %s", res.setup.TrackID)
+	}
+	waitPlaying(t, h.nodes, nodeID, false)
+
+	// Console-style SetQueue still never starts playback on an idle terminal.
+	if err := h.srv.SetQueue(nodeID, []string{a, b}, 0); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case extra := <-results:
+		t.Fatalf("SetQueue started playback: %+v", extra.setup)
+	case <-time.After(300 * time.Millisecond):
+	}
+}
 // --- playback queue modes ---
 
 // addTracks scans one mount holding the named WAVs and returns title->track ID.

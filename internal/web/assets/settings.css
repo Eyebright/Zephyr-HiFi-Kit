@@ -130,3 +130,20 @@
 @media (prefers-reduced-motion: reduce) {
   .settings-page *, .settings-page *::before, .settings-page *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
+
+/* Collapsible advanced blocks (license expansion, deployment templates). */
+.settings-advanced > summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 2px;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+}
+.settings-advanced > summary::-webkit-details-marker { display: none; }
+.settings-advanced > summary::after { content: "▾"; margin-left: auto; color: var(--faint); font-size: 11px; }
+.settings-advanced[open] > summary { color: var(--gold); }
+.settings-advanced .f-hint { margin: 2px 0 8px; }

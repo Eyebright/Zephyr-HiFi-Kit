@@ -175,5 +175,18 @@ I18n.register("errors", {
   source_update_failed: ["无法更新音乐源，请检查配置；更改位置需新建来源，修改 SMB 凭据前需先卸载。", "無法更新音樂來源，請檢查設定；變更位置需新增來源，修改 SMB 認證資訊前需先卸載。", "Unable to update the music source. Check its configuration; use a new source for a different location and unmount before changing SMB credentials."],
   source_test_failed: ["音乐源访问测试失败，请检查目录和访问权限。", "音樂來源存取測試失敗，請檢查目錄與存取權限。", "The music source access test failed. Check the directory and access permissions."],
   source_mount_failed: ["无法挂载音乐源，请检查目录、网络和访问权限。", "無法掛載音樂來源，請檢查目錄、網路與存取權限。", "Unable to mount the music source. Check the directory, network and access permissions."],
-  source_unmount_failed: ["无法卸载音乐源，请查看诊断信息。", "無法卸載音樂來源，請查看診斷資訊。", "Unable to unmount the music source. See the diagnostic information."]
+  source_unmount_failed: ["无法卸载音乐源，请查看诊断信息。", "無法卸載音樂來源，請查看診斷資訊。", "Unable to unmount the music source. See the diagnostic information."],
+  ssh_host_invalid: ["SSH 主机地址不合法。", "SSH 主機位址不合法。", "The SSH host is invalid."],
+  ssh_port_invalid: ["SSH 端口须为 1 到 65535。", "SSH 連接埠須為 1 到 65535。", "The SSH port must be 1–65535."],
+  ssh_user_invalid: ["SSH 用户名不合法。", "SSH 使用者名稱不合法。", "The SSH user name is invalid."],
+  ssh_auth_required: ["请填写 SSH 密码或私钥。", "請填寫 SSH 密碼或私鑰。", "Enter an SSH password or private key."],
+  ssh_credential_too_long: ["SSH 凭据过长。", "SSH 憑證過長。", "The SSH credential is too long."],
+  server_url_invalid: ["服务端地址不合法。", "伺服器位址不合法。", "The server address is invalid."],
+  ssh_probe_failed: ["无法通过 SSH 连接终端，请检查地址、账号和密码。", "無法透過 SSH 連線終端，請檢查位址、帳號與密碼。", "Unable to reach the terminal over SSH. Check the address, user and credentials."],
+  ssh_fingerprint_required: ["请先连接并确认终端主机指纹。", "請先連線並確認終端主機指紋。", "Connect and confirm the terminal host key fingerprint first."],
+  ssh_token_invalid: ["终端注册令牌不合法。", "終端註冊權杖不合法。", "The terminal registration token is invalid."],
+  ssh_busy: ["已有两个 SSH 安装任务在进行，请稍后再试。", "已有兩個 SSH 安裝工作在進行，請稍後再試。", "Two SSH installs are already running. Try again later."],
+  ssh_job_not_found: ["SSH 安装任务不存在或已过期。", "SSH 安裝工作不存在或已過期。", "The SSH install job does not exist or has expired."],
+  sleep_minutes_invalid: ["定时时长需为 1 到 1440 分钟。", "定時長度需為 1 到 1440 分鐘。", "The timer duration must be 1–1440 minutes."],
+  sleep_cancel_failed: ["取消定时失败，请稍后重试。", "取消定時失敗，請稍後重試。", "Unable to cancel the sleep timer. Try again later."]
 });

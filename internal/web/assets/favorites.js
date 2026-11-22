@@ -10,25 +10,28 @@ function favoriteIdentity(item) {
   return item.kind === "track" ? { kind: "track", track_id: item.track_id } : { kind: "album", artist: item.artist || "", album: item.album || "" };
 }
 function favoriteKey(item) { return JSON.stringify(favoriteIdentity(item)); }
-function favoritePlayerShell() {
-  return `<div class="fav-player"><button class="btn ghost fav-heart" id="pb-favorite" data-act="favorite-current" aria-label="${esc(fvT("favLikeCurrent"))}" aria-pressed="false" title="${esc(fvT("favStartPlayback"))}" disabled>${icon("heart", 19)}</button><details id="pb-favorite-menu"><summary aria-label="${esc(fvT("favAlbumOptions"))}" title="${esc(fvT("favAlbumOptions"))}">⌄</summary><div><button class="btn ghost sm" id="pb-favorite-album" data-act="favorite-current-album" disabled>${esc(fvT("favSaveAlbumCurrent"))}</button><button class="btn ghost sm" data-act="favorites-open">${esc(fvT("favView"))}</button></div></details></div>`;
+function favoritePlayerShell(prefix = "pb") {
+  return `<div class="fav-player"><button class="btn ghost fav-heart" id="${prefix}-favorite" data-act="favorite-current" aria-label="${esc(fvT("favLikeCurrent"))}" aria-pressed="false" title="${esc(fvT("favStartPlayback"))}" disabled>${icon("heart", 19)}</button></div>`;
 }
 function paintPlayerFavorite(trackID) {
   if (trackID !== FV.current) {
     FV.current = trackID; FV.state = null; FV.stateAt = 0; FV.stateBusy = false; FV.stateError = ""; FV.stateSeq++;
     const menu = $("#pb-favorite-menu"); if (menu) menu.open = false;
   }
-  const button = $("#pb-favorite"), album = $("#pb-favorite-album");
-  if (!button) return;
+  const buttons = [$("#pb-favorite"), $("#ply-favorite")].filter(Boolean);
+  const album = $("#pb-favorite-album");
+  if (!buttons.length) return;
   const state = FV.state, ready = !!(trackID && state);
   const trackBusy = FV.pending.has(favoriteKey({ kind: "track", track_id: trackID }));
-  button.disabled = !ready || trackBusy;
-  button.dataset.id = trackID; button.dataset.saved = String(!!state?.track);
-  button.setAttribute("aria-pressed", String(!!state?.track));
-  button.classList.toggle("is-favorite", !!state?.track);
   const label = fvT(state?.track ? "favUnlikeCurrent" : "favLikeCurrent");
-  button.setAttribute("aria-label", label);
-  button.title = trackBusy ? fvT("favSaving") : !trackID ? fvT("favStartPlayback") : FV.stateError ? fvT(FV.stateError) : !state ? fvT("favReadingState") : label;
+  for (const button of buttons) {
+    button.disabled = !ready || trackBusy;
+    button.dataset.id = trackID; button.dataset.saved = String(!!state?.track);
+    button.setAttribute("aria-pressed", String(!!state?.track));
+    button.classList.toggle("is-favorite", !!state?.track);
+    button.setAttribute("aria-label", label);
+    button.title = trackBusy ? fvT("favSaving") : !trackID ? fvT("favStartPlayback") : FV.stateError ? fvT(FV.stateError) : !state ? fvT("favReadingState") : label;
+  }
   if (album) {
     const identity = { kind: "album", artist: state?.artist || "", album: state?.album_name || "" };
     album.disabled = !ready || FV.pending.has(favoriteKey(identity));

@@ -719,25 +719,77 @@ function paintOvPlaylists() {
 }
 // Keep focused controls mounted while live playback fields update.
 const PB_MODES = [["sequence", "modeSequence", "queueModeSequence"], ["loop_all", "modeLoopAll", "queueModeLoopAll"], ["loop_one", "modeLoopOne", "queueModeLoopOne"], ["shuffle", "modeShuffle", "queueModeShuffle"]];
-function pbModeShell() {
-  return `<details class="pb-mode" id="pb-mode" data-disabled="1"><summary id="pb-mode-btn" aria-label="${appH("queueMode")}" title="${appH("queueMode")}">${icon("modeSequence", 18)}</summary><div class="pb-mode-menu" role="menu">${PB_MODES.map(([m, ic, k]) => `<button class="pb-mode-item" role="menuitemradio" aria-checked="false" data-act="pb-mode-set" data-mode="${m}">${icon(ic, 16)}<span>${appT(k)}</span><span class="pb-mode-check">${icon("check", 13)}</span></button>`).join("")}</div></details>`;
+function pbModeShell(prefix = "pb") {
+  return `<details class="pb-mode" id="${prefix}-mode" data-disabled="1"><summary id="${prefix}-mode-btn" aria-label="${appH("queueMode")}" title="${appH("queueMode")}">${icon("modeSequence", 18)}</summary><div class="pb-mode-menu" role="menu">${PB_MODES.map(([m, ic, k]) => `<button class="pb-mode-item" role="menuitemradio" aria-checked="false" data-act="pb-mode-set" data-mode="${m}">${icon(ic, 16)}<span>${appT(k)}</span><span class="pb-mode-check">${icon("check", 13)}</span></button>`).join("")}</div></details>`;
+}
+function paintModePopover(prefix, mode, enabled) {
+  const modeDef = PB_MODES.find(x => x[0] === mode) || PB_MODES[0];
+  const wrap = document.getElementById(`${prefix}-mode`), btn = document.getElementById(`${prefix}-mode-btn`);
+  if (!wrap) return;
+  wrap.dataset.disabled = enabled ? "0" : "1";
+  if (!enabled) wrap.open = false;
+  if (btn) {
+    btn.innerHTML = icon(modeDef[1], 18);
+    const label = `${appT("queueMode")}：${appT(modeDef[2])}`;
+    btn.title = label;
+    btn.setAttribute("aria-label", label);
+  }
+  wrap.querySelectorAll("[data-mode]").forEach(b => {
+    const on = b.dataset.mode === mode;
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-checked", String(on));
+  });
 }
 const PB = {
   id: "", chosen: false, nodes: [], loaded: false, nodesError: false, nodesAt: 0,
   seq: 0, busy: null, fresh: false, trackID: "", track: null, dragging: false, volDrag: false,
-  seekContext: null, seekPending: 0, volPending: 0, devicePending: 0
+  seekContext: null, seekPending: 0, volPending: 0
 };
+function terminalPopoverHtml(prefix = "pb") {
+  return `<details class="pb-pop pb-term" id="${prefix}-term-wrap" data-disabled="1"><summary id="${prefix}-term" aria-label="${appH("m164")}" title="${appH("m164")}">${icon("server", 14)}<span class="pb-term-name truncate" id="${prefix}-node-label">—</span></summary><div class="pb-pop-menu pb-term-menu" role="menu" id="${prefix}-term-menu"></div></details>`;
+}
+function volumePopoverHtml(prefix = "pb") {
+  return `<details class="pb-pop pb-vol" id="${prefix}-vol-wrap"><summary id="${prefix}-vol-btn" aria-label="${appH("m163")}" title="${appH("m163")}">${icon("speaker", 16)}<span class="pb-vol-val mono" id="${prefix}-volume-value">100</span></summary><div class="pb-pop-menu pb-vol-menu"><input id="${prefix}-volume" type="range" min="0" max="100" step="1" value="100" data-change="${prefix}-volume" aria-label="${appH("m163")}" disabled></div></details>`;
+}
+function devicePopoverHtml(prefix = "ply") {
+  return `<details class="pb-pop pb-dev" id="${prefix}-dev-wrap" data-disabled="1"><summary id="${prefix}-dev-btn" aria-label="${appH("m166")}" title="${appH("m166")}">${icon("speaker", 14)}<span class="pb-term-name truncate" id="${prefix}-dev-label">—</span></summary><div class="pb-pop-menu" role="menu" id="${prefix}-dev-menu"></div></details>`;
+}
+function paintDeviceMenu(prefix, p, connected) {
+  const wrap = document.getElementById(`${prefix}-dev-wrap`), menu = document.getElementById(`${prefix}-dev-menu`);
+  const label = document.getElementById(`${prefix}-dev-label`);
+  if (!wrap || !menu) return;
+  wrap.dataset.disabled = connected ? "0" : "1";
+  const { devs, cur, names } = nodePlayDevs(p || {});
+  const curLabel = cur === "default" ? appT("m262") : names.get(cur) ? names.get(cur) + " · " + cur : cur;
+  if (label) { if (label.textContent !== curLabel) label.textContent = curLabel; }
+  const sum = wrap.querySelector("summary");
+  if (sum && sum.title !== curLabel) { sum.title = curLabel; sum.setAttribute("aria-label", appT("m166") + "：" + curLabel); }
+  const sig = devs.join("|") + "#" + cur;
+  if (menu.dataset.sig === sig) return;
+  menu.dataset.sig = sig;
+  menu.innerHTML = devs.map(d => {
+    const nm = d === "default" ? appT("m262") : names.get(d) ? names.get(d) + " · " + d : d;
+    return `<button class="pb-pop-item ${d === cur ? "active" : ""}" role="menuitemradio" aria-checked="${d === cur}" data-act="${prefix}-device-pick" data-dev="${esc(d)}">${icon("speaker", 13)}<span class="truncate">${esc(nm)}</span>${d === cur ? icon("check", 13) : ""}</button>`;
+  }).join("");
+}
 function playerBarShell() {
   return `<section class="player-bar" id="player-bar" aria-label="${appH("m154")}">
-    <div class="player-bar-meta"><div id="pb-cover"></div><div class="player-bar-text"><div class="player-bar-title truncate" id="pb-title">${appH("m155")}</div><div class="player-bar-sub truncate" id="pb-sub">${appH("m156")}</div><div class="player-bar-state" id="pb-state" role="status">${appH("m157")}</div><span id="pb-mqa" hidden></span></div>${typeof favoritePlayerShell === "function" ? favoritePlayerShell() : ""}${pbModeShell()}</div>
-    <div class="player-bar-transport"><button class="btn ghost" id="pb-prev" data-act="queue-prev" aria-label="${appH("m158")}" title="${appH("m158")}" disabled>${icon("chevL", 17)}</button><button class="btn primary pc-play" id="pb-pause" data-act="play-pause" aria-label="${appH("m159")}" title="${appH("m159")}" disabled>${icon("play", 18)}</button><button class="btn ghost" id="pb-next" data-act="queue-next" aria-label="${appH("m160")}" title="${appH("m160")}" disabled>${icon("chevR", 17)}</button></div>
-    <div class="player-bar-tools" tabindex="0" aria-label="${appH("m161")}">
-      <div class="player-bar-seek"><span id="pb-elapsed" class="mono">0:00</span><input id="pb-seek" type="range" min="0" max="0" step="500" value="0" data-change="pb-seek" aria-label="${appH("m162")}" disabled><span id="pb-total" class="mono">0:00</span></div>
-      <label class="player-bar-volume" title="${appH("m163")}">${icon("speaker", 15)}<input id="pb-volume" type="range" min="0" max="100" step="1" value="100" data-change="pb-volume" aria-label="${appH("m163")}" disabled><span id="pb-volume-value" class="mono">100</span></label>
-      <label class="player-bar-select"><span id="pb-node-label">${appH("m164")}</span><select id="pb-node" class="inp" data-change="pb-node" aria-label="${appH("m165")}"><option value="">${appH("m086")}</option></select></label>
-      <label class="player-bar-select"><span id="pb-device-label">${appH("m166")}</span><select id="pb-device" class="inp mono" data-change="pb-device" aria-label="${appH("m167")}" title="${appH("m168")}" disabled><option value="default">default</option></select></label>
-      <button class="btn xs ghost" id="pb-console" data-act="player-open" title="${appH("m169")}" disabled>${icon("layers", 14)} <span id="pb-console-label">${appH("m170")}</span></button>
+    <div class="pb-left">
+      <div class="pb-meta-row"><div id="pb-cover"></div><div class="player-bar-text"><div class="player-bar-title truncate" id="pb-title">${appH("m155")}</div><div class="player-bar-sub truncate" id="pb-sub">${appH("m156")}</div><div class="player-bar-state" id="pb-state" role="status">${appH("m157")}</div><span id="pb-mqa" hidden></span></div></div>
     </div>
+    <div class="pb-transport-block">
+      <div class="player-bar-transport"><button class="btn ghost" id="pb-prev" data-act="queue-prev" aria-label="${appH("m158")}" title="${appH("m158")}" disabled>${icon("chevL", 17)}</button><button class="btn primary pc-play" id="pb-pause" data-act="play-pause" aria-label="${appH("m159")}" title="${appH("m159")}" disabled>${icon("play", 18)}</button><button class="btn ghost" id="pb-next" data-act="queue-next" aria-label="${appH("m160")}" title="${appH("m160")}" disabled>${icon("chevR", 17)}</button></div>
+      <div class="player-bar-seek"><span id="pb-elapsed" class="mono">0:00</span><input id="pb-seek" type="range" min="0" max="0" step="500" value="0" data-change="pb-seek" aria-label="${appH("m162")}" disabled><span id="pb-total" class="mono">0:00</span></div>
+    </div>
+    <div class="pb-aux">
+      ${terminalPopoverHtml()}
+      <div class="pb-aux-right">
+        ${volumePopoverHtml()}
+        ${pbModeShell()}
+        ${sleepPopoverHtml("pb", "")}
+      </div>
+    </div>
+    <div class="pb-fav">${typeof favoritePlayerShell === "function" ? favoritePlayerShell() : ""}</div>
   </section>`;
 }
 function initPlayerBar() {
@@ -762,7 +814,7 @@ function selectPlayerBar(id) {
     PB.id = id; PB.seq++; PB.busy = null; PB.fresh = false; PB.nodesAt = 0;
     PB.trackID = ""; PB.track = null;
     PB.dragging = PB.volDrag = false; PB.seekContext = null;
-    PB.seekPending = PB.volPending = PB.devicePending = 0;
+    PB.seekPending = PB.volPending = 0;
   }
   paintPlayerBar();
   return refreshPlayerBar();
@@ -841,24 +893,8 @@ function paintPlayerBar() {
   const pp = button("#pb-pause", !active);
   const ppLabel = active && p.playing ? appT("m183") : appT("m159");
   if (pp && pp.title !== ppLabel) { pp.innerHTML = icon(active && p.playing ? "pause" : "play", 18); pp.title = ppLabel; pp.setAttribute("aria-label", ppLabel); }
-  button("#pb-console", !connected);
-  const modeDef = PB_MODES.find(x => x[0] === mode) || PB_MODES[0];
-  const modeWrap = $("#pb-mode"), modeBtn = $("#pb-mode-btn");
-  if (modeWrap) {
-    modeWrap.dataset.disabled = connected ? "0" : "1";
-    if (!connected) modeWrap.open = false;
-    if (modeBtn) {
-      modeBtn.innerHTML = icon(modeDef[1], 18);
-      const label = `${appT("queueMode")}：${appT(modeDef[2])}`;
-      modeBtn.title = label;
-      modeBtn.setAttribute("aria-label", label);
-    }
-    modeWrap.querySelectorAll("[data-mode]").forEach(b => {
-      const on = b.dataset.mode === mode;
-      b.classList.toggle("active", on);
-      b.setAttribute("aria-checked", String(on));
-    });
-  }
+  paintSleepPopover("pb", id, Number(p.sleep_stop_at) || 0);
+  paintModePopover("pb", mode, connected);
   const mqa = !!(active && p.mqa), dop = !!(active && p.dop), converted = !!(active && p.converted), strict = mqa || dop;
   const mqaBadge = $("#pb-mqa");
   if (mqaBadge) {
@@ -884,15 +920,24 @@ function paintPlayerBar() {
     if (!PB.volDrag && !PB.volPending && document.activeElement !== vol) { vol.value = String(clamp(p.volume == null ? 100 : Number(p.volume), 0, 100)); set("#pb-volume-value", appN(Number(vol.value))); }
     vol.setAttribute("aria-valuetext", appN(Number(vol.value) / 100, { style: "percent" }));
   }
-  const node = $("#pb-node");
-  ovSyncSelect(node, ovNodeOptions(id, false, PB.nodes), id);
-  if (node) node.disabled = PB.dragging || PB.volDrag || !!(PB.seekPending || PB.volPending || PB.devicePending);
-  const device = $("#pb-device"), dv = nodePlayDevs(p);
-  if (device) {
-    if (!PB.devicePending) ovSyncSelect(device, nodePlayOpts(dv.devs, dv.cur, dv.names), dv.cur);
-    device.disabled = !connected || !!PB.devicePending;
-    device.title = (active && p.alsa_device ? appT("m184") + p.alsa_device + " · " : "") + appT("m185");
-  }
+  paintTerminalMenu("pb", PB.nodes, PB.id, !PB.loaded || PB.nodesError || !PB.nodes.length, appT("m174"));
+}
+function paintTerminalMenu(prefix, nodes, currentID, disabled, fallback) {
+  const menu = document.getElementById(`${prefix}-term-menu`), wrap = document.getElementById(`${prefix}-term-wrap`);
+  const label = document.getElementById(`${prefix}-node-label`);
+  if (!menu || !wrap) return;
+  const cur = nodes.find(n => n.node_id === currentID);
+  if (label) { const txt = cur ? (cur.alias || shortId(cur.node_id)) : (fallback || "—"); if (label.textContent !== txt) label.textContent = txt; }
+  wrap.dataset.disabled = disabled ? "1" : "0";
+  const sig = nodes.map(n => n.node_id + ":" + n.status).join("|") + "#" + currentID;
+  if (menu.dataset.sig === sig) return;
+  menu.dataset.sig = sig;
+  menu.innerHTML = nodes.length
+    ? nodes.map(n => {
+        const on = n.status === "online", sel = n.node_id === currentID;
+        return `<button class="pb-pop-item ${sel ? "active" : ""}" role="menuitemradio" aria-checked="${sel}" data-act="${prefix}-node-pick" data-id="${esc(n.node_id)}" ${on ? "" : "disabled"}>${icon("server", 13)}<span class="truncate">${esc(n.alias || shortId(n.node_id))}</span><span class="pb-pop-extra">${on ? "" : esc(appT("m177"))}</span>${sel ? icon("check", 13) : ""}</button>`;
+      }).join("")
+    : `<div class="pb-pop-head">${appH("m175")}</div>`;
 }
 function playerBarBeginRange(el) {
   if (el.disabled) return;
@@ -916,15 +961,6 @@ async function playerBarRangeChange(el, volume) {
   finally {
     if (seq === PB.seq) { PB[field] = Math.max(0, PB[field] - 1); await refreshPlayerBar(); }
   }
-}
-async function playerBarDeviceChange(el) {
-  if (!playerBarConnected() || el.disabled) return;
-  const id = PB.id, seq = PB.seq;
-  PB.devicePending++;
-  paintPlayerBar();
-  try { await api("POST", `/nodes/${enc(id)}/device`, { device: el.value }); toast(appT("m187"), "ok"); }
-  catch (e) { toast(e.message, "err"); el.blur(); }
-  finally { if (seq === PB.seq) { PB.devicePending--; await refreshPlayerBar(); } }
 }
 function paintSysStrip() {
   const el = $("#ov-sys"); if (!el) return;
@@ -1044,14 +1080,16 @@ async function deleteNodes(ids) {
 }
 
 /* ================= ADD-NODE WIZARD ================= */
-const WZ = { step: 1, alias: "", group: "", arch: "amd64", distro: "debian", ttl: 1800, note: "", token: "", expiresAt: 0, nodeId: "", node: null };
+const WZ = { step: 1, alias: "", group: "", arch: "amd64", distro: "debian", ttl: 1800, note: "", token: "", expiresAt: 0, nodeId: "", node: null,
+  method: "manual", sshForm: { host: "", port: "22", user: "", auth: "password" }, sshInfo: null, sshCred: null, jobId: "", job: null };
 const ANDROID_APK = "https://github.com/Eyebright/Zephyr-HiFi-Kit/releases/download/v0.58/Zephyr-HiFi-Kit-terminal-0.58.apk";
 function installCmd() {
   if (WZ.arch === "android") return appT("m209", { id: ANDROID_APK, value: location.origin, value2: WZ.token });
   return `curl -fsSL ${location.origin}/dl/agent-install.sh | sudo bash -s -- --server ${location.origin} --token ${WZ.token}`;
 }
 function openWizard() {
-  Object.assign(WZ, { step: 1, alias: "", group: "", arch: "amd64", distro: "debian", ttl: 1800, note: "", token: "", expiresAt: 0, nodeId: "", node: null });
+  Object.assign(WZ, { step: 1, alias: "", group: "", arch: "amd64", distro: "debian", ttl: 1800, note: "", token: "", expiresAt: 0, nodeId: "", node: null,
+    method: "manual", sshForm: { host: "", port: "22", user: "", auth: "password" }, sshInfo: null, sshCred: null, jobId: "", job: null });
   renderWizard();
 }
 function wzStepsHtml() {
@@ -1065,7 +1103,15 @@ function renderWizard() {
   let body = "", foot = "";
   if (WZ.step === 1) {
     body = wzStepsHtml() + wzStep1();
-    foot = `<button class="btn ghost" data-act="modal-close">${appH("m063")}</button><button class="btn primary" data-act="wz-next">${appH("m212")} ${icon("chevR", 14)}</button>`;
+    const ssh = WZ.method === "ssh";
+    const probed = ssh && !!WZ.sshInfo;
+    const primary = probed
+      ? `<button class="btn primary" data-act="wz-ssh-install">${icon("shield", 14)} ${appH("m916")}</button>`
+      : ssh
+        ? `<button class="btn primary" data-act="wz-ssh-probe">${icon("server", 14)} ${appH("m907")}</button>`
+        : `<button class="btn primary" data-act="wz-next">${appH("m212")} ${icon("chevR", 14)}</button>`;
+    const back = probed ? `<button class="btn ghost" data-act="wz-ssh-reset">${appH("m917")}</button>` : "";
+    foot = `<button class="btn ghost" data-act="modal-close">${appH("m063")}</button>${back}<div class="spacer"></div>${primary}`;
   } else if (WZ.step === 2) {
     body = wzStepsHtml() + wzStep2();
     foot = `<button class="btn ghost" data-act="wz-back">${icon("chevL", 14)} ${appH("m213")}</button><button class="btn ghost" data-act="modal-close">${appH("m063")}</button>`;
@@ -1073,27 +1119,66 @@ function renderWizard() {
     body = wzStepsHtml() + wzStep3();
     foot = `<button class="btn primary" data-act="modal-close">${appH("m033")}</button>`;
   }
-  openModal(`${icon("plus", 18)} ${appH("m214")}`, body, foot, { narrow: true, onClose: () => { stopPoll("wz:token"); stopPoll("wz:cd"); } });
+  openModal(`${icon("plus", 18)} ${appH("m214")}`, body, foot, { narrow: true, onClose: () => { stopPoll("wz:token"); stopPoll("wz:cd"); stopPoll("wz:job"); } });
 }
 function wzStep1() {
   const opt = (v, l, cur) => `<option value="${v}" ${v === cur ? "selected" : ""}>${esc(l)}</option>`;
-  return `<div id="wz-err"></div>
+  const seg = (v, label, cur) => `<button class="btn sm ${v === cur ? "primary" : "ghost"}" data-act="wz-method" data-v="${v}">${esc(label)}</button>`;
+  let h = `<div id="wz-err"></div>
+    <div class="field"><label>${appH("m897")}</label><div style="display:flex;gap:8px">${seg("manual", appT("m898"), WZ.method)}${seg("ssh", appT("m899"), WZ.method)}</div></div>
     <div class="f-row">
       <div class="field"><label>${appH("m219")}</label><input id="wz-alias" class="inp" placeholder="${appH("m220")}" value="${esc(WZ.alias)}" maxlength="60"></div>
       <div class="field"><label>${appH("m221")}</label><input id="wz-group" class="inp" placeholder="${appH("m222")}" value="${esc(WZ.group)}" maxlength="40"></div>
+    </div>`;
+  if (WZ.method === "ssh" && WZ.sshInfo) {
+    const i = WZ.sshInfo, f = WZ.sshForm;
+    h += `<div class="token-box" style="flex-direction:column;align-items:flex-start;gap:6px">
+      <div><b>${esc(i.hostname || f.host)}</b> · ${esc(f.user)}@${esc(f.host)}:${esc(f.port)}</div>
+      <div class="mono" style="font-size:12px;overflow-wrap:anywhere">${appH("m909")}: ${esc(i.fingerprint)}</div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted)">
+        <span>${appH("m912")}: ${esc(i.arch || "—")}</span><span>${appH("m911")}: ${esc(i.os_release || "—")}</span>
+        <span>${appH("m913")}: ${esc(i.sudo === "passwordless" ? appT("m914") : appT("m915"))}</span>
+        ${i.has_agent ? `<span class="badge ok">hifihub-agent</span>` : ""}
+      </div>
+      <div class="f-hint">${appH("m931")}</div>
+    </div>`;
+  } else if (WZ.method === "ssh") {
+    const f = WZ.sshForm, key = f.auth === "key";
+    h += `<div class="f-row">
+      <div class="field"><label>${appH("m900")}</label><input id="wz-ssh-host" class="inp" placeholder="192.168.0.123" value="${esc(f.host)}" maxlength="253"></div>
+      <div class="field" style="max-width:110px"><label>${appH("m930")}</label><input id="wz-ssh-port" class="inp" value="${esc(f.port)}" inputmode="numeric" maxlength="5"></div>
     </div>
     <div class="f-row">
+      <div class="field"><label>${appH("m901")}</label><input id="wz-ssh-user" class="inp" placeholder="pi" value="${esc(f.user)}" maxlength="64" autocomplete="username"></div>
+      <div class="field"><label>${appH("m902")}</label><select id="wz-ssh-auth" class="inp" data-change="wz-ssh-auth">${opt("password", appT("m903"), f.auth)}${opt("key", appT("m904"), f.auth)}</select></div>
+    </div>
+    ${key
+      ? `<div class="field"><label>${appH("m904")}</label><textarea id="wz-ssh-key" class="inp" rows="5" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" style="font-family:var(--mono);font-size:12px"></textarea>
+         <input id="wz-ssh-passphrase" class="inp mt8" placeholder="${appH("m905")}" autocomplete="off"></div>`
+      : `<div class="field"><label>${appH("m903")}</label><input id="wz-ssh-pass" class="inp" type="password" autocomplete="current-password" placeholder="${appH("m903")}"></div>`}
+    <div class="f-hint">${appH("m906")}</div>`;
+  } else {
+    h += `<div class="f-row">
       <div class="field"><label>${appH("m223")}</label><select id="wz-arch" class="inp" data-change="wz-arch">${opt("amd64", "amd64 (x86_64)", WZ.arch)}${opt("arm64", "arm64 (aarch64)", WZ.arch)}${opt("armhf", "armhf", WZ.arch)}${opt("armv7hf", "armv7hf", WZ.arch)}${opt("android", "Android (arm64)", WZ.arch)}</select></div>
       <div class="field"><label>${appH("m224")}</label><select id="wz-distro" class="inp">${opt("debian", "Debian", WZ.distro)}${opt("ubuntu", "Ubuntu", WZ.distro)}${opt("raspberry-pi-os", "Raspberry Pi OS", WZ.distro)}${opt("armbian", "Armbian", WZ.distro)}${opt("android", "Android", WZ.distro)}${opt("other", appT("m112"), WZ.distro)}</select></div>
-    </div>
-    <div class="f-row">
+    </div>`;
+  }
+  h += `<div class="f-row">
       <div class="field"><label>${appH("m225")}</label><select id="wz-ttl" class="inp">${opt("600", appT("m215"), String(WZ.ttl))}${opt("1800", appT("m216"), String(WZ.ttl))}${opt("3600", appT("m217"), String(WZ.ttl))}${opt("86400", appT("m218"), String(WZ.ttl))}</select></div>
       <div class="field"><label>${appH("m226")}</label><input id="wz-note" class="inp" placeholder="${appH("m227")}" value="${esc(WZ.note)}" maxlength="120"></div>
     </div>
     <div class="f-hint">${appH("m228")}</div>`;
+  return h;
 }
 
 function wzStep2() {
+  if (WZ.method === "ssh") {
+    const failed = WZ.job && WZ.job.state === "failed";
+    return `<div class="field"><label>${appH("m235")}</label>
+      <div class="f-hint">${appH("m237")} <span class="wz-count" id="wz-cd">--:--</span> ${appH("m238")}</div>
+    </div>
+    <div id="wz-prog">${sshProgressHtml()}</div>` + (failed ? "" : `<div class="waiting"><span class="w-pulse"></span><div style="flex:1"><div class="w-txt">${appH("m239")}</div><div class="w-sub">${appH("m240")}</div></div><span class="spin"></span></div>`);
+  }
   const android = WZ.arch === "android";
   const installPanel = android
     ? `<div class="field"><label>${appH("m229")}</label>
@@ -1112,6 +1197,23 @@ function wzStep2() {
     </div>
     ${installPanel}
     <div class="waiting"><span class="w-pulse"></span><div style="flex:1"><div class="w-txt">${appH("m239")}</div><div class="w-sub">${appH("m240")}</div></div><span class="spin"></span></div>`;
+}
+const SSH_STAGE_LABEL = { connect: "m920", download: "m921", install: "m922", verify: "m923" };
+function sshProgressHtml() {
+  const names = ["connect", "download", "install", "verify"];
+  const job = WZ.job;
+  const steps = (job && job.steps && job.steps.length) ? job.steps : names.map(n => ({ name: n, state: "pending" }));
+  let h = `<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">` + steps.map(s => {
+    const mark = s.state === "done" ? icon("check", 13) : s.state === "running" ? `<span class="spin"></span>` : s.state === "failed" ? icon("alert", 13) : `<span class="sdot" style="width:8px;height:8px"></span>`;
+    const color = s.state === "done" ? "var(--green)" : s.state === "failed" ? "var(--red)" : s.state === "running" ? "var(--gold)" : "var(--muted)";
+    return `<div style="display:flex;align-items:center;gap:8px;color:${color};font-size:13px"><span style="display:inline-flex;width:16px;justify-content:center">${mark}</span><span style="flex:1">${esc(appT(SSH_STAGE_LABEL[s.name] || s.name))}</span>${s.detail ? `<span class="mono" style="font-size:11px;color:var(--muted);max-width:55%;overflow-wrap:anywhere;text-align:right">${esc(s.detail)}</span>` : ""}</div>`;
+  }).join("") + `</div>`;
+  if (job && job.state === "done") h += `<div class="banner ok">${icon("check", 15)}<span>${appH("m927")}</span></div>`;
+  if (job && job.state === "failed") {
+    h += `<div class="banner warn">${icon("alert", 15)}<div style="flex:1"><b>${appH("m924")}</b><div class="mono" style="font-size:12px;overflow-wrap:anywhere;margin-top:4px">${esc(job.error || "")}</div></div></div>
+      <button class="btn sm block mt8" data-act="wz-ssh-retry">${icon("refresh", 14)} ${appH("m925")}</button>`;
+  }
+  return h;
 }
 function wzStep3() {
   const n = WZ.node || { node_id: WZ.nodeId, alias: WZ.alias };
@@ -1137,7 +1239,11 @@ async function wzNext() {
     WZ.step = 2; renderWizard(); startWzPolls();
   } catch (e) { fail(e.message); }
 }
-function startWzPolls() { poll("wz:cd", tickWzCountdown, 1000, true); poll("wz:token", wzCheckToken, 2000); }
+function startWzPolls() {
+  poll("wz:cd", tickWzCountdown, 1000, true);
+  poll("wz:token", wzCheckToken, 2000);
+  if (WZ.jobId) poll("wz:job", wzCheckJob, 1500, true);
+}
 function tickWzCountdown() {
   const el = $("#wz-cd"); if (!el) return;
   const left = Math.max(0, WZ.expiresAt - Math.floor(Date.now() / 1000));
@@ -1156,11 +1262,69 @@ async function wzReissue() {
     renderWizard(); startWzPolls();
   } catch (e) { toast(e.message, "err"); }
 }
+function wzFormRead() {
+  WZ.alias = val("wz-alias").trim(); WZ.group = val("wz-group").trim();
+  WZ.ttl = Number(val("wz-ttl")) || 1800; WZ.note = val("wz-note").trim();
+}
+function wzSshCreds() {
+  const f = WZ.sshForm, key = f.auth === "key";
+  const cred = key
+    ? { key: val("wz-ssh-key"), passphrase: val("wz-ssh-passphrase") }
+    : { password: val("wz-ssh-pass") };
+  f.host = val("wz-ssh-host").trim(); f.port = val("wz-ssh-port").trim(); f.user = val("wz-ssh-user").trim();
+  return cred;
+}
+async function wzSshProbe() {
+  wzFormRead();
+  const errEl = $("#wz-err");
+  const fail = m => { if (errEl) errEl.innerHTML = `<div class="f-err mb12">${esc(m)}</div>`; };
+  if (!WZ.alias) return fail(appT("m250"));
+  if (S.nodes.some(n => (n.alias || "").trim().toLowerCase() === WZ.alias.toLowerCase())) return fail(appT("m251"));
+  const cred = wzSshCreds(), f = WZ.sshForm;
+  if (!f.host) return fail(appT("m900"));
+  if (!f.user) return fail(appT("m901"));
+  if (!cred.password && !cred.key) return fail(appT("m903"));
+  const btn = $('[data-act="wz-ssh-probe"]');
+  if (btn) { btn.disabled = true; btn.innerHTML = `${icon("refresh", 14)} ${appH("m908")}`; }
+  try {
+    const r = await api("POST", "/nodes/ssh/probe", { host: f.host, port: Number(f.port) || 22, user: f.user,
+      password: cred.password || "", private_key: cred.key || "", passphrase: cred.passphrase || "" });
+    WZ.sshInfo = r; WZ.sshCred = cred; renderWizard();
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.innerHTML = `${icon("server", 14)} ${appH("m907")}`; }
+    fail(e.message);
+  }
+}
+async function wzSshInstall() {
+  const c = WZ.sshCred || {}, f = WZ.sshForm;
+  if (!WZ.sshInfo || (!c.password && !c.key)) { WZ.sshInfo = null; renderWizard(); return; }
+  try {
+    const tok = await api("POST", "/nodes/token", { ttl_seconds: WZ.ttl });
+    WZ.token = tok.token; WZ.expiresAt = ts(tok.expires_at) || (Math.floor(Date.now() / 1000) + WZ.ttl);
+    const job = await api("POST", "/nodes/ssh/install", { host: f.host, port: Number(f.port) || 22, user: f.user,
+      password: c.password || "", private_key: c.key || "", passphrase: c.passphrase || "",
+      fingerprint: WZ.sshInfo.fingerprint, server_url: location.origin, token: WZ.token });
+    WZ.jobId = job.job_id; WZ.job = null; WZ.sshCred = null;
+    WZ.step = 2; renderWizard(); startWzPolls();
+  } catch (e) { toast(e.message, "err"); }
+}
+async function wzCheckJob() {
+  if (!WZ.jobId) return;
+  let r; try { r = await api("GET", `/nodes/ssh/jobs/${enc(WZ.jobId)}`); } catch (e) { return; }
+  WZ.job = r;
+  const el = $("#wz-prog"); if (el) el.innerHTML = sshProgressHtml();
+  if (r.state !== "running") stopPoll("wz:job");
+}
+function wzSshRetry() {
+  stopPoll("wz:job"); stopPoll("wz:token"); stopPoll("wz:cd");
+  WZ.jobId = ""; WZ.job = null; WZ.sshInfo = null; WZ.sshCred = null; WZ.step = 1;
+  renderWizard();
+}
 async function wzCheckToken() {
   if (!WZ.token) return;
   let r; try { r = await api("GET", `/nodes/token/${enc(WZ.token)}`); } catch (e) { return; }
   if (r && r.used) {
-    stopPoll("wz:token"); stopPoll("wz:cd");
+    stopPoll("wz:token"); stopPoll("wz:cd"); stopPoll("wz:job");
     WZ.nodeId = r.node_id || WZ.nodeId;
     try { await api("PATCH", `/nodes/${enc(WZ.nodeId)}`, { alias: WZ.alias, group: WZ.group, note: WZ.note }); } catch (e) { /* alias best-effort */ }
     try { WZ.node = await api("GET", `/nodes/${enc(WZ.nodeId)}`); } catch (e) { WZ.node = { node_id: WZ.nodeId, alias: WZ.alias }; }
@@ -1457,26 +1621,40 @@ function openConsole(id) {
 }
 
 /* ================= NODE CONFIG ================= */
-const CFG = { id: "", node: null, boms: [], license: null, apps: [], nodes: [], offline: 45, busy: false };
+const CFG = { id: "", node: null, boms: [], license: null, apps: [], nodes: [], offline: 45, busy: false, play: null };
 async function openConfig(id) {
-  Object.assign(CFG, { id, node: null, boms: [], license: null, apps: [], nodes: [], offline: 45, busy: false });
+  Object.assign(CFG, { id, node: null, boms: [], license: null, apps: [], nodes: [], offline: 45, busy: false, play: null });
   openModal(`${icon("sliders", 18)} ${appH("m313", { id: shortId(id) })}`, empty("refresh", appT("m314"), "", true), "");
   let n;
   try { n = await api("GET", `/nodes/${enc(id)}`); } catch (e) { closeModal(); toast(e.message, "err"); return; }
   CFG.node = n; CFG.offline = clamp(Number(n.offline_after) || 45, 15, 86400);
-  const [boms, lic, apps, nodes] = await Promise.all([
+  const [boms, lic, apps, nodes, play] = await Promise.all([
     api("GET", "/boms?status=published").catch(() => []),
     api("GET", "/license").catch(() => null),
     api("GET", `/nodes/${enc(id)}/apps`).catch(() => []),
-    api("GET", "/nodes").catch(() => [])
+    api("GET", "/nodes").catch(() => []),
+    api("GET", `/nodes/${enc(id)}/play`).catch(() => null)
   ]);
   CFG.boms = Array.isArray(boms) ? boms : [];
   CFG.license = lic;
   CFG.apps = Array.isArray(apps) ? apps : (apps && apps.apps) || [];
   CFG.nodes = Array.isArray(nodes) ? nodes : [];
+  CFG.play = play;
   if (!$(".modal") || CFG.id !== id) return;
   setModalBody(cfgBody()); setModalFoot(cfgFoot());
   paintCfgDrift(); paintCfgDacHint(); paintCfgSeat();
+}
+function cfgDacOptions(cur) {
+  const p = CFG.play || {};
+  const devs = Array.isArray(p.devices) ? p.devices.slice() : [];
+  if (!devs.includes("default")) devs.unshift("default");
+  const names = new Map((Array.isArray(p.device_info) ? p.device_info : []).filter(d => d && d.hw && d.name).map(d => [d.hw, d.name]));
+  if (cur && !devs.includes(cur)) devs.push(cur);
+  const sel = cur || "default";
+  return devs.map(d => {
+    const label = d === "default" ? appT("m262") : names.get(d) ? names.get(d) + " · " + d : d;
+    return `<option value="${esc(d)}" ${d === sel ? "selected" : ""}>${esc(label)}</option>`;
+  }).join("");
 }
 function cfgBody() {
   const n = CFG.node;
@@ -1513,7 +1691,7 @@ function cfgBody() {
           <option value="manual" ${n.dac_arbitration === "manual" ? "selected" : ""}>${appH("m325")}</option>
         </select>
       </div>
-      <div class="field"><label>${appH("m326")}</label><input id="cfg-dacdev" class="inp mono" placeholder="${appH("m327")}" value="${esc(n.dac_device || "")}"></div>
+      <div class="field"><label>${appH("m326")}</label><select id="cfg-dacdev" class="inp mono">${cfgDacOptions(n.dac_device || "")}</select><div class="f-hint">${appH("m185")}</div></div>
     </div>
     <div id="cfg-dac-hint" class="f-hint"></div>
   </div>
@@ -1645,10 +1823,13 @@ function shellCatalog() {
       <div id="cat-apps"></div>
     </section>
     <div id="bom-report"></div>
-    <section class="card mt16 stagger" style="--i:1">
-      ${secHead(`${icon("layers", 17)} ${appH("m371")}`, `<button class="btn ghost sm" data-act="bom-import">${icon("upload", 14)} ${appH("m372")}</button><button class="btn primary sm" data-act="bom-new">${icon("plus", 14)} ${appH("m373")}</button>`)}
-      <div id="cat-boms"></div>
-    </section>`;
+    <details class="settings-advanced mt16 stagger" style="--i:1">
+      <summary>${icon("layers", 16)} ${appH("m956")}</summary>
+      <section class="card mt12">
+        ${secHead(`${icon("layers", 17)} ${appH("m371")}`, `<button class="btn ghost sm" data-act="bom-import">${icon("upload", 14)} ${appH("m372")}</button><button class="btn primary sm" data-act="bom-new">${icon("plus", 14)} ${appH("m373")}</button>`)}
+        <div id="cat-boms"></div>
+      </section>
+    </details>`;
 }
 async function refreshCatalog() {
   const apps = await api("GET", "/apps");
@@ -1659,6 +1840,11 @@ async function refreshCatalog() {
   S.pubBoms = Array.isArray(pub) ? pub : [];
   paintApps(); paintBoms();
 }
+function appOriginBadge(origin) {
+  const map = { distro: ["m934", "ok"], vendor: ["m935", "info"], self: ["m936", "warn"] };
+  const m = map[origin] || map.self;
+  return badge(appT(m[0]), m[1]);
+}
 function paintApps() {
   const el = $("#cat-apps"); if (!el) return;
   const list = S.apps.filter(a => hit(a.app_id, a.name, a.category, a.upstream, a.license));
@@ -1667,13 +1853,19 @@ function paintApps() {
       S.apps.length ? "" : `<button class="btn primary" data-act="app-create">${icon("plus", 15)} ${appH("m370")}</button>`);
     return;
   }
-  el.innerHTML = `<div class="grid cols-3">` + list.map((a, i) => `
+  const card = (a, i) => `
     <div class="card lift app-card stagger" style="--i:${i % 9}" data-act="app-open" data-id="${esc(a.app_id)}" role="button" tabindex="0">
       <div class="app-top"><span class="app-name">${esc(a.name || a.app_id)}</span>${catBadge(a.category)}</div>
-      <div class="app-meta"><span class="tag-mono">${esc(a.app_id)}</span>${a.self_build_required ? badge(appT("m376"), "warn") : ""}${a.maintainer_state === "inactive" ? badge(appT("m377"), "err") : ""}</div>
+      <div class="app-meta"><span class="tag-mono">${esc(a.app_id)}</span>${appOriginBadge(a.origin)}${a.self_build_required ? badge(appT("m376"), "warn") : ""}${a.maintainer_state === "inactive" ? badge(appT("m377"), "err") : ""}</div>
       <div class="app-meta mt8">${icon("globe", 13)} ${esc(a.upstream || "—")} · ${esc(a.license || "—")}</div>
       <div class="app-meta mt8">${appH("m378")} <span class="mono">${esc(a.default_channel || "stable")}</span><div class="spacer"></div><span class="txt-faint">${appH("m379")} ${icon("chevR", 13)}</span></div>
-    </div>`).join("") + `</div>`;
+    </div>`;
+  const pub = list.filter(a => a.origin === "distro" || a.origin === "vendor");
+  const self = list.filter(a => !(a.origin === "distro" || a.origin === "vendor"));
+  const group = (title, hint, items) => `<div class="settings-card-head" style="margin-top:16px"><h3>${title} <span class="txt-faint">· ${appN(items.length)}</span></h3></div>
+    <div class="f-hint mb12">${hint}</div>` +
+    (items.length ? `<div class="grid cols-3">${items.map(card).join("")}</div>` : empty("box", appT("m941"), "", true));
+  el.innerHTML = group(appH("m932"), appH("m938"), pub) + group(appH("m933"), appH("m939"), self);
 }
 const APPV = { id: "", app: null, versions: [], busy: false };
 async function openAppModal(id) {
@@ -1693,6 +1885,11 @@ function appModalBody() {
     kvRow(appT("m383"), `<span class="mono">${esc(a.app_id || APPV.id)}</span>`) +
     kvRow(appT("m384"), esc(a.name || "—")) +
     kvRow(appT("m385"), catBadge(a.category)) +
+    kvRow(appT("m937"), `<select class="inp" style="width:150px;padding:5px 26px 5px 8px;font-size:12px" data-change="app-origin" data-id="${esc(APPV.id)}">
+      <option value="distro" ${a.origin === "distro" ? "selected" : ""}>${appH("m934")}</option>
+      <option value="vendor" ${a.origin === "vendor" ? "selected" : ""}>${appH("m935")}</option>
+      <option value="self" ${(a.origin || "self") === "self" ? "selected" : ""}>${appH("m936")}</option>
+    </select>`) +
     kvRow(appT("m386"), esc(a.upstream || "—")) +
     kvRow(appT("m387"), esc(a.license || "—")) +
     kvRow(appT("m388"), `<span class="mono">${esc(a.default_channel || "stable")}</span>`) +
@@ -1761,6 +1958,7 @@ function openCreateApp() {
     </div>
     <div class="f-row">
       <div class="field"><label>${appH("m385")}</label><select id="ap-cat" class="inp"><option value="renderer">${appH("m041")}</option><option value="dependency">${appH("m042")}</option><option value="tool">${appH("m043")}</option></select></div>
+      <div class="field"><label>${appH("m937")}</label><select id="ap-origin" class="inp"><option value="self">${appH("m936")}</option><option value="distro">${appH("m934")}</option><option value="vendor">${appH("m935")}</option></select></div>
       <div class="field"><label>${appH("m388")}</label><select id="ap-channel" class="inp"><option value="stable">stable</option><option value="beta">beta</option><option value="nightly">nightly</option></select></div>
     </div>
     <div class="field"><label>${appH("m429")}</label><input id="ap-up" class="inp mono" placeholder="https://…"></div>
@@ -1774,7 +1972,7 @@ async function submitCreateApp() {
   if (!/^[a-z0-9][a-z0-9._-]{0,63}$/.test(id)) return fail(appT("m433"));
   if (!name) return fail(appT("m434"));
   try {
-    await api("POST", "/apps", { app_id: id, name, category: val("ap-cat"), upstream: val("ap-up").trim(), license: val("ap-lic").trim(), default_channel: val("ap-channel"), maintainer_state: "active" });
+    await api("POST", "/apps", { app_id: id, name, category: val("ap-cat"), origin: val("ap-origin"), upstream: val("ap-up").trim(), license: val("ap-lic").trim(), default_channel: val("ap-channel"), maintainer_state: "active" });
     toast(appT("m435", { id: id }), "ok");
     await refreshCatalog(); openAppModal(id);
   } catch (e) { fail(e.message); toast(e.message, "err"); }
@@ -1855,6 +2053,14 @@ async function verLifecycle(ds, lc) {
     await api("POST", `/apps/${enc(id)}/versions/${enc(ver)}/${enc(arch)}/lifecycle`, { lifecycle: lc });
     const v = APPV.versions.find(x => x.version === ver && x.arch === arch); if (v) v.lifecycle = lc;
     toast(appT("m459", { value: ({ available: appT("m049"), deprecated: appT("m050"), revoked: appT("m051") })[lc] || lc }), "ok");
+  } catch (e) { toast(e.message, "err"); if ($(".modal") && APPV.id === id) setModalBody(appModalBody()); }
+}
+async function setAppOrigin(id, origin) {
+  try {
+    const app = await api("PATCH", `/apps/${enc(id)}`, { origin });
+    if (APPV.app) APPV.app = app;
+    toast(appT("m940"), "ok");
+    refreshCatalog().catch(() => {});
   } catch (e) { toast(e.message, "err"); if ($(".modal") && APPV.id === id) setModalBody(appModalBody()); }
 }
 
@@ -2413,6 +2619,7 @@ async function refreshUpdate() {
       }
       S.upd.disabled = false;
       S.upd.server = status.server;
+      if (scope === "server") { const card = root.closest("section"); if (card) card.style.display = ""; }
       if (scope === "server") {
         if (!$("#upd-server", root) || $("#upd-policy, #upd-fleet", root)) root.innerHTML = `<div id="upd-server"></div>`;
         paintUpdateServer();
@@ -2427,6 +2634,11 @@ async function refreshUpdate() {
     } catch (e) {
       if (!current()) return;
       S.upd.disabled = e.status === 503;
+      if (scope === "server") {
+        // The self-update service is optional; hide its card entirely when the
+        // server was started with self-update disabled.
+        const card = root.closest("section"); if (card) card.style.display = S.upd.disabled ? "none" : "";
+      }
       root.innerHTML = `<div class="banner warn">${icon("info", 15)}<span>${esc(S.upd.disabled ? appT("m621") : appT("m622") + e.message)}</span></div>`;
     }
   })();
@@ -2628,37 +2840,33 @@ function paintLicense() {
   const lic = S.license;
   const used = S.nodes.filter(n => n.authorized).length;
   const builtin = Number(lic && lic.builtin_seats) || 3;
-  const activated = lic && lic.status === "activated";
-  let h = secHead(`${icon("shield", 17)} ${appH("m430")}`, `${activated ? `<button class="btn ghost sm" data-act="lic-receipt">${icon("download", 14)} ${appH("m684")}</button>` : ""}<button class="btn violet sm" data-act="lic-open">${icon("key", 14)} ${activated ? appH("m685") : appH("m686")}</button>`);
-  if (!lic || lic.status === "none") {
-    h += `<div class="mb12">${badge(appT("m687"), "ok")}</div>`;
-    h += `<div class="kv">` +
-      kvRow(appT("m688"), appH("m689")) +
-      kvRow(appT("m690"), `<span class="mono">${appH("m691", { count: builtin })}</span>`) +
-      kvRow(appT("m430"), appH("m692")) +
-      `</div>`;
-    h += seatsHtml(used, builtin);
-    h += `<div class="banner info mt16">${icon("shield", 15)}<span>${appH("m693", { count: builtin })}</span></div>`;
-  } else {
-    const st = lic.status;
-    const seats = Number(lic.effective_seats) || builtin;
-    h += `<div class="mb12">${st === "activated" ? badge(appT("m694"), "ok") : badge(appT("m695"), "err")}</div>`;
-    h += `<div class="kv">` +
+  const activated = !!(lic && lic.status === "activated");
+  const expired = !!(lic && lic.status === "expired");
+  const seats = activated ? (Number(lic.effective_seats) || builtin) : builtin;
+  let h = secHead(`${icon("shield", 17)} ${appH("m430")}`);
+  h += `<div class="mb12">${activated ? badge(appT("m694"), "ok") : expired ? badge(appT("m695"), "err") : badge(appT("m687"), "ok")}</div>`;
+  h += seatsHtml(used, seats);
+  if (expired) h += `<div class="banner warn mt16">${icon("alert", 15)}<span>${appH("m702", { count: builtin })}</span></div>`;
+  else if (activated) h += `<div class="banner info mt16">${icon("shield", 15)}<span>${appH("m957", { count: seats })}</span></div>`;
+  else h += `<div class="banner info mt16">${icon("shield", 15)}<span>${appH("m693", { count: builtin })}</span></div>`;
+  if (activated || expired) {
+    h += `<div class="kv mt16">` +
       kvRow(appT("m696"), `<span class="mono">${esc(lic.key || "—")}</span>`) +
       kvRow(appT("m697"), esc(lic.account || "—")) +
       kvRow(appT("m698"), `<span class="mono">${esc(typeof (lic.seats || "∞") === "number" ? appN(lic.seats || "∞") : (lic.seats || "∞"))}</span>`) +
       kvRow(appT("m699"), fmtTime(lic.activated_at)) +
       kvRow(appT("m700"), lic.expires_at ? fmtTime(lic.expires_at) : appH("m701")) +
       `</div>`;
-    h += seatsHtml(used, seats);
-    if (st === "expired") h += `<div class="banner warn mt16">${icon("alert", 15)}<span>${appH("m702", { count: builtin })}</span></div>`;
-    else if (used >= seats) h += `<div class="banner warn mt16">${icon("info", 15)}<span>${appH("m703")}</span></div>`;
   }
+  h += `<details class="settings-advanced mt16"><summary>${appH("m954")}</summary>
+    <div class="f-hint">${appH("m955")}</div>
+    <div class="acts mt8">${activated ? `<button class="btn ghost sm" data-act="lic-receipt">${icon("download", 14)} ${appH("m684")}</button>` : ""}<button class="btn violet sm" data-act="lic-open">${icon("key", 14)} ${activated ? appH("m685") : appH("m686")}</button></div>
+  </details>`;
   el.innerHTML = h;
 }
 function paintKeys() {
   const el = $("#gpg-card"); if (!el) return;
-  let h = secHead(`${icon("key", 17)} ${appH("m704")}`, `<button class="btn ghost sm" data-act="key-export">${icon("download", 14)} ${appH("m705")}</button><button class="btn violet sm" data-act="key-import">${icon("upload", 14)} ${appH("m706")}</button>`);
+  let h = secHead(`${icon("key", 17)} ${appH("m704")}`, `<button class="btn violet sm" data-act="key-import">${icon("upload", 14)} ${appH("m706")}</button>`);
   if (!S.keys.length) {
     h += empty("key", appT("m707"), `<button class="btn violet" data-act="key-import">${icon("upload", 15)} ${appH("m706")}</button>`);
     h += `<div class="banner info mt16">${icon("shield", 15)}<span>${appH("m708")}</span></div>`;
@@ -2666,11 +2874,10 @@ function paintKeys() {
     h += S.keys.map(k => `<div class="key-row">
       <span class="key-ic">${icon("key", 17)}</span>
       <div class="key-info">
-        <div class="key-name">${esc(k.name || appT("m709"))} ${k.is_trust_root ? badge(appT("m710"), "gold") : ""}</div>
+        <div class="key-name">${esc(k.name || appT("m709"))}</div>
         <div class="key-fp">${esc(k.fingerprint || "—")}</div>
         <div class="key-meta">${esc(k.email || "—")} · ${esc(k.algo || "—")} · ${fmtTime(k.created_at)}</div>
       </div>
-      ${k.is_trust_root ? "" : `<button class="btn ghost xs" data-act="key-trust" data-id="${esc(k.id)}">${icon("shield", 12)} ${appH("m711")}</button>`}
     </div>`).join("");
   }
   el.innerHTML = h;
@@ -3103,7 +3310,6 @@ function paintTrackPlay() {
 }
 async function trackPlayGo() {
   const nodeID = TP.sel, selection = TP.cur; if (!nodeID || TP.busy || !TP.trackIDs.length) return;
-  if (!await confirmDlg({ title: appT("m823"), message: appT("m824", { count: appN(TP.trackIDs.length) }), okText: appT("m825"), danger: true })) return;
   if (TP.cur !== selection || TP.busy || TP.sel !== nodeID) return;
   const n = S.nodes.find(x => x.node_id === nodeID);
   if (n && !n.authorized) { toast(appT("m826"), "warn"); return; }
@@ -3438,13 +3644,13 @@ async function openPlayer(nodeID) {
   root.innerHTML = playerShell();
   paintPlayerLive();
 }
+function plyNodeList() {
+  const id = PLY.id;
+  const online = PB.nodes.filter(x => x.status === "online");
+  return online.some(x => x.node_id === id) ? online : online.concat(PB.nodes.filter(x => x.node_id === id));
+}
 function playerShell() {
   const id = PLY.id;
-  const p = S.play[id] || {};
-  const online = PB.nodes.filter(x => x.status === "online");
-  const nodeList = online.some(x => x.node_id === id) ? online : online.concat(PB.nodes.filter(x => x.node_id === id));
-  const nodeOpts = nodeList.map(x => `<option value="${esc(x.node_id)}" ${x.node_id === id ? "selected" : ""}>${esc(x.alias || shortId(x.node_id))}${x.ip ? " · " + esc(x.ip) : ""}</option>`).join("");
-  const { devs, cur, names } = nodePlayDevs(p);
   const plOpts = `<option value="">${appH("m866")}</option>` + S.playlists.map(pl => `<option value="${esc(pl.id)}">${appH("m867", { name: pl.name, count: pl.count })}</option>`).join("");
   return `<div class="ply">
     <div class="ply-top">
@@ -3455,25 +3661,33 @@ function playerShell() {
         <div class="ply-album" id="ply-album"></div>
         <div class="ply-fmt mono" id="ply-fmt"></div>
         <div id="ply-badges"></div>
-        <div class="ply-sel-row">
-          <div class="field"><label>${appH("m164")}</label><select id="ply-node" class="inp" data-change="ply-node" data-sig="${esc(online.map(x => x.node_id).join("|"))}">${nodeOpts}</select></div>
-          <div class="field"><label>${appH("m166")}</label><select id="ply-dev" class="inp mono" data-change="ply-device" data-sig="${esc(devs.join("|"))}" ${p.connected ? "" : "disabled"}>${nodePlayOpts(devs, cur, names)}</select></div>
-        </div>
+      </div>
+      <div class="ply-fav">${typeof favoritePlayerShell === "function" ? favoritePlayerShell("ply") : ""}</div>
+    </div>
+    <div class="ply-capsule">
+      <div class="ply-transport">
+        <button class="btn" id="ply-prev" data-act="queue-prev" data-id="${esc(id)}" title="${appH("m158")}">${icon("chevL", 18)}</button>
+        <button class="btn primary ply-big" id="ply-pp" data-act="play-pause" data-id="${esc(id)}" title="${appH("m868")}">${icon("play", 20)}</button>
+        <button class="btn" id="ply-next" data-act="queue-next" data-id="${esc(id)}" title="${appH("m160")}">${icon("chevR", 18)}</button>
+        <button class="btn danger" id="ply-stop" data-act="play-stop" data-id="${esc(id)}" title="${appH("m390")}">${icon("stop", 16)}</button>
+      </div>
+      <div class="ply-seek">
+        <span class="ply-time mono" id="ply-el">0:00</span>
+        <input type="range" id="ply-seek" min="0" max="0" step="500" value="0" data-change="ply-seek" disabled>
+        <span class="ply-time mono" id="ply-total">0:00</span>
       </div>
     </div>
-    <div class="ply-seek">
-      <span class="ply-time mono" id="ply-el">0:00</span>
-      <input type="range" id="ply-seek" min="0" max="0" step="500" value="0" data-change="ply-seek" disabled>
-      <span class="ply-time mono" id="ply-total">0:00</span>
+    <div class="ply-controls">
+      <div class="ply-src">
+        ${terminalPopoverHtml("ply")}
+        ${devicePopoverHtml("ply")}
+      </div>
+      <div class="ply-aux">
+        ${volumePopoverHtml("ply")}
+        ${pbModeShell("ply")}
+        ${sleepPopoverHtml("ply", id)}
+      </div>
     </div>
-    <div class="ply-transport">
-      <button class="btn" id="ply-prev" data-act="queue-prev" data-id="${esc(id)}" title="${appH("m158")}">${icon("chevL", 18)}</button>
-      <button class="btn primary ply-big" id="ply-pp" data-act="play-pause" data-id="${esc(id)}" title="${appH("m868")}">${icon("play", 20)}</button>
-      <button class="btn" id="ply-next" data-act="queue-next" data-id="${esc(id)}" title="${appH("m160")}">${icon("chevR", 18)}</button>
-      <button class="btn danger" id="ply-stop" data-act="play-stop" data-id="${esc(id)}" title="${appH("m390")}">${icon("stop", 16)}</button>
-      <div class="ply-vol">${icon("speaker", 15)}<input type="range" id="ply-vol" min="0" max="100" step="1" value="100" data-change="ply-vol" disabled><span class="ply-time mono" id="ply-vol-v">100</span></div>
-    </div>
-    <div class="ply-mode-row"><span class="f-hint">${appH("queueMode")}</span><div class="ply-modes" role="group" aria-label="${appH("queueMode")}">${PB_MODES.map(([m, ic, k]) => `<button class="ply-mode-item" data-act="pb-mode-set" data-mode="${m}" title="${esc(appT(k))}" aria-label="${esc(appT(k))}" aria-pressed="false">${icon(ic, 17)}</button>`).join("")}</div></div>
     <div class="divider"></div>
     <div class="sec-head">
       <div class="sec-title">${icon("layers", 16)} ${appH("m869")} <span class="txt-faint" id="ply-qcnt"></span></div>
@@ -3522,6 +3736,8 @@ function paintPlayerLive() {
     (p.converted ? " " + codecMark("pcm", "DSD→PCM") : "") +
     (playing ? " " + badge(appT("m819"), "ok") : paused ? " " + badge(appT("m181"), "warn") : "") +
     (p.underruns ? " " + badge("underrun ×" + p.underruns, "warn") : ""));
+  const sleepAt = Number(p.sleep_stop_at) || 0;
+  paintSleepPopover("ply", id, sleepAt);
   const seek = $("#ply-seek");
   if (seek) {
     seek.disabled = !(connected && active && rate > 0 && total > 0);
@@ -3530,14 +3746,14 @@ function paintPlayerLive() {
     if (!PLY.dragging) { const el = $("#ply-el"); if (el) el.textContent = fmtDur(elapsed); }
     const tt = $("#ply-total"); if (tt) tt.textContent = fmtDur(total);
   }
-  const vol = $("#ply-vol");
+  const vol = $("#ply-volume");
   if (vol) {
     vol.disabled = !connected || !active || !!(p.mqa || p.dop);
     vol.title = (p.mqa || p.dop) ? appT(p.dop ? "dopVolumeLocked" : "mqaVolumeLocked") : "";
     const v = p.volume != null ? p.volume : 100;
     if (!PLY.volDrag && document.activeElement !== vol) {
       vol.value = String(v);
-      const lv = $("#ply-vol-v"); if (lv) lv.textContent = appN(v);
+      const lv = $("#ply-volume-value"); if (lv) lv.textContent = appN(v);
     }
   }
   const pp = $("#ply-pp");
@@ -3547,31 +3763,116 @@ function paintPlayerLive() {
   if (next) next.disabled = !connected || !tracks.length || pos >= tracks.length - 1;
   if (stop) stop.disabled = !active;
   const mode = q.mode || "sequence";
-  document.querySelectorAll(".ply-mode-item").forEach(b => {
-    const on = b.dataset.mode === mode;
-    b.classList.toggle("active", on);
-    b.setAttribute("aria-pressed", String(on));
-  });
-  const nsel = $("#ply-node");
-  if (nsel) {
-    const online = PB.nodes.filter(x => x.status === "online");
-    const sig = online.map(x => x.node_id).join("|");
-    if (nsel.dataset.sig !== sig) {
-      const list = online.some(x => x.node_id === id) ? online : online.concat(PB.nodes.filter(x => x.node_id === id));
-      nsel.innerHTML = list.map(x => `<option value="${esc(x.node_id)}" ${x.node_id === id ? "selected" : ""}>${esc(x.alias || shortId(x.node_id))}${x.ip ? " · " + esc(x.ip) : ""}</option>`).join("");
-      nsel.dataset.sig = sig;
-    }
-  }
-  const dsel = $("#ply-dev");
-  if (dsel) {
-    const dv = nodePlayDevs(p);
-    const sig = dv.devs.join("|");
-    if (dsel.dataset.sig !== sig) { dsel.innerHTML = nodePlayOpts(dv.devs, dv.cur, dv.names); dsel.dataset.sig = sig; }
-    dsel.disabled = !connected;
-    if (document.activeElement !== dsel && dsel.value !== dv.cur) dsel.value = dv.cur;
-  }
+  paintModePopover("ply", mode, connected);
+  const nodes = plyNodeList();
+  paintTerminalMenu("ply", nodes, id, !nodes.length, "");
+  paintDeviceMenu("ply", p, connected);
+  if (typeof paintPlayerFavorite === "function") paintPlayerFavorite(hasTrack ? (p.track_id || "") : "");
   const cnt = $("#ply-qcnt"); if (cnt) cnt.textContent = `(${appN(tracks.length)})`;
   set("#ply-qlist", playerQueueList(id, q));
+}
+/* ---- sleep timer ---- */
+const SLEEP_LABELS = { 15: "m943", 30: "m944", 60: "m945", 120: "m946" };
+function sleepRemain(stopAt) {
+  const left = Math.max(0, Math.round((Number(stopAt) * 1000 - Date.now()) / 1000));
+  const h = Math.floor(left / 3600), m = Math.floor((left % 3600) / 60), s = left % 60;
+  return h ? `${h}:${p2(m)}:${p2(s)}` : `${m}:${p2(s)}`;
+}
+// One popover per surface (player bar "pb", console "ply"), rendered like the
+// play-mode menu so both open upward and close on outside interaction. The
+// menu escapes clipping containers (player bar scroll row, console modal) by
+// switching to fixed positioning when opened.
+document.addEventListener("toggle", e => {
+  const d = e.target;
+  if (!d || !d.classList || (!d.classList.contains("pb-sleep") && !d.classList.contains("pb-pop") && !d.classList.contains("pb-mode"))) return;
+  const menu = d.querySelector(".pb-sleep-menu, .pb-pop-menu, .pb-mode-menu"), sum = d.querySelector("summary");
+  if (!menu || !sum) return;
+  if (d.open) {
+    const r = sum.getBoundingClientRect();
+    if (typeof menu.showPopover === "function") {
+      // The native popover renders in the top layer, so it cannot be clipped
+      // or offset by the modal's transform/filter containing block.
+      if (!menu.hasAttribute("popover")) menu.setAttribute("popover", "manual");
+      try { menu.showPopover(); } catch (err) { /* fall back below */ }
+      menu.style.margin = "0";
+      menu.style.inset = "auto";
+      const mw = menu.offsetWidth, mh = menu.offsetHeight;
+      const above = r.top - mh - 8;
+      const below = r.bottom + 8;
+      // Prefer the roomier side so the menu never overlaps the seek row.
+      const useBelow = below + mh <= window.innerHeight - 8 && (above < 8 || r.top < window.innerHeight * 0.55);
+      menu.style.left = Math.max(8, Math.min(window.innerWidth - mw - 8, r.right - mw)) + "px";
+      menu.style.top = Math.round(useBelow ? below : Math.max(8, above)) + "px";
+      menu.style.bottom = "auto";
+      menu.style.right = "auto";
+    } else {
+      menu.style.position = "fixed";
+      menu.style.bottom = (window.innerHeight - r.top + 8) + "px";
+      menu.style.right = Math.max(8, window.innerWidth - r.right) + "px";
+      menu.style.left = "auto";
+    }
+  } else {
+    if (typeof menu.hidePopover === "function" && menu.matches(":popover-open")) {
+      try { menu.hidePopover(); } catch (err) { /* already closed */ }
+    }
+    menu.style.position = "";
+    menu.style.bottom = "";
+    menu.style.right = "";
+    menu.style.left = "";
+    menu.style.top = "";
+  }
+}, true);
+// Clicking anywhere outside an open menu closes it.
+document.addEventListener("click", e => {
+  document.querySelectorAll(".pb-sleep[open], .pb-pop[open], .pb-mode[open]").forEach(d => {
+    if (!d.contains(e.target)) d.open = false;
+  });
+});
+function sleepPopoverHtml(prefix, nodeID) {
+  const idAttr = nodeID ? ` data-id="${esc(nodeID)}"` : "";
+  return `<details class="pb-sleep" id="${prefix}-sleep-wrap" data-disabled="1"><summary id="${prefix}-sleep" title="${appH("m942")}">${icon("clock", 14)}<span class="pb-sleep-remain mono" id="${prefix}-sleep-label" hidden></span></summary>
+    <div class="pb-sleep-menu" role="menu">
+      <div class="pb-sleep-head" id="${prefix}-sleep-remain">${appH("m953")}</div>
+      ${[15, 30, 60, 120].map(m => `<button class="pb-sleep-item" role="menuitem" data-act="sleep-set" data-min="${m}"${idAttr}>${appH(SLEEP_LABELS[m])}</button>`).join("")}
+      <button class="pb-sleep-item danger" role="menuitem" id="${prefix}-sleep-cancel" data-act="sleep-cancel"${idAttr} hidden>${icon("trash", 13)} ${appH("m947")}</button>
+    </div>
+  </details>`;
+}
+function paintSleepPopover(prefix, nodeID, stopAt) {
+  const wrap = document.getElementById(`${prefix}-sleep-wrap`); if (!wrap) return;
+  wrap.dataset.disabled = nodeID ? "0" : "1";
+  const title = stopAt ? appT("m948", { value: sleepRemain(stopAt) }) : appT("m942");
+  const sum = wrap.querySelector("summary");
+  if (sum) { if (sum.title !== title) { sum.title = title; sum.setAttribute("aria-label", title); } }
+  wrap.classList.toggle("active", !!stopAt);
+  const lbl = document.getElementById(`${prefix}-sleep-label`);
+  if (lbl) { const txt = stopAt ? sleepRemain(stopAt) : ""; if (lbl.textContent !== txt) lbl.textContent = txt; lbl.hidden = !stopAt; }
+  const rem = document.getElementById(`${prefix}-sleep-remain`);
+  if (rem) rem.textContent = stopAt ? appT("m948", { value: sleepRemain(stopAt) }) : appT("m953");
+  const cancel = document.getElementById(`${prefix}-sleep-cancel`);
+  if (cancel) { cancel.hidden = !stopAt; if (nodeID) cancel.dataset.id = nodeID; }
+  if (nodeID) wrap.querySelectorAll('[data-act="sleep-set"]').forEach(b => { b.dataset.id = nodeID; });
+}
+function closeSleepPopovers() { document.querySelectorAll(".pb-sleep[open], .pb-pop[open], .pb-mode[open]").forEach(d => { d.open = false; }); }
+async function sleepSet(rawID, minutes) {
+  const id = rawID || PB.id;
+  if (!id || !minutes) { toast(appT("m951"), "warn"); return; }
+  try {
+    const r = await api("PUT", `/nodes/${enc(id)}/sleep`, { minutes });
+    if (S.play[id]) S.play[id].sleep_stop_at = r.stop_at;
+    toast(appT("m949", { value: appT(SLEEP_LABELS[minutes] || "m943") }), "ok");
+    closeSleepPopovers(); refreshPlayerBar();
+  } catch (e) { toast(e.message, "err"); }
+}
+async function sleepCancel(rawID) {
+  const id = rawID || PB.id;
+  if (!id) return;
+  try {
+    await api("DELETE", `/nodes/${enc(id)}/sleep`);
+    if (S.play[id]) S.play[id].sleep_stop_at = 0;
+    toast(appT("m950"), "ok");
+    closeSleepPopovers(); refreshPlayerBar();
+  } catch (e) { toast(e.message, "err"); }
 }
 function playerQueueList(id, q) {
   const tracks = (q && q.tracks) || [];
@@ -3702,8 +4003,19 @@ const ACT = {
   "bulk-delete": () => bulkDelete(),
   "wz-open": () => openWizard(),
   "wz-next": () => wzNext(),
-  "wz-back": () => { WZ.step = 1; renderWizard(); },
+  "wz-back": () => {
+    if (WZ.method === "ssh") {
+      stopPoll("wz:job"); stopPoll("wz:token"); stopPoll("wz:cd");
+      WZ.jobId = ""; WZ.job = null; WZ.sshInfo = null; WZ.sshCred = null;
+    }
+    WZ.step = 1; renderWizard();
+  },
   "wz-reissue": () => wzReissue(),
+  "wz-method": ds => { WZ.method = ds.v; WZ.sshInfo = null; WZ.sshCred = null; renderWizard(); },
+  "wz-ssh-probe": () => wzSshProbe(),
+  "wz-ssh-reset": () => { WZ.sshInfo = null; WZ.sshCred = null; renderWizard(); },
+  "wz-ssh-install": () => wzSshInstall(),
+  "wz-ssh-retry": () => wzSshRetry(),
   "wz-copy-token": async () => { toast(await copyText(WZ.token) ? appT("m890") : appT("m891"), "ok"); },
   "wz-copy-cmd": async () => { const ok = await copyText(installCmd()); toast(ok ? (WZ.arch === "android" ? appT("m892") : appT("m893")) : appT("m891"), "ok"); },
   "wz-auth": async ds => { try { await api("POST", `/nodes/${enc(ds.id)}/authorize`); toast(appT("m894"), "ok"); refreshCurrent(); } catch (e) { toast(e.message, "err"); } },
@@ -3820,6 +4132,16 @@ Object.assign(ACT, {
   "tp-goto-nodes": () => { closeModal(); setView("nodes"); },
   "track-play-go": () => trackPlayGo(),
   "play-stop": ds => playStop(ds.id),
+  "pb-node-pick": ds => { closeSleepPopovers(); return selectPlayerBar(ds.id || ""); },
+  "ply-node-pick": ds => { closeSleepPopovers(); if (ds.id && ds.id !== PLY.id) return openPlayer(ds.id); },
+  "ply-device-pick": async ds => {
+    const id = PLY.id; if (!id || !ds.dev) return;
+    closeSleepPopovers();
+    try { await api("POST", `/nodes/${enc(id)}/device`, { device: ds.dev }); toast(appT("m187"), "ok"); await refreshPlayerBar(); }
+    catch (e) { toast(e.message, "err"); }
+  },
+  "sleep-set": ds => sleepSet(ds.id, Number(ds.min) || 0),
+  "sleep-cancel": ds => sleepCancel(ds.id),
   "queue-prev": ds => queueMove(ds.id, "prev"),
   "queue-next": ds => queueMove(ds.id, "next"),
   "queue-jump": ds => queueJump(ds.id, parseInt(ds.idx, 10)),
@@ -3853,11 +4175,8 @@ Object.assign(ACT, {
 /* ================= CHANGE MAP ================= */
 const CHG = {
   "ov-stat-node": el => { OV.node = el.value; OV.recentMore = false; return refreshListening(true); },
-  "pb-node": el => selectPlayerBar(el.value),
   "pb-seek": el => playerBarRangeChange(el, false),
   "pb-volume": el => playerBarRangeChange(el, true),
-  "pb-device": el => playerBarDeviceChange(el),
-  "node-sel": (el, ds) => { if (el.checked) S.sel.add(ds.id); else S.sel.delete(ds.id); paintBulkBar(); paintNodeTable(); },
   "node-sel-all": el => { const list = filteredNodes(); list.forEach(n => { if (el.checked) S.sel.add(n.node_id); else S.sel.delete(n.node_id); }); paintNodes(); },
   "os-pkg": (el, ds) => { if (el.checked) OSC.sel.add(ds.name); else OSC.sel.delete(ds.name); repaintOs(); },
   "os-pkg-all": el => { const pkgs = (OSC.state && OSC.state.packages) || []; pkgs.forEach(p => { if (el.checked) OSC.sel.add(p.name); else OSC.sel.delete(p.name); }); repaintOs(); },
@@ -3876,18 +4195,11 @@ const CHG = {
     catch (e) { toast(e.message, "err"); }
     refreshPlayerBar();
   },
-  "ply-vol": async el => {
+  "ply-volume": async el => {
     PLY.volDrag = false;
     const id = PLY.id; if (!id) return;
     try { await api("POST", `/nodes/${enc(id)}/volume`, { volume: Number(el.value) }); }
     catch (e) { toast(e.message, "err"); }
-    refreshPlayerBar();
-  },
-  "ply-node": el => { if (el.value && el.value !== PLY.id) return openPlayer(el.value); },
-  "ply-device": async el => {
-    const id = PLY.id; if (!id) return;
-    await api("POST", `/nodes/${enc(id)}/device`, { device: el.value });
-    toast(appT("m187"), "ok");
     refreshPlayerBar();
   },
   "ply-load": el => plyLoadPlaylist(el.value),
@@ -3897,6 +4209,7 @@ const CHG = {
     plyAddCnt();
   },
   "ver-lc": (el, ds) => verLifecycle(ds, el.value),
+  "app-origin": (el, ds) => setAppOrigin(ds.id, el.value),
   "ro-pct": () => paintRoSum(),
   "upd-auto": el => updAuto(el),
   "upd-policy": () => updPolicySave(),
@@ -3904,7 +4217,12 @@ const CHG = {
   "lic-sfile": el => fileToText(el, txt => { const t = $("#lic-sig"); if (t) t.value = txt; }),
   "gpg-file": el => fileToText(el, txt => { const t = $("#gpg-armored"); if (t) t.value = txt; }),
   "bi-file": el => fileToText(el, txt => { const t = $("#bi-json"); if (t) t.value = txt; }),
-  "wz-arch": el => { const d = $("#wz-distro"); if (!d) return; if (el.value === "android") d.value = "android"; else if (d.value === "android") d.value = "debian"; }
+  "wz-arch": el => { const d = $("#wz-distro"); if (!d) return; if (el.value === "android") d.value = "android"; else if (d.value === "android") d.value = "debian"; },
+  "wz-ssh-auth": el => {
+    WZ.sshForm.host = val("wz-ssh-host").trim(); WZ.sshForm.port = val("wz-ssh-port").trim();
+    WZ.sshForm.user = val("wz-ssh-user").trim(); WZ.sshForm.auth = el.value;
+    renderWizard();
+  }
 };
 
 /* ================= EVENTS & BOOT ================= */
@@ -3914,8 +4232,7 @@ function appLanguageChanged() {
   const text = (selector, key) => { const el = $(selector); if (el) el.textContent = appT(key); };
   const attr = (selector, name, key) => { const el = $(selector); if (el) el.setAttribute(name, appT(key)); };
   text(".brand-sub", "brandSubtitle");
-  text("#pb-node-label", "m164"); text("#pb-device-label", "m166"); text("#pb-console-label", "m170");
-  attr("#global-search", "placeholder", "globalSearchPlaceholder");
+  attr("#pb-term", "title", "m164"); attr("#pb-term", "aria-label", "m164");  attr("#global-search", "placeholder", "globalSearchPlaceholder");
   attr("#global-search", "aria-label", "globalSearch");
   attr("#conn", "title", "connectionStatus");
   attr("#sidebar", "aria-label", "mainNavigation"); attr("#nav", "aria-label", "mainNavigation");
@@ -3928,8 +4245,7 @@ function appLanguageChanged() {
     attr(selector, "title", key); attr(selector, "aria-label", key);
   }
   attr("#pb-seek", "aria-label", "m162"); attr("#pb-volume", "aria-label", "m163");
-  attr(".player-bar-volume", "title", "m163"); attr("#pb-node", "aria-label", "m165");
-  attr("#pb-device", "aria-label", "m167"); attr("#pb-console", "title", "m169");
+  attr("#pb-vol-btn", "title", "m163"); attr("#pb-vol-btn", "aria-label", "m163");
   const health = $("#health-line");
   if (health) health.textContent = S.health ? appT("m075", { value: sigModeZh(S.health.signature_mode), value2: appT(S.health.play_gate ? "m073" : "m074") }) : appT("connectingServer");
   setConn(appConnOK); paintBell(); paintPlayerBar();
@@ -3947,6 +4263,9 @@ function appLanguageChanged() {
 function onClick(e) {
   const link = e.target.closest("a[href]");
   if (link && !link.dataset.act) return;
+  // Let <summary> keep its native details toggle; the modal backdrop's
+  // data-act would otherwise preventDefault and block menu opening.
+  if (e.target.closest("summary")) return;
   const el = e.target.closest("[data-act]");
   if (!el) return;
   if (e.target.closest("input, select, textarea, label")) return;
@@ -3979,7 +4298,7 @@ function onInput(e) {
     return;
   }
   if (t.id === "ply-seek") { PLY.dragging = true; const el = $("#ply-el"); if (el) el.textContent = fmtDur(Number(t.value)); return; }
-  if (t.id === "ply-vol") { PLY.volDrag = true; const v = $("#ply-vol-v"); if (v) v.textContent = appN(Number(t.value)); return; }
+  if (t.id === "ply-volume") { PLY.volDrag = true; const v = $("#ply-volume-value"); if (v) v.textContent = appN(Number(t.value)); return; }
   if (t.id === "ply-add-search") { PLY.addSearch = t.value; paintPlayerAddList(); return; }
   if (t.classList && t.classList.contains("ro-pct-i")) paintRoSum();
 }

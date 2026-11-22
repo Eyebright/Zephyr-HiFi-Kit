@@ -60,6 +60,8 @@ type PlayStatus struct {
 	Volume     int              `json:"volume"`
 	ALSADevice string           `json:"alsa_device"`
 	PrefDevice string           `json:"pref_device"`
+	// SleepStopAt is the unix deadline of the node's sleep timer, 0 when off.
+	SleepStopAt int64            `json:"sleep_stop_at"`
 	Devices    []string         `json:"devices"`
 	DeviceInfo []zat.ALSADevice `json:"device_info,omitempty"`
 	// ConfiguredDevice is the server-side DAC suggestion (node.dac_device).
@@ -102,11 +104,17 @@ type Server struct {
 
 	libraryGate sync.RWMutex
 	qmu         sync.Mutex // serializes queue read-modify-write cycles
+	detectSem   chan struct{}
+	sleepMu     sync.Mutex
+	sleepStop   map[string]int64
 }
 
 // New builds a ZAT server. st is used to record playback sessions.
 func New(addr string, nodes *node.Service, lib *library.Service, st *store.Store) *Server {
-	return &Server{addr: addr, nodes: nodes, lib: lib, db: st.DB, conns: map[string]*endpoint{}}
+	s := &Server{addr: addr, nodes: nodes, lib: lib, db: st.DB, conns: map[string]*endpoint{}, detectSem: make(chan struct{}, 2),
+		sleepStop: map[string]int64{}}
+	s.loadSleepTimers()
+	return s
 }
 
 func (s *Server) WithLibraryMaintenance(fn func()) {
@@ -144,6 +152,7 @@ func (s *Server) Serve(ctx context.Context) error {
 		<-ctx.Done()
 		s.Close()
 	}()
+	go s.runSleepTimers(ctx)
 	for {
 		conn, err := s.ln.Accept()
 		if err != nil {
@@ -489,6 +498,45 @@ func (e *endpoint) readLoop(ctx context.Context) {
 	}
 }
 
+// detectMQABounded scans a file for MQA with a hard deadline. A stuck network
+// read must not block playback forever, so the scan runs detached: the play
+// path waits at most mqaDetectTimeout, and a result that arrives later is still
+// persisted for subsequent plays. The semaphore keeps stalled scans from
+// accumulating worker goroutines and open handles.
+func (s *Server) detectMQABounded(path, trackID string) (mqa.Result, bool) {
+	select {
+	case s.detectSem <- struct{}{}:
+	default:
+		slog.Warn("zat mqa detect busy, skipping", "track", trackID)
+		return mqa.Result{}, false
+	}
+	type outcome struct{ res mqa.Result }
+	done := make(chan outcome, 1)
+	start := time.Now()
+	go func() {
+		defer func() { <-s.detectSem }()
+		res, err := mqa.DetectFile(path)
+		if err != nil {
+			slog.Warn("zat mqa detect", "track", trackID, "err", err)
+			return
+		}
+		if merr := s.lib.MarkMQA(trackID, res.Detected); merr != nil {
+			slog.Warn("zat mark mqa", "track", trackID, "err", merr)
+		}
+		slog.Info("zat mqa detect done", "track", trackID, "detected", res.Detected, "elapsed", time.Since(start).Round(time.Millisecond).String())
+		done <- outcome{res: res}
+	}()
+	select {
+	case o := <-done:
+		return o.res, true
+	case <-time.After(mqaDetectTimeout):
+		slog.Warn("zat mqa detect timeout, playing unchecked", "track", trackID, "timeout", mqaDetectTimeout.String())
+		return mqa.Result{}, false
+	}
+}
+
+const mqaDetectTimeout = 20 * time.Second
+
 // StartPlay pushes a library track to a connected terminal. It returns the
 // session id. The stream runs in the background until Stop or EOF.
 func (s *Server) StartPlay(ctx context.Context, nodeID, trackID string) (string, error) {
@@ -511,19 +559,21 @@ func (s *Server) StartPlay(ctx context.Context, nodeID, trackID string) (string,
 	}
 	// Untagged MQA streams hide their sync word in the PCM; detect once here and
 	// persist so later plays and the browse UI see the marker without a rescan.
+	// Detection reads over the network mount and has been observed to stall
+	// indefinitely on a dead SMB handle, so it must never hold the play request
+	// hostage: bound it, and let a late result persist in the background.
 	if !track.MQAChecked && mqaCandidate(track) {
-		if res, derr := mqa.DetectFile(playbackPath); derr == nil {
+		if res, ok := s.detectMQABounded(playbackPath, track.ID); ok {
 			track.MQAChecked = true
 			track.MQA = res.Detected
-			if merr := s.lib.MarkMQA(track.ID, res.Detected); merr != nil {
-				slog.Warn("zat mark mqa", "track", track.ID, "err", merr)
-			}
 		}
 	}
+	slog.Info("zat play prepare", "node", nodeID, "track", trackID, "mqa", track.MQA, "checked", track.MQAChecked)
 	dec, err := openTrackFile(playbackPath, track)
 	if err != nil {
 		return "", err
 	}
+	slog.Info("zat play decoder open", "node", nodeID, "track", trackID, "format", dec.Format().Format, "rate", dec.Format().Rate)
 	dop, dsdRate := false, 0
 	if info, ok := dec.(interface {
 		DoP() bool
@@ -631,7 +681,9 @@ func (s *Server) StartPlay(ctx context.Context, nodeID, trackID string) (string,
 		close(ps.done)
 		return "", err
 	}
+	slog.Info("zat play setup sent", "node", nodeID, "track", trackID, "device", device, "rate", format.Rate)
 	ack, ackErr := s.awaitSetup(e, ps, setup, ctx)
+	slog.Info("zat play setup ack", "node", nodeID, "track", trackID, "ok", ack.OK, "bit_perfect", ack.BitPerfect, "err", ackErr)
 	if ackErr == nil && ack.OK && (!(track.MQA || dop) || ack.BitPerfect) {
 		ps.bitPerfect = ack.BitPerfect
 	} else {
@@ -1138,6 +1190,7 @@ func (s *Server) SetVolume(nodeID string, volume int) error {
 // Status reports the live playback state of a terminal.
 func (s *Server) Status(nodeID string) (PlayStatus, error) {
 	st := PlayStatus{NodeID: nodeID, State: string(zat.StateIdle), Devices: []string{}, Volume: 100}
+	st.SleepStopAt = s.SleepStopAt(nodeID)
 	if n, err := s.nodes.Get(nodeID); err == nil {
 		st.ConfiguredDevice = n.DacDevice
 	}

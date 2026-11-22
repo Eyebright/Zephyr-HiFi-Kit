@@ -295,12 +295,24 @@ func (s *Server) SetQueueMode(nodeID, mode string) (QueueState, error) {
 	return s.queueLocked(nodeID)
 }
 
-// Enqueue appends a track. When the queue was empty and the terminal is idle,
-// playback starts immediately at the appended track.
+// startsIdle reports whether queue edits on this node should start playback:
+// the terminal is connected and neither playing nor paused. A paused session
+// keeps its own position and is never displaced by an enqueue.
+func (s *Server) startsIdle(nodeID string) bool {
+	if !s.Connected(nodeID) {
+		return false
+	}
+	st, err := s.Status(nodeID)
+	return err == nil && !st.Playing && st.State != "paused"
+}
+
+// Enqueue appends a track and starts it when the terminal is idle, even if the
+// queue already holds entries, so library actions always produce sound.
 func (s *Server) Enqueue(ctx context.Context, nodeID, trackID string) (QueueState, string, error) {
 	if _, err := s.lib.GetTrack(trackID); err != nil {
 		return QueueState{}, "", fmt.Errorf("曲目不存在：%s", trackID)
 	}
+	autoPlay := s.startsIdle(nodeID)
 	s.qmu.Lock()
 	row, err := s.loadQueue(nodeID)
 	if err != nil {
@@ -308,10 +320,9 @@ func (s *Server) Enqueue(ctx context.Context, nodeID, trackID string) (QueueStat
 		return QueueState{}, "", err
 	}
 	ids, pos := row.IDs, row.Position
-	startNow := len(ids) == 0
 	ids = append(ids, trackID)
-	if startNow {
-		pos = 0
+	if autoPlay {
+		pos = len(ids) - 1
 	}
 	if err := s.saveQueue(nodeID, ids, pos); err != nil {
 		s.qmu.Unlock()
@@ -323,17 +334,18 @@ func (s *Server) Enqueue(ctx context.Context, nodeID, trackID string) (QueueStat
 		return QueueState{}, "", err
 	}
 	sessionID := ""
-	if startNow && s.Connected(nodeID) {
-		if st, err := s.Status(nodeID); err == nil && !st.Playing {
-			sessionID, err = s.StartPlay(ctx, nodeID, trackID)
-			if err != nil {
-				return q, "", err
-			}
+	if autoPlay {
+		sessionID, err = s.StartPlay(ctx, nodeID, trackID)
+		if err != nil {
+			return q, "", err
 		}
 	}
 	return q, sessionID, nil
 }
 
+// EnqueueMany appends or inserts tracks. When the terminal is idle the first
+// added track becomes current and plays immediately, regardless of queue
+// content; while playing, queue edits never interrupt the stream.
 func (s *Server) EnqueueMany(ctx context.Context, nodeID string, trackIDs []string, next bool) (QueueState, string, error) {
 	if len(trackIDs) == 0 || len(trackIDs) > 10000 {
 		return QueueState{}, "", fmt.Errorf("批量曲目数量需在 1..10000")
@@ -344,6 +356,7 @@ func (s *Server) EnqueueMany(ctx context.Context, nodeID string, trackIDs []stri
 			return QueueState{}, "", fmt.Errorf("曲目不存在或无法解码：%s", id)
 		}
 	}
+	autoPlay := s.startsIdle(nodeID)
 	s.qmu.Lock()
 	row, err := s.loadQueue(nodeID)
 	if err != nil {
@@ -355,17 +368,20 @@ func (s *Server) EnqueueMany(ctx context.Context, nodeID string, trackIDs []stri
 		s.qmu.Unlock()
 		return QueueState{}, "", fmt.Errorf("队列最多容纳 10000 首曲目")
 	}
-	startNow := len(ids) == 0
+	empty := len(ids) == 0
 	at := len(ids)
-	if next && !startNow {
+	if next && !empty {
 		at = min(max(pos+1, 0), len(ids))
 	}
 	merged := make([]string, 0, len(ids)+len(trackIDs))
 	merged = append(merged, ids[:at]...)
 	merged = append(merged, trackIDs...)
 	merged = append(merged, ids[at:]...)
-	if startNow {
+	if empty {
 		pos = 0
+	}
+	if autoPlay {
+		pos = at
 	}
 	if err = s.saveQueue(nodeID, merged, pos); err != nil {
 		s.qmu.Unlock()
@@ -377,12 +393,27 @@ func (s *Server) EnqueueMany(ctx context.Context, nodeID string, trackIDs []stri
 		return QueueState{}, "", err
 	}
 	sessionID := ""
-	if startNow && s.Connected(nodeID) {
-		if st, statusErr := s.Status(nodeID); statusErr == nil && !st.Playing && st.State != "paused" {
-			sessionID, err = s.StartPlay(ctx, nodeID, trackIDs[0])
-		}
+	if autoPlay {
+		sessionID, err = s.StartPlay(ctx, nodeID, trackIDs[0])
 	}
 	return q, sessionID, err
+}
+
+// ReplaceQueue swaps the queue and, unlike SetQueue, starts the first entry
+// when the terminal is idle. Library "replace queue" relies on this; console
+// reorders keep using SetQueue so they never start playback.
+func (s *Server) ReplaceQueue(ctx context.Context, nodeID string, ids []string, pos int) (string, error) {
+	autoPlay := s.startsIdle(nodeID)
+	if err := s.SetQueue(nodeID, ids, pos); err != nil {
+		return "", err
+	}
+	if !autoPlay || len(ids) == 0 {
+		return "", nil
+	}
+	if pos < 0 || pos >= len(ids) {
+		pos = 0
+	}
+	return s.StartPlay(ctx, nodeID, ids[pos])
 }
 
 // QueueJump plays the entry at index and persists the new position.

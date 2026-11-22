@@ -3,6 +3,28 @@
 和风HiFi音乐播放套件。最新版本在前，版本号与 Git 标签、GitHub Releases 一致。
 Newest first; version numbers match Git tags and GitHub Releases.
 
+## 0.64 — 2026-11-22
+
+**中文**
+- 播放队列：终端空闲时「加入队列」「下一首播放」「替换队列」立即起播（队列非空也生效），暂停中的会话不被顶掉；播放中入队仍不打断。
+- 推送稳定性：MQA 检测加入 20 秒超时保护与阶段日志，网络挂载读取卡住时不再无限阻塞推流；检测并发限流并后台回写结果。
+- 终端接入：添加终端新增「SSH 自动安装」，一次填写主机/账号/密码或私钥，服务端探测架构与系统、展示并校验主机指纹后自动安装，凭据不落盘，最多两个并发任务。
+- 应用目录：新增「获取方式」分类（发行版源 / 厂商公开包 / 本地上传），列表分为「公开应用」与「自备上传」两组，新建时可选、管理员可随时重分类。
+- 播放栏与控制台：三区布局重排，终端与输出设备改为图标弹层，音量改为图标+滑杆弹层，收藏靠右，播放控制+进度同组；窄屏自动两行堆叠。
+- 定时关闭：15/30/60/120 分钟后停止播放，按终端持久化，服务端到点自动停止，播放栏与控制台显示倒计时。
+- 交互修复：弹窗内下拉弹层无法点击（背景层拦截默认行为）与定位越界（改用原生 Popover 顶层渲染）问题；音量弹层不再压住进度条。
+- 设置：授权信息精简（移除无效的信任根操作、许可证扩容折叠为高级项、密钥卡改为验签公钥），BOM 部署模板折叠为高级项，自升级卡按服务可用性显示。
+
+**English**
+- Queue: add-to-queue, play-next and replace-queue start playback immediately on an idle terminal even when the queue is non-empty; paused sessions are never displaced, and queue edits never interrupt playback.
+- Push reliability: MQA detection is bounded to 20 seconds with stage logging, so stalled network-mount reads can no longer block streaming; detection is concurrency-limited with background result persistence.
+- Onboarding: the add-terminal wizard gains SSH auto-install. Enter host, account and password or private key once; the server detects arch/OS, shows and verifies the host fingerprint, then installs. Credentials are never stored and at most two jobs run concurrently.
+- App catalog: new "obtained via" classification (distro / vendor / local upload); the list splits into Public apps and Self-supplied groups, selectable on creation and reclassifiable by admins.
+- Player bar and console: three-zone layout with terminal/device icon popovers, an icon + slider volume popover, favorite at the far right, transport and seek grouped; narrow widths stack into two rows.
+- Sleep timer: stop playback after 15/30/60/120 minutes, persisted per terminal and enforced server-side, with a countdown in the bar and console.
+- Interaction fixes: popover menus inside modals could not be clicked (modal backdrop swallowed the default action) and were positioned off-screen; they now render in the native top layer. The volume popover no longer overlaps the seek bar.
+- Settings: authorization simplified (dead trust-root actions removed, license expansion folded into Advanced, keys card renamed to verification keys), BOM templates folded into Advanced, and the self-update card follows service availability.
+
 ## 0.63 — 2026-11-22
 
 **中文**

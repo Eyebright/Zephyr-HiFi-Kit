@@ -35,10 +35,13 @@ func (s *Service) CreateApp(a domain.App) (domain.App, error) {
 	if a.MaintainerState == "" {
 		a.MaintainerState = "active"
 	}
+	if !domain.ValidAppOrigin(a.Origin) {
+		a.Origin = domain.OriginSelf
+	}
 	_, err := s.db.Exec(`INSERT INTO apps
-		(app_id,name,category,upstream,license,maintainer_state,self_build_required,default_channel,created_at)
-		VALUES(?,?,?,?,?,?,?,?,?)`,
-		a.AppID, a.Name, string(a.Category), a.Upstream, a.License, a.MaintainerState,
+		(app_id,name,category,origin,upstream,license,maintainer_state,self_build_required,default_channel,created_at)
+		VALUES(?,?,?,?,?,?,?,?,?,?)`,
+		a.AppID, a.Name, string(a.Category), string(a.Origin), a.Upstream, a.License, a.MaintainerState,
 		boolInt(a.SelfBuildRequired), a.DefaultChannel, a.CreatedAt)
 	if err != nil {
 		return a, fmt.Errorf("insert app: %w", err)
@@ -50,10 +53,11 @@ func (s *Service) CreateApp(a domain.App) (domain.App, error) {
 func (s *Service) GetApp(id string) (domain.App, error) {
 	var a domain.App
 	var selfBuild int
-	err := s.db.QueryRow(`SELECT app_id,name,category,COALESCE(upstream,''),COALESCE(license,''),
+	var origin string
+	err := s.db.QueryRow(`SELECT app_id,name,category,COALESCE(origin,'self'),COALESCE(upstream,''),COALESCE(license,''),
 		COALESCE(maintainer_state,''),self_build_required,COALESCE(default_channel,''),created_at
 		FROM apps WHERE app_id=?`, id).
-		Scan(&a.AppID, &a.Name, &a.Category, &a.Upstream, &a.License, &a.MaintainerState,
+		Scan(&a.AppID, &a.Name, &a.Category, &origin, &a.Upstream, &a.License, &a.MaintainerState,
 			&selfBuild, &a.DefaultChannel, &a.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return a, ErrNotFound
@@ -62,12 +66,28 @@ func (s *Service) GetApp(id string) (domain.App, error) {
 		return a, err
 	}
 	a.SelfBuildRequired = selfBuild == 1
+	a.Origin = domain.AppOrigin(origin)
+	if !domain.ValidAppOrigin(a.Origin) {
+		a.Origin = domain.OriginSelf
+	}
 	return a, nil
+}
+
+// SetAppOrigin reclassifies how an app is obtained and returns the updated app.
+func (s *Service) SetAppOrigin(id string, origin domain.AppOrigin) (domain.App, error) {
+	if !domain.ValidAppOrigin(origin) {
+		return domain.App{}, fmt.Errorf("unknown app origin %q", origin)
+	}
+	res, err := s.db.Exec(`UPDATE apps SET origin=? WHERE app_id=?`, string(origin), id)
+	if err := affected(res, err); err != nil {
+		return domain.App{}, err
+	}
+	return s.GetApp(id)
 }
 
 // ListApps returns all apps ordered by id.
 func (s *Service) ListApps() ([]domain.App, error) {
-	rows, err := s.db.Query(`SELECT app_id,name,category,COALESCE(upstream,''),COALESCE(license,''),
+	rows, err := s.db.Query(`SELECT app_id,name,category,COALESCE(origin,'self'),COALESCE(upstream,''),COALESCE(license,''),
 		COALESCE(maintainer_state,''),self_build_required,COALESCE(default_channel,''),created_at
 		FROM apps ORDER BY app_id`)
 	if err != nil {
@@ -78,11 +98,16 @@ func (s *Service) ListApps() ([]domain.App, error) {
 	for rows.Next() {
 		var a domain.App
 		var selfBuild int
-		if err := rows.Scan(&a.AppID, &a.Name, &a.Category, &a.Upstream, &a.License,
+		var origin string
+		if err := rows.Scan(&a.AppID, &a.Name, &a.Category, &origin, &a.Upstream, &a.License,
 			&a.MaintainerState, &selfBuild, &a.DefaultChannel, &a.CreatedAt); err != nil {
 			return nil, err
 		}
 		a.SelfBuildRequired = selfBuild == 1
+		a.Origin = domain.AppOrigin(origin)
+		if !domain.ValidAppOrigin(a.Origin) {
+			a.Origin = domain.OriginSelf
+		}
 		out = append(out, a)
 	}
 	return out, rows.Err()
@@ -277,11 +302,11 @@ func (s *Service) SeedAptApps() error {
 		deps []string
 		unit string
 	}{
-		{domain.App{AppID: "mpd", Name: "Music Player Daemon", Category: domain.CategoryRenderer,
+		{domain.App{AppID: "mpd", Name: "Music Player Daemon", Category: domain.CategoryRenderer, Origin: domain.OriginDistro,
 			Upstream: "https://www.musicpd.org", License: "GPL-2.0"}, "mpd", nil, "mpd.service"},
-		{domain.App{AppID: "upmpdcli", Name: "UPnP Media Renderer (upmpdcli)", Category: domain.CategoryRenderer,
+		{domain.App{AppID: "upmpdcli", Name: "UPnP Media Renderer (upmpdcli)", Category: domain.CategoryRenderer, Origin: domain.OriginDistro,
 			Upstream: "https://www.lesbonscomptes.com/upmpdcli/", License: "GPL-2.0"}, "upmpdcli", []string{"mpd"}, "upmpdcli.service"},
-		{domain.App{AppID: "shairport-sync", Name: "AirPlay 1 接收器 (shairport-sync)", Category: domain.CategoryRenderer,
+		{domain.App{AppID: "shairport-sync", Name: "AirPlay 1 接收器 (shairport-sync)", Category: domain.CategoryRenderer, Origin: domain.OriginDistro,
 			Upstream: "https://github.com/mikebrady/shairport-sync", License: "MIT"}, "shairport-sync", nil, "shairport-sync.service"},
 	}
 	for _, sd := range seed {
@@ -320,9 +345,9 @@ func (s *Service) SeedCommercialApps() error {
 		return err
 	}
 	seed := []domain.App{
-		{AppID: "roonbridge", Name: "Roon Bridge", Category: domain.CategoryRenderer,
+		{AppID: "roonbridge", Name: "Roon Bridge", Category: domain.CategoryRenderer, Origin: domain.OriginSelf,
 			Upstream: "https://roonlabs.com", License: "Commercial"},
-		{AppID: "networkaudiod", Name: "HQPlayer NAA", Category: domain.CategoryRenderer,
+		{AppID: "networkaudiod", Name: "HQPlayer NAA", Category: domain.CategoryRenderer, Origin: domain.OriginVendor,
 			Upstream: "https://signalyst.com", License: "Commercial"},
 	}
 	for _, app := range seed {
@@ -333,6 +358,36 @@ func (s *Service) SeedCommercialApps() error {
 		}
 	}
 	_, err = s.db.Exec(`INSERT INTO server_state(key,value) VALUES('seed_commercial_apps_v1','1')
+		ON CONFLICT(key) DO UPDATE SET value='1'`)
+	return err
+}
+
+// SeedAppOrigins backfills the public/self-serve split for catalogs created
+// before apps carried an origin column. It runs once; later admin
+// reclassifications are preserved because the marker is only written here.
+func (s *Service) SeedAppOrigins() error {
+	var done string
+	err := s.db.QueryRow(`SELECT value FROM server_state WHERE key='app_origin_v1'`).Scan(&done)
+	if err == nil && done == "1" {
+		return nil
+	}
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	known := map[string]domain.AppOrigin{
+		"mpd":            domain.OriginDistro,
+		"upmpdcli":       domain.OriginDistro,
+		"shairport-sync": domain.OriginDistro,
+		"gmediarender":   domain.OriginDistro,
+		"networkaudiod":  domain.OriginVendor,
+		"roonbridge":     domain.OriginSelf,
+	}
+	for id, origin := range known {
+		if _, err := s.db.Exec(`UPDATE apps SET origin=? WHERE app_id=?`, string(origin), id); err != nil {
+			return err
+		}
+	}
+	_, err = s.db.Exec(`INSERT INTO server_state(key,value) VALUES('app_origin_v1','1')
 		ON CONFLICT(key) DO UPDATE SET value='1'`)
 	return err
 }

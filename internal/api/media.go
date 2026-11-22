@@ -396,14 +396,21 @@ func (a *API) setNodeQueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		TrackIDs []string `json:"track_ids"`
-		Position int      `json:"position"`
+		TrackIDs   []string `json:"track_ids"`
+		Position   int      `json:"position"`
+		PlayIfIdle bool     `json:"play_if_idle"`
 	}
 	if err := decode(r, &body); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad_json", err.Error(), "")
 		return
 	}
-	if err := a.zat.SetQueue(r.PathValue("id"), body.TrackIDs, body.Position); err != nil {
+	var err error
+	if body.PlayIfIdle {
+		_, err = a.zat.ReplaceQueue(r.Context(), r.PathValue("id"), body.TrackIDs, body.Position)
+	} else {
+		err = a.zat.SetQueue(r.PathValue("id"), body.TrackIDs, body.Position)
+	}
+	if err != nil {
 		fail(w, err)
 		return
 	}
