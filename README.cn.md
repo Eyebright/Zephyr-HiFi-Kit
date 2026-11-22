@@ -1,12 +1,22 @@
 # Zephyr HiFi Kit · 和风HiFi音乐播放套件
 
-**版本 0.62 · 发布标签 `v0.62`**
+**版本 0.64 · 发布标签 `v0.64`**
 
 [语言入口](README.md) · [English](README.en.md) · [安装与部署](INSTALL.md) · [版本更新](CHANGELOG.md)
 
 Zephyr HiFi Kit 把音乐文件、曲库和播放终端连接起来：服务端读取本地目录或 NAS 共享，通过内嵌 Web 控制台浏览音乐、管理播放队列，再经 ZAT（Zephyr Audio Transport）向终端推送音频。同时保留终端注册、软件下发、授权与维护功能。
 
 服务端支持 Linux amd64/arm64 和 Windows amd64；Linux 播放终端使用 ALSA 音频版，Android 终端使用 AAudio。**Windows 服务端不是 Windows 本地播放器，也不是自动注册的 Windows 系统服务。**
+
+## 0.64 更新要点
+
+- 播放队列：终端空闲时「加入队列」「下一首播放」「替换队列」立即起播（队列非空同样生效）；暂停会话不被顶掉，播放中入队不打断。
+- 推送稳定性：MQA 检测加入 20 秒超时保护与阶段日志，网络挂载读取卡住不再无限阻塞推流。
+- 终端接入：添加终端支持 SSH 自动安装，服务端展示并校验主机指纹后执行安装；凭据不落盘，最多两个并发任务。
+- 应用目录：新增「获取方式」分类（发行版源 / 厂商公开包 / 本地上传），列表分为「公开应用」与「自备上传」，管理员可重分类。
+- 播放栏与控制台：三区布局，终端/输出设备/音量/播放模式/定时改为图标弹层，收藏靠右；窄屏自动两行堆叠。
+- 定时关闭：15 / 30 / 60 / 120 分钟后自动停止播放，按终端持久化并由服务端执行，界面显示倒计时。
+- 设置：授权信息精简（移除无效信任根操作、许可证扩容折叠为高级项），BOM 部署模板折叠为高级项。
 
 ## 当前能力与边界
 
@@ -15,14 +25,14 @@ Zephyr HiFi Kit 把音乐文件、曲库和播放终端连接起来：服务端�
 | 音乐源 | 服务端本地绝对路径、SMB/NAS；Windows 通过系统 SMB/UNC 会话连接，Linux 使用 CIFS 后端，也可添加预挂载目录 |
 | 源生命周期 | 同一实际来源复用已有源；默认增量扫描，按文件大小与修改时间跳过未变化文件；可完全重新扫描；归档保留索引与来源身份，不删除原始音乐 |
 | 曲库 | 艺术家、专辑、曲目、流派、年份、作曲家、文件夹浏览；搜索、排序、分页、收藏、播放列表、历史与聆听统计 |
-| 播放 | ZAT 推流、每终端队列、暂停/恢复/停止、定位、音量与输出设备控制；格式识别不等于可解码，也不等于设备一定支持输出 |
+| 播放 | ZAT 推流、每终端队列（空闲终端入队即播）、暂停/恢复/停止、定位、音量与输出设备控制、定时关闭；格式识别不等于可解码，也不等于设备一定支持输出 |
 | 管理员 | 单管理员密码解锁、会话 Cookie、管理员姓名/称呼；不是多用户账号系统或角色切换；敏感管理接口在服务端再次校验 |
 | 首次使用 | 可跳过的欢迎页与三步引导；称呼和进度持久化；跳过不会创建密码、自动安装终端或绕过权限 |
-| 终端管理 | 一次性注册令牌、在线状态、逐终端授权、DAC 与播放保护配置、Linux 软件安装及系统维护 |
-| 软件与授权 | 签名制品、BOM 期望态、任务与灰度下发、审计；服务端内置 3 个终端席位，可导入离线签名许可证扩容 |
+| 终端管理 | 一次性注册令牌、SSH 自动安装（主机指纹确认）、在线状态、逐终端授权、DAC 与播放保护配置、Linux 软件安装及系统维护 |
+| 软件与授权 | 签名制品、BOM 期望态、任务与灰度下发、审计；应用目录区分公开应用与自备上传；服务端内置 3 个终端席位，可导入离线签名许可证扩容 |
 | 备份与维护 | 音乐数据导出/恢复、清理；音乐数据导出不是包含密码、节点身份和原音频的整机备份 |
 
-这些是源码能力说明，不是全部平台的验收结论。Windows 服务端已有本机运行记录，但 **0.62 新认证下“初始化 → 添加源 → 扫描 → 注册授权 → 实际播放”的完整流程尚未实测验收**。不承诺全部音频格式、任意 DAC、所有 NAS 或多房间同步均已验证。
+这些是源码能力说明，不是全部平台的验收结论。0.64 由 CI 自动验证（含 Windows 实机任务与音频构建测试），本机生产环境亦持续验证；仍不承诺全部音频格式、任意 DAC、所有 NAS 或多房间同步均已验证。
 
 ### 音频版本怎么选
 
@@ -32,22 +42,22 @@ Zephyr HiFi Kit 把音乐文件、曲库和播放终端连接起来：服务端�
 - **Android**：AAudio 优先请求独占模式，失败时可回退共享模式；实际效果取决于设备和系统音频路径。
 - `ffmpeg`、`ffprobe`、GPG 均不随 Windows 包捆绑。其按功能安装的用途与当前解码限制见 [INSTALL.md](INSTALL.md)；不要假定安装外部工具便自动扩展所有播放能力。
 
-## 获取 0.62
+## 获取 0.64
 
-从[现有项目 Releases](https://github.com/Eyebright/Zephyr-HiFi-Kit/releases)选择 `v0.62`。包名与用途如下，下载后核对发布校验和；此表不表示资产已经上传。
+从[现有项目 Releases](https://github.com/Eyebright/Zephyr-HiFi-Kit/releases)选择 `v0.64`。包名与用途如下，下载后核对发布校验和；此表不表示资产已经上传。
 
 | 用途 | 发布资产 |
 |---|---|
-| Linux 多架构服务端管理包 | `Zephyr-HiFi-Kit-server-0.62.tar.gz` |
-| Linux 服务端音频包 | `Zephyr-HiFi-Kit-server-0.62-audio-amd64.tar.gz` / `Zephyr-HiFi-Kit-server-0.62-audio-arm64.tar.gz` |
-| Windows amd64 服务端 | `Zephyr-HiFi-Kit-server-0.62-windows-amd64.zip` |
-| Linux 终端管理 deb | `Zephyr-HiFi-Kit-terminal-0.62-linux-amd64.deb` / `Zephyr-HiFi-Kit-terminal-0.62-linux-arm64.deb` / `Zephyr-HiFi-Kit-terminal-0.62-linux-armhf.deb` |
-| Linux 终端管理合集 | `Zephyr-HiFi-Kit-terminal-0.62-linux.tar.gz` |
-| Linux 音频终端包 | `Zephyr-HiFi-Kit-terminal-0.62-audio-amd64.tar.gz` / `Zephyr-HiFi-Kit-terminal-0.62-audio-arm64.tar.gz` |
-| Android 终端 | `Zephyr-HiFi-Kit-terminal-0.62.apk` |
-| 容器镜像 | `ghcr.io/eyebright/zephyr-hifi-kit-server:0.62` |
+| Linux 多架构服务端管理包 | `Zephyr-HiFi-Kit-server-0.64.tar.gz` |
+| Linux 服务端音频包 | `Zephyr-HiFi-Kit-server-0.64-audio-amd64.tar.gz` / `Zephyr-HiFi-Kit-server-0.64-audio-arm64.tar.gz` |
+| Windows amd64 服务端 | `Zephyr-HiFi-Kit-server-0.64-windows-amd64.zip` |
+| Linux 终端管理 deb | `Zephyr-HiFi-Kit-terminal-0.64-linux-amd64.deb` / `Zephyr-HiFi-Kit-terminal-0.64-linux-arm64.deb` / `Zephyr-HiFi-Kit-terminal-0.64-linux-armhf.deb` |
+| Linux 终端管理合集 | `Zephyr-HiFi-Kit-terminal-0.64-linux.tar.gz` |
+| Linux 音频终端包 | `Zephyr-HiFi-Kit-terminal-0.64-audio-amd64.tar.gz` / `Zephyr-HiFi-Kit-terminal-0.64-audio-arm64.tar.gz` |
+| Android 终端 | `Zephyr-HiFi-Kit-terminal-0.64.apk` |
+| 容器镜像 | `ghcr.io/eyebright/zephyr-hifi-kit-server:0.64` |
 
-对外名称统一为 Zephyr HiFi Kit，**内部 `hifihub` 的服务名、目录、环境变量和 API 保持兼容**。终端 deb 的内部 `Package` 仍为 `hifihub-agent`，`/dl/` 分发集仍使用 `hifihub-agent_0.62_<arch>.deb`，不要仅为改名迁移现有配置。
+对外名称统一为 Zephyr HiFi Kit，**内部 `hifihub` 的服务名、目录、环境变量和 API 保持兼容**。终端 deb 的内部 `Package` 仍为 `hifihub-agent`，`/dl/` 分发集仍使用 `hifihub-agent_0.64_<arch>.deb`，不要仅为改名迁移现有配置。
 
 ## 快速开始
 
@@ -56,8 +66,8 @@ Zephyr HiFi Kit 把音乐文件、曲库和播放终端连接起来：服务端�
 解压 ZIP，在 PowerShell 中进入解压后的同名目录：
 
 ```powershell
-Expand-Archive -LiteralPath .\Zephyr-HiFi-Kit-server-0.62-windows-amd64.zip -DestinationPath .
-Set-Location .\Zephyr-HiFi-Kit-server-0.62-windows-amd64
+Expand-Archive -LiteralPath .\Zephyr-HiFi-Kit-server-0.64-windows-amd64.zip -DestinationPath .
+Set-Location .\Zephyr-HiFi-Kit-server-0.64-windows-amd64
 .\start.ps1
 ```
 
@@ -72,8 +82,8 @@ Set-Location .\Zephyr-HiFi-Kit-server-0.62-windows-amd64
 ```sh
 sudo apt-get update
 sudo apt-get install -y gnupg
-tar -xzf Zephyr-HiFi-Kit-server-0.62.tar.gz
-cd Zephyr-HiFi-Kit-server-0.62/server
+tar -xzf Zephyr-HiFi-Kit-server-0.64.tar.gz
+cd Zephyr-HiFi-Kit-server-0.64/server
 sudo ./install.sh
 curl -fsS http://127.0.0.1:8080/api/v1/health
 ```
@@ -100,7 +110,7 @@ Windows 包内 `dist/` 是管理版终端分发集。要实际出声，按 [INST
 
 ## 升级与安全
 
-- **从 0.4.3 升到 0.62 必须手动安装一次**：旧自动更新器硬编码旧包名，不能靠新版本修复旧进程的资产选择。
+- **从 0.4.3 升到 0.64 必须手动安装一次**：旧自动更新器硬编码旧包名，不能靠新版本修复旧进程的资产选择。
 - Windows 使用“停止进程 → 完整备份数据和配置 → 替换程序/分发集 → 保留原数据目录启动”的手动升级方式，不承诺自更新。容器通过更换镜像并保留数据卷升级。
 - Linux 自升级与终端版本收敛受启用状态、发布资产、校验、运行权限和播放保护约束，不保证所有安装环境无操作自动升级。
 - 生产保持 `HIFIHUB_SIGNATURE_MODE=enforce`；需要签名校验时安装 GPG 并导入可信公钥。私钥留在离线/受控签名端；发布包不包含私钥、密码或私人曲库。
@@ -113,7 +123,7 @@ Windows 包内 `dist/` 是管理版终端分发集。要实际出声，按 [INST
 使用满足 `go.mod` 的 Go 工具链（当前声明 `go 1.27.4`）。在仓库根目录运行：
 
 ```sh
-VERSION=0.62 sh scripts/build-release.sh
+VERSION=0.64 sh scripts/build-release.sh
 go test ./...
 go -C agent test ./...
 node --test internal/web/*.test.cjs
