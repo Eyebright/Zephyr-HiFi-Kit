@@ -1,12 +1,12 @@
 # Zephyr HiFi Kit · 和风HiFi音乐播放套件
 
-**版本 / Version: 0.66 · Git tag: `v0.66`**
+**版本 / Version: 0.67 · Git tag: `v0.67`**
 
 面向本地音乐库与网络播放终端的音乐播放及管理套件，提供内嵌 Web 控制台、音乐源管理、曲库浏览和 ZAT 音频推送。服务端支持 Linux 与 Windows；实际播放能力取决于解码后端、终端音频构建及设备。
 
 A music playback and management kit for local libraries and network terminals, with an embedded web console, source management, library browsing and ZAT streaming. Servers run on Linux and Windows; playback capabilities depend on the decoder, terminal build and audio device.
 
-0.66 highlights: ALSA device hotplug sync over ZAT STATUS (device picker refreshes without reconnecting), reported device names in the terminal drawer, and uniform settings card spacing. 0.66 更新：ZAT STATUS 设备热插拔同步（设备列表免重连刷新）、终端抽屉显示设备名称、设置页卡片间距统一。
+0.67 highlights: activated playback devices with an inline per-terminal device strip (activate + custom names), and a player picker limited to activated outputs. 0.67 更新：播放设备激活制（终端列表行内设备条、激活与自定义命名），播放控制台只列已激活播放设备。
 
 ## 选择语言 / Choose a language
 

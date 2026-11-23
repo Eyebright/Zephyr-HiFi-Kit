@@ -40,7 +40,17 @@ var ErrNotConnected = errors.New("终端未连接 ZAT 服务")
 // ErrUnknownDevice is returned when a device is not in the terminal's reported list.
 var ErrUnknownDevice = errors.New("终端未上报该 ALSA 输出设备")
 
+// ErrDeviceNotActivated rejects outputs the operator has not activated.
+var ErrDeviceNotActivated = errors.New("播放设备未激活，请先在终端中心激活")
+
 // PlayStatus is the live playback state of one terminal, for the console.
+// PlayDevice is one activated playback output offered to the player picker.
+type PlayDevice struct {
+	HW      string `json:"hw"`
+	Name    string `json:"name"`
+	Present bool   `json:"present"`
+}
+
 type PlayStatus struct {
 	NodeID     string           `json:"node_id"`
 	Connected  bool             `json:"connected"`
@@ -65,6 +75,8 @@ type PlayStatus struct {
 	SleepStopAt int64            `json:"sleep_stop_at"`
 	Devices    []string         `json:"devices"`
 	DeviceInfo []zat.ALSADevice `json:"device_info,omitempty"`
+	// PlayDevices is the curated activated output list for the player picker.
+	PlayDevices []PlayDevice `json:"play_devices,omitempty"`
 	// ConfiguredDevice is the server-side DAC suggestion (node.dac_device).
 	ConfiguredDevice string `json:"configured_device"`
 	MQA              bool   `json:"mqa"`
@@ -1197,6 +1209,7 @@ func (s *Server) Status(nodeID string) (PlayStatus, error) {
 	}
 	e := s.endpoint(nodeID)
 	if e == nil {
+		st.PlayDevices = s.playDevices(nodeID, nil, nil)
 		return st, nil
 	}
 	e.mu.Lock()
@@ -1234,7 +1247,40 @@ func (s *Server) Status(nodeID string) (PlayStatus, error) {
 		st.DeviceInfo = e.caps.ALSADeviceInfo
 	}
 	e.mu.Unlock()
+	st.PlayDevices = s.playDevices(nodeID, st.Devices, st.DeviceInfo)
 	return st, nil
+}
+
+// playDevices merges the activated registry with the live reported list so the
+// player picker only offers curated outputs, flagged when absent.
+func (s *Server) playDevices(nodeID string, reported []string, info []zat.ALSADevice) []PlayDevice {
+	rows, err := s.nodes.Devices(nodeID)
+	if err != nil || len(rows) == 0 {
+		return nil
+	}
+	names := make(map[string]string, len(info))
+	for _, d := range info {
+		names[d.HW] = d.Name
+	}
+	present := make(map[string]bool, len(reported))
+	for _, hw := range reported {
+		present[hw] = true
+	}
+	var out []PlayDevice
+	for _, r := range rows {
+		if !r.Enabled {
+			continue
+		}
+		name := r.Name
+		if name == "" {
+			name = names[r.HW]
+		}
+		if name == "" {
+			name = r.HW
+		}
+		out = append(out, PlayDevice{HW: r.HW, Name: name, Present: r.HW == "default" || present[r.HW]})
+	}
+	return out
 }
 
 // openFallbackPCM is a seam for tests; production shells out to ffmpeg.
@@ -1278,6 +1324,18 @@ func (s *Server) SetDevice(nodeID, device string) error {
 		}
 		if !known {
 			return ErrUnknownDevice
+		}
+	}
+	if rows, err := s.nodes.Devices(nodeID); err == nil && len(rows) > 0 {
+		activated := false
+		for _, d := range rows {
+			if d.HW == device && d.Enabled {
+				activated = true
+				break
+			}
+		}
+		if !activated {
+			return ErrDeviceNotActivated
 		}
 	}
 	if _, err := s.nodes.Patch(nodeID, node.Patch{DacDevice: &device}); err != nil {

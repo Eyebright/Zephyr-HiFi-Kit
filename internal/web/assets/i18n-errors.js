@@ -72,6 +72,8 @@ I18n.register("errors", {
   rollout_ring_busy: ["当前环仍有未完成任务，请等待任务结束后再推进。", "目前的環仍有未完成工作，請等待工作結束後再推進。", "The current rollout ring has unfinished tasks. Wait before advancing."],
   zat_not_connected: ["终端未连接 ZAT 服务。", "終端尚未連線至 ZAT 服務。", "The endpoint is not connected to the ZAT service."],
   unknown_audio_device: ["终端未上报该 ALSA 输出设备。", "終端未回報此 ALSA 輸出裝置。", "The endpoint has not reported this ALSA output device."],
+  device_not_activated: ["播放设备未激活，请先在终端中心激活。", "播放裝置未啟用，請先在終端中心啟用。", "Playback device is not activated; activate it in the terminal center first."],
+  device_name_invalid: ["设备名称最多40个字符且不含控制字符，留空恢复上报名称。", "裝置名稱最多40個字元且不含控制字元，留空恢復上報名稱。", "Device name must be at most 40 characters without control characters; empty restores the reported name."],
   no_playback_session: ["当前没有正在播放的会话。", "目前沒有正在播放的工作階段。", "There is no active playback session."],
   queue_empty: ["播放队列为空。", "播放佇列為空。", "The playback queue is empty."],
   queue_end: ["已是队列最后一首。", "已是佇列最後一首。", "This is the last track in the queue."],

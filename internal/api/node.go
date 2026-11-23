@@ -117,6 +117,8 @@ func (a *API) nodeSubresource(w http.ResponseWriter, r *http.Request) {
 		a.listCommands(w, r)
 	case "play":
 		a.playStatus(w, r)
+	case "devices":
+		a.nodeDevices(w, r)
 	case "queue":
 		a.nodeQueue(w, r)
 	default:

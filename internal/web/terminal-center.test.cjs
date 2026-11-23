@@ -259,12 +259,28 @@ test("services drawer shows only installed services and separates source and run
   assert.doesNotMatch(html, /未安装项目/);
 });
 
-test("maintenance drawer labels ALSA devices with reported names", () => {
+test("maintenance drawer no longer offers raw ALSA or DAC pickers", () => {
   const h = harness();
   h.run(`TC.detailTab='maintenance'; S.nodePlay.a={connected:true, devices:["hw:2,0"], device_info:[{hw:"hw:2,0", name:"Headphones"}], pref_device:"hw:2,0"}`);
   const html = h.run("nodeDrawerBody({node_id:'a',status:'online',dac_device:'hw:2,0'}, [])");
-  assert.match(html, /<option value="hw:2,0" selected>Headphones · hw:2,0<\/option>/);
-  assert.match(html, /Headphones · hw:2,0/);
+  assert.doesNotMatch(html, /node-play-dev|cfg-dac/);
+  assert.match(html, /播放设备的激活与命名/);
+});
+
+test("terminal rows expand the playback device registry with activate and naming", () => {
+  const h = harness();
+  h.run(`TC.admin=true; S.nodeDevs.a=[{hw:"hw:3,0",name:"客厅 DAC",reported_name:"AUDIO",enabled:true,present:true},{hw:"hw:2,0",name:"",reported_name:"Headphones",enabled:false,present:false}]`);
+  const html = h.run("nodeRow({node_id:'a',alias:'moode',status:'online'})");
+  assert.match(html, /tc-dev-row/);
+  assert.match(html, /客厅 DAC/);
+  assert.match(html, /data-change="tc-dev-act" data-id="a" data-hw="hw:3,0" checked/);
+  assert.match(html, /Headphones/);
+  assert.match(html, /未上报/);
+  assert.match(html, /data-act="tc-dev-rename" data-id="a" data-hw="hw:2,0"/);
+  h.run("TC.devEdit={id:'a',hw:'hw:2,0',value:'x'}");
+  const editing = h.run("nodeRow({node_id:'a',alias:'moode',status:'online'})");
+  assert.match(editing, /tc-dev-input/);
+  assert.match(editing, /data-act="tc-dev-rename-save"/);
 });
 
 test("terminal detail reads playback summary but never a duplicate queue", async () => {
@@ -373,4 +389,8 @@ test("server device selector shows ALSA card names with hardware ids", () => {
   assert.match(html, /value="hw:3,0" selected/);
   const dvHtml = h.run(`(() => { const dv = nodePlayDevs({devices:["hw:0,0"], device_info:[{hw:"hw:0,0", name:"b1"}], pref_device:"hw:0,0"}); return nodePlayOpts(dv.devs, dv.cur, dv.names); })()`);
   assert.match(dvHtml, /b1 · hw:0,0/);
+  const curated = h.run(`(() => { const dv = nodePlayDevs({play_devices:[{hw:"hw:3,0",name:"客厅 DAC",present:true},{hw:"hw:2,0",name:"Headphones",present:false}], pref_device:"hw:3,0"}); return nodePlayOpts(dv.devs, dv.cur, dv.names, dv.absent); })()`);
+  assert.match(curated, /客厅 DAC · hw:3,0/);
+  assert.match(curated, /value="hw:2,0" disabled/);
+  assert.doesNotMatch(curated, /hw:0,0/);
 });

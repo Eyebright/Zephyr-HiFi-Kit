@@ -4,7 +4,7 @@ const tcT = (key, params) => I18n.t("features." + key, params);
 const TC = {
   tab: "nodes", epoch: 0, busy: null, admin: false, loading: true,
   errors: [], commands: [], nodeErrors: {}, taskNode: "", taskType: "all", taskState: "all", page: 1,
-  detail: null, detailTab: "overview", fleetError: ""
+  detail: null, detailTab: "overview", fleetError: "", devEdit: null
 };
 function tcTime(value) {
   const time = ts(value);
@@ -74,7 +74,8 @@ async function refreshTerminalCenter() {
         const n = S.nodes[cursor++], id = n.node_id;
         const values = await Promise.allSettled([
           api("GET", `/nodes/${enc(id)}/apps`), api("GET", `/nodes/${enc(id)}/commands`),
-          n.status === "online" && TC.admin ? api("GET", `/nodes/${enc(id)}/local/api/status`) : Promise.resolve(null)
+          n.status === "online" && TC.admin ? api("GET", `/nodes/${enc(id)}/local/api/status`) : Promise.resolve(null),
+          api("GET", `/nodes/${enc(id)}/devices`)
         ]);
         results.push({ id, values });
       }
@@ -83,10 +84,11 @@ async function refreshTerminalCenter() {
     const previousCommands = TC.commands;
     TC.commands = []; TC.nodeErrors = {};
     for (const { id, values } of results) {
-      const [apps, commands, live] = values;
+      const [apps, commands, live, devs] = values;
       if (apps.status === "fulfilled") S.nodeApps[id] = Array.isArray(apps.value) ? apps.value : apps.value?.apps || [];
       else { S.nodeApps[id] = null; TC.nodeErrors[id] = "tcAppsReadFailed"; }
       S.nodeSvc[id] = live.status === "fulfilled" && Array.isArray(live.value?.services) ? live.value.services : null;
+      S.nodeDevs[id] = devs.status === "fulfilled" && Array.isArray(devs.value?.devices) ? devs.value.devices : null;
       if (commands.status === "fulfilled") TC.commands.push(...(commands.value || []));
       else {
         TC.commands.push(...previousCommands.filter(c => c.node_id === id));
@@ -182,7 +184,22 @@ function nodeRow(n) {
     <td>${statusBadge(n.status)}<div class="sub">${n.status === "online" ? n.playing ? esc(tcT("playing")) + (n.active_proto ? " · " + esc(n.active_proto) : "") : esc(tcT("tcIdle")) : esc(tcT("tcPlaybackUnknown"))}</div></td>
     <td><div class="mono">${esc(n.agent_version || tcT("unknown"))}</div>${tcOutdated(n) ? `<div class="sub">→ ${esc(tcTargetVersion())}</div>` : `<div class="sub">${esc(tcT("tcUpToDate"))}</div>`}<div class="sub">${esc(tcFlavorLabel(n))}</div></td>
     <td class="tc-service-cell">${tcServiceSummary(n)}</td><td>${tcNodeIndicator(n)}<div class="sub">${esc(tcT(n.authorized ? "authorized" : "unauthorized"))}</div></td>
-    <td><div class="acts">${tcUpgradeButton(n, "xs")}<button class="btn ghost xs" data-act="tc-install" data-id="${esc(id)}">${esc(tcT("installUpdate"))}</button><button class="btn ghost xs" data-act="node-open" data-id="${esc(id)}">${esc(tcT("details"))}</button></div></td></tr>`;
+    <td><div class="acts">${tcUpgradeButton(n, "xs")}<button class="btn ghost xs" data-act="tc-install" data-id="${esc(id)}">${esc(tcT("installUpdate"))}</button><button class="btn ghost xs" data-act="node-open" data-id="${esc(id)}">${esc(tcT("details"))}</button></div></td></tr>${tcDevStrip(n)}`;
+}
+// tcDevStrip renders the inline, always-expanded playback device registry under
+// each terminal row: activate switches and operator naming live here.
+function tcDevStrip(n) {
+  const id = n.node_id, devs = S.nodeDevs[id];
+  if (!Array.isArray(devs)) return `<tr class="tc-dev-row"><td colspan="7"><div class="tc-devs"><span class="lbl">${esc(tcT("tcPlayDevices"))}</span><span class="sub">${esc(tcT("tcDevsNotLoaded"))}</span></div></td></tr>`;
+  const cells = devs.map(d => {
+    const label = d.name || d.reported_name || d.hw;
+    const editing = TC.devEdit && TC.devEdit.id === id && TC.devEdit.hw === d.hw;
+    const body = editing
+      ? `<input class="inp sm tc-dev-input" value="${esc(TC.devEdit.value)}" maxlength="40" aria-label="${esc(tcT("tcDevRename"))}"><button class="btn primary xs" data-act="tc-dev-rename-save" data-id="${esc(id)}" data-hw="${esc(d.hw)}" title="${esc(appT("m858"))}">${icon("check", 12)}</button><button class="btn ghost xs" data-act="tc-dev-rename-cancel" title="${esc(appT("m063"))}">${icon("x", 12)}</button>`
+      : `<span class="tc-dev-name">${esc(label)}</span><span class="sub mono">${esc(d.hw)}</span>${d.present ? "" : badge(tcT("tcDevAbsent"), "muted")}${TC.admin ? `<button class="btn ghost xs" data-act="tc-dev-rename" data-id="${esc(id)}" data-hw="${esc(d.hw)}" title="${esc(tcT("tcDevRename"))}">${icon("edit", 12)}</button>` : ""}`;
+    return `<div class="tc-dev ${d.enabled ? "on" : ""} ${d.present ? "" : "absent"}"><label class="switch sm" title="${esc(tcT("tcDevActivate"))}"><input type="checkbox" data-change="tc-dev-act" data-id="${esc(id)}" data-hw="${esc(d.hw)}" ${d.enabled ? "checked" : ""} ${TC.admin ? "" : "disabled"} aria-label="${esc(tcT("tcDevActivate"))} ${esc(label)}"><span class="track"></span></label>${body}</div>`;
+  }).join("");
+  return `<tr class="tc-dev-row"><td colspan="7"><div class="tc-devs"><span class="lbl">${esc(tcT("tcPlayDevices"))}</span>${cells || `<span class="sub">${esc(tcT("tcNoDevs"))}</span>`}</div></td></tr>`;
 }
 function paintNodeTable() {
   const el = $("#nd-table"); if (!el) return;
@@ -292,9 +309,7 @@ function nodeDrawerBody(n, apps) {
     return html + (apps?.length ? `<div class="tbl-wrap"><table class="tbl tc-services"><thead><tr><th>${esc(tcT("tcReportedApp"))}</th><th>${esc(tcT("tcVersion"))}</th><th>${esc(tcT("tcSource"))}</th><th>${esc(tcT("tcCurrentStatus"))}</th></tr></thead><tbody>${apps.map(a => `<tr><td>${esc(a.app_id)}</td><td>${esc(a.version || tcT("unknown"))}</td><td>${tcSourceBadge(a.source)}</td><td>${esc(tcT("unknown"))}</td></tr>`).join("")}</tbody></table></div>` : empty("box", tcT(apps === null ? "tcHistoryFailed" : "tcNoHistory"), "", true));
   }
   if (TC.detailTab === "maintenance") {
-    const p = S.nodePlay[id] || {}, { devs, cur, names } = nodePlayDevs(p);
-    const arbitration = n.dac_arbitration === "auto" ? tcT("tcAuto") : n.dac_arbitration === "manual" ? tcT("tcManual") : n.dac_arbitration || tcT("unknown");
-    return html + `<div class="d-sec"><span class="lbl">${esc(tcT("tcDevicesProtection"))}</span><div class="kv">${kvRow(tcT("tcDACArbitration"), esc(arbitration))}${kvRow(tcT("tcDACDevice"), esc(n.dac_device ? [names.get(n.dac_device), n.dac_device].filter(Boolean).join(" · ") : tcT("notReported")))}${kvRow(tcT("tcDACHolder"), n.dac_holder_pid ? `PID ${Number(n.dac_holder_pid)}` : esc(tcT("tcNoHolder")))}${kvRow(tcT("tcProtection"), n.play_protect ? badge(tcT("tcEnabled"), "ok") : badge(tcT("tcDisabled"), "warn"))}</div><label class="field mt12">${esc(tcT("tcALSAOutput"))}<select id="node-play-dev" class="inp mono" data-change="node-device" data-id="${esc(id)}" ${p.connected && TC.admin ? "" : "disabled"}>${nodePlayOpts(devs, cur, names)}</select></label><p class="hint">${esc(tcT("tcOutputNote"))}</p><button class="btn ghost sm" data-act="node-config" data-id="${esc(id)}">${esc(tcT("tcEditConfig"))}</button></div>
+    return html + `<div class="d-sec"><span class="lbl">${esc(tcT("tcDevicesProtection"))}</span><div class="kv">${kvRow(tcT("tcDACHolder"), n.dac_holder_pid ? `PID ${Number(n.dac_holder_pid)}` : esc(tcT("tcNoHolder")))}${kvRow(tcT("tcProtection"), n.play_protect ? badge(tcT("tcEnabled"), "ok") : badge(tcT("tcDisabled"), "warn"))}</div><p class="hint">${esc(tcT("tcDevsManagedNote"))}</p><button class="btn ghost sm" data-act="node-config" data-id="${esc(id)}">${esc(tcT("tcEditConfig"))}</button></div>
       <div class="d-sec"><span class="lbl">${esc(tcT("tcSystemMaintenance"))}</span><div class="kv">${kvRow(tcT("tcAutoOSUpdate"), esc(tcT(n.auto_os_update ? "tcOn" : "tcOff")))}${kvRow(tcT("tcOSWindow"), esc(n.os_window || tcT("tcNotSet")))}${kvRow(tcT("tcAgentVersion"), esc(n.agent_version || tcT("unknown")))}${kvRow(tcT("tcTargetVersion"), esc(tcTargetVersion() || tcT("unknown")))}${kvRow(tcT("tcBuildFlavor"), esc(tcFlavorLabel(n)))}</div><p class="hint">${esc(tcT("tcUpdatesNote"))}</p><div class="acts">${tcUpgradeButton(n, "sm")}<button class="btn ghost sm" data-act="node-os" data-id="${esc(id)}">${esc(tcT("tcOSPackages"))}</button><button class="btn ghost sm" data-act="node-net" data-id="${esc(id)}">${esc(tcT("tcNetwork"))}</button></div></div>
       <details class="tc-advanced-details"><summary>${esc(tcT("tcAdvancedActions"))}</summary><p class="hint">${esc(tcT("tcNativeNote"))}</p><div class="acts"><button class="btn ghost sm" data-act="node-console" data-id="${esc(id)}">${esc(tcT("tcNativeConsole"))}</button><button class="btn ghost sm" data-act="${n.authorized ? "node-revoke" : "node-auth"}" data-id="${esc(id)}">${esc(tcT(n.authorized ? "tcRevoke" : "tcAuthorize"))}</button></div></details>`;
   }
@@ -375,6 +390,20 @@ Object.assign(ACT, {
   "tc-task-open": ds => openTerminalTask(ds.kind, ds.id),
   "tc-advanced": () => openTerminalAdvanced(),
   "tc-detail-tab": ds => { if (TC.detail && ["overview", "services", "maintenance"].includes(ds.tab)) { TC.detailTab = ds.tab; setDrawerBody(nodeDrawerBody(TC.detail, S.nodeApps[TC.detail.node_id])); } },
+  "tc-dev-rename": ds => {
+    const d = (S.nodeDevs[ds.id] || []).find(x => x.hw === ds.hw);
+    TC.devEdit = { id: ds.id, hw: ds.hw, value: d?.name || "" };
+    paintNodeTable();
+  },
+  "tc-dev-rename-cancel": () => { TC.devEdit = null; paintNodeTable(); },
+  "tc-dev-rename-save": async (ds, el) => {
+    const input = el.closest(".tc-dev")?.querySelector(".tc-dev-input");
+    const name = input ? input.value.trim() : "";
+    await api("PATCH", `/nodes/${enc(ds.id)}/devices/${enc(ds.hw)}`, { name });
+    TC.devEdit = null;
+    toast(tcT("tcDevRenamed"), "ok");
+    await refreshTerminalCenter();
+  },
   "tc-player": ds => { closeDrawer(); return openPlayer(ds.id); }
 });
 CHG["tc-task-filter"] = (el, ds) => { const key = { node: "taskNode", type: "taskType", state: "taskState" }[ds.key]; if (key) { TC[key] = el.value; TC.page = 1; paintTerminalTasks(); } };

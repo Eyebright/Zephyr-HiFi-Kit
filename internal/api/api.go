@@ -115,6 +115,7 @@ func (a *API) route(pattern string, h http.HandlerFunc) {
 		"POST /api/v1/nodes/{id}/authorize", "POST /api/v1/nodes/{id}/revoke",
 		"POST /api/v1/nodes/{id}/commands", "POST /api/v1/nodes/{id}/apt-sources/apply",
 		"POST /api/v1/nodes/{id}/upgrade", "POST /api/v1/nodes/{id}/server-endpoint",
+		"POST /api/v1/nodes/{id}/devices/{hw}/activate", "PATCH /api/v1/nodes/{id}/devices/{hw}",
 		"/api/v1/nodes/{id}/console/{rest...}", "/api/v1/nodes/{id}/local/api/{rest...}",
 		"POST /api/v1/boms", "POST /api/v1/boms/import", "POST /api/v1/boms/{id}/versions/{ver}/publish", "POST /api/v1/boms/{id}/rollback",
 		"POST /api/v1/jobs", "POST /api/v1/jobs/{id}/advance",
@@ -197,6 +198,8 @@ func (a *API) routes() {
 	a.route("POST /api/v1/nodes/{id}/snapshot", a.snapshot)
 	a.route("POST /api/v1/nodes/{id}/commands", a.createCommand)
 	a.route("POST /api/v1/nodes/{id}/upgrade", a.nodeUpgrade)
+	a.route("POST /api/v1/nodes/{id}/devices/{hw}/activate", a.nodeDeviceActivate)
+	a.route("PATCH /api/v1/nodes/{id}/devices/{hw}", a.nodeDeviceRename)
 	a.route("POST /api/v1/nodes/{id}/apt-sources/apply", a.applyAptSources)
 	// GET node sub-resources are dispatched through one single-segment wildcard
 	// instead of separate literal routes: a literal "/nodes/token/{token}" would
@@ -495,6 +498,8 @@ func serviceErrorCode(err error, fallback string) string {
 		return "zat_not_connected"
 	case errors.Is(err, zatserver.ErrUnknownDevice):
 		return "unknown_audio_device"
+	case errors.Is(err, zatserver.ErrDeviceNotActivated):
+		return "device_not_activated"
 	case errors.Is(err, zatserver.ErrNoSession):
 		return "no_playback_session"
 	case errors.Is(err, zatserver.ErrQueueEmpty):

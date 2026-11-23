@@ -301,6 +301,8 @@ func (a *API) setNodeDevice(w http.ResponseWriter, r *http.Request) {
 			writeServiceError(w, http.StatusConflict, err)
 		case errors.Is(err, zatserver.ErrUnknownDevice):
 			writeServiceError(w, http.StatusBadRequest, err)
+		case errors.Is(err, zatserver.ErrDeviceNotActivated):
+			writeServiceError(w, http.StatusConflict, err)
 		default:
 			fail(w, err)
 		}

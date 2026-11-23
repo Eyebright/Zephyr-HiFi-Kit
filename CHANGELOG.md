@@ -3,6 +3,18 @@
 和风HiFi音乐播放套件。最新版本在前，版本号与 Git 标签、GitHub Releases 一致。
 Newest first; version numbers match Git tags and GitHub Releases.
 
+## 0.67 — 2026-11-23
+
+**中文**
+- 播放设备激活制：终端列表行内新增默认展开的「播放设备」条，列出终端上报的全部输出；管理员可激活并自定义命名（如「客厅 DAC」），登记持久化在服务端；升级时自动把当前偏好设备迁移为已激活，播放不中断。
+- 播放控制台设备选择改造：播放器弹层只列已激活的播放设备（自定义名优先、未上报禁用）；移除原始 ALSA 输出选择与配置弹窗的「DAC 仲裁 / DAC 设备」控件，仲裁保留服务端自动运行。
+- 服务端边界：SetDevice 拒绝未激活设备；设备激活与命名接口管理员门禁并入审计。
+
+**English**
+- Activated playback devices: each terminal list row gains an always-expanded inline device strip listing every reported output; admins activate and custom-name them (e.g. "Living DAC"), persisted server-side; upgrades migrate the current preferred device as activated so playback never breaks.
+- Player device picker rework: the player popover lists only activated playback devices (custom names first, absent ones disabled); the raw ALSA output picker and the config modal's DAC arbitration/device controls are removed, arbitration keeps running automatically server-side.
+- Server boundary: SetDevice rejects unactivated devices; activation and naming endpoints are admin-gated and audited.
+
 ## 0.66 — 2026-11-23
 
 **中文**

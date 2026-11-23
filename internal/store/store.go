@@ -543,6 +543,15 @@ CREATE TABLE IF NOT EXISTS node_sleep_timer (
   stop_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS node_devices (
+  node_id TEXT NOT NULL,
+  hw      TEXT NOT NULL,
+  name    TEXT NOT NULL DEFAULT '',
+  enabled INTEGER NOT NULL DEFAULT 0,
+  sort    INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (node_id, hw)
+);
+
 CREATE TABLE IF NOT EXISTS play_history (
   id         TEXT PRIMARY KEY,
   node_id    TEXT NOT NULL,

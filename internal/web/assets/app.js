@@ -392,7 +392,7 @@ const S = {
   view: "overview", search: "",
   health: null, metrics: null,
   nodes: [], apps: [], boms: [], pubBoms: [], jobs: [], rollouts: [], alerts: [], keys: [], license: null, audit: [],
-  nodeApps: {}, nodeOs: {}, nodePlay: {}, nodeQueue: {}, nodeSvc: {},
+  nodeApps: {}, nodeOs: {}, nodePlay: {}, nodeQueue: {}, nodeSvc: {}, nodeDevs: {},
   nodeFilter: "all", nodeSort: { key: "alias", dir: 1 }, sel: new Set(),
   alertFilter: "open", auditFilter: "all",
   mounts: [], tracks: [], libMount: "", play: {},
@@ -759,17 +759,18 @@ function paintDeviceMenu(prefix, p, connected) {
   const label = document.getElementById(`${prefix}-dev-label`);
   if (!wrap || !menu) return;
   wrap.dataset.disabled = connected ? "0" : "1";
-  const { devs, cur, names } = nodePlayDevs(p || {});
+  const { devs, cur, names, absent } = nodePlayDevs(p || {});
   const curLabel = cur === "default" ? appT("m262") : names.get(cur) ? names.get(cur) + " · " + cur : cur;
   if (label) { if (label.textContent !== curLabel) label.textContent = curLabel; }
   const sum = wrap.querySelector("summary");
   if (sum && sum.title !== curLabel) { sum.title = curLabel; sum.setAttribute("aria-label", appT("m166") + "：" + curLabel); }
-  const sig = devs.join("|") + "#" + cur;
+  const sig = devs.join("|") + "#" + cur + "#" + [...absent].join(",");
   if (menu.dataset.sig === sig) return;
   menu.dataset.sig = sig;
   menu.innerHTML = devs.map(d => {
-    const nm = d === "default" ? appT("m262") : names.get(d) ? names.get(d) + " · " + d : d;
-    return `<button class="pop-item ${d === cur ? "active" : ""}" role="menuitemradio" aria-checked="${d === cur}" data-act="${prefix}-device-pick" data-dev="${esc(d)}">${icon("speaker", 13)}<span class="truncate">${esc(nm)}</span>${d === cur ? icon("check", 13) : ""}</button>`;
+    const off = absent.has(d);
+    const nm = (d === "default" ? appT("m262") : names.get(d) ? names.get(d) + " · " + d : d) + (off ? " · " + appT("m967") : "");
+    return `<button class="pop-item ${d === cur ? "active" : ""}" role="menuitemradio" aria-checked="${d === cur}" data-act="${prefix}-device-pick" data-dev="${esc(d)}" ${off ? "disabled" : ""}>${icon("speaker", 13)}<span class="truncate">${esc(nm)}</span>${d === cur ? icon("check", 13) : ""}</button>`;
   }).join("");
 }
 function playerBarShell() {
@@ -1340,19 +1341,29 @@ function tile(ic, name, sub, act, color, id) {
 }
 const CMD_ZH = { get "os-check"() { return appT("m256"); }, get "os-upgrade"() { return appT("m257"); }, get netdiag() { return appT("m258"); }, get "apt-install"() { return appT("m259"); }, get "apt-source"() { return appT("m260"); }, get "agent-upgrade"() { return appT("m261"); } };
 
-/* ---- shared ALSA device picker (homepage and full player) ---- */
+/* ---- shared playback device picker (homepage and full player) ---- */
 function nodePlayDevs(p) {
+  const curated = Array.isArray(p.play_devices) ? p.play_devices : null;
+  if (curated) {
+    const devs = curated.map(d => d.hw);
+    const cur = p.pref_device || p.configured_device || "default";
+    if (!devs.includes(cur)) devs.push(cur);
+    const names = new Map(curated.map(d => [d.hw, d.name]));
+    const absent = new Set(curated.filter(d => !d.present).map(d => d.hw));
+    return { devs, cur, names, absent };
+  }
   const devs = Array.isArray(p.devices) ? p.devices.slice() : [];
   if (!devs.includes("default")) devs.unshift("default");
   const cur = p.pref_device || p.configured_device || "default";
   if (!devs.includes(cur)) devs.push(cur);
   const names = new Map((Array.isArray(p.device_info) ? p.device_info : []).filter(d => d && d.hw && d.name).map(d => [d.hw, d.name]));
-  return { devs, cur, names };
+  return { devs, cur, names, absent: new Set() };
 }
-function nodePlayOpts(devs, cur, names) {
+function nodePlayOpts(devs, cur, names, absent) {
   return devs.map(d => {
     const label = d === "default" ? appT("m262") : names?.get(d) ? names.get(d) + " · " + d : d;
-    return `<option value="${esc(d)}" ${d === cur ? "selected" : ""}>${esc(label)}</option>`;
+    const off = absent?.has(d) ? " disabled" : "";
+    return `<option value="${esc(d)}"${d === cur ? " selected" : ""}${off}>${esc(label)}${off ? " · " + esc(appT("m967")) : ""}</option>`;
   }).join("");
 }
 
@@ -1642,19 +1653,7 @@ async function openConfig(id) {
   CFG.play = play;
   if (!$(".modal") || CFG.id !== id) return;
   setModalBody(cfgBody()); setModalFoot(cfgFoot());
-  paintCfgDrift(); paintCfgDacHint(); paintCfgSeat();
-}
-function cfgDacOptions(cur) {
-  const p = CFG.play || {};
-  const devs = Array.isArray(p.devices) ? p.devices.slice() : [];
-  if (!devs.includes("default")) devs.unshift("default");
-  const names = new Map((Array.isArray(p.device_info) ? p.device_info : []).filter(d => d && d.hw && d.name).map(d => [d.hw, d.name]));
-  if (cur && !devs.includes(cur)) devs.push(cur);
-  const sel = cur || "default";
-  return devs.map(d => {
-    const label = d === "default" ? appT("m262") : names.get(d) ? names.get(d) + " · " + d : d;
-    return `<option value="${esc(d)}" ${d === sel ? "selected" : ""}>${esc(label)}</option>`;
-  }).join("");
+  paintCfgDrift(); paintCfgSeat();
 }
 function cfgBody() {
   const n = CFG.node;
@@ -1682,18 +1681,6 @@ function cfgBody() {
   <div class="m-sec"><span class="lbl">${appH("m321")}</span>
     <div class="field"><select id="cfg-bom" class="inp" data-change="cfg-bom">${bomOpts.join("")}</select></div>
     <div id="cfg-drift"></div>
-  </div>
-  <div class="m-sec"><span class="lbl">${appH("m322")}</span>
-    <div class="f-row">
-      <div class="field"><label>${appH("m323")}</label>
-        <select id="cfg-dac" class="inp" data-change="cfg-dac">
-          <option value="auto" ${n.dac_arbitration !== "manual" ? "selected" : ""}>${appH("m324")}</option>
-          <option value="manual" ${n.dac_arbitration === "manual" ? "selected" : ""}>${appH("m325")}</option>
-        </select>
-      </div>
-      <div class="field"><label>${appH("m326")}</label><select id="cfg-dacdev" class="inp mono">${cfgDacOptions(n.dac_device || "")}</select><div class="f-hint">${appH("m185")}</div></div>
-    </div>
-    <div id="cfg-dac-hint" class="f-hint"></div>
   </div>
   <div class="m-sec"><span class="lbl">${appH("m328")}</span>
     <div class="f-row mb12">
@@ -1744,12 +1731,6 @@ function paintCfgDrift() {
   }
   el.innerHTML = h;
 }
-function paintCfgDacHint() {
-  const el = $("#cfg-dac-hint"); if (!el) return;
-  const manual = val("cfg-dac") === "manual";
-  const dev = $("#cfg-dacdev"); if (dev) dev.disabled = !manual;
-  el.textContent = manual ? appT("m351") : appT("m352");
-}
 function paintCfgSeat() {
   const el = $("#cfg-seat"); if (!el) return;
   const n = CFG.node, lic = CFG.license;
@@ -1794,8 +1775,6 @@ async function cfgSave() {
   const body = {
     alias, group: val("cfg-group").trim(), note: val("cfg-note").trim(),
     offline_after: CFG.offline, bom_id, bom_version,
-    dac_arbitration: val("cfg-dac") === "manual" ? "manual" : "auto",
-    dac_device: val("cfg-dacdev").trim(),
     play_protect: checked("cfg-pp"), auto_os_update: checked("cfg-aos"), os_window: val("cfg-win").trim()
   };
   CFG.busy = true; setModalFoot(cfgFoot());
@@ -4347,12 +4326,12 @@ const CHG = {
   "os-pkg": (el, ds) => { if (el.checked) OSC.sel.add(ds.name); else OSC.sel.delete(ds.name); repaintOs(); },
   "os-pkg-all": el => { const pkgs = (OSC.state && OSC.state.packages) || []; pkgs.forEach(p => { if (el.checked) OSC.sel.add(p.name); else OSC.sel.delete(p.name); }); repaintOs(); },
   "cfg-bom": () => paintCfgDrift(),
-  "cfg-dac": () => paintCfgDacHint(),
-  "node-device": async (el, ds) => {
-    await api("POST", `/nodes/${enc(ds.id)}/device`, { device: el.value });
-    toast(appT("m187"), "ok");
-    try { S.nodePlay[ds.id] = await api("GET", `/nodes/${enc(ds.id)}/play`); } catch (e) { /* aux */ }
-    paintNodePlay(ds.id);
+  "tc-dev-act": async (el, ds) => {
+    try {
+      await api("POST", `/nodes/${enc(ds.id)}/devices/${enc(ds.hw)}/activate`, { enabled: el.checked });
+      await refreshTerminalCenter();
+      if (typeof refreshPlayerBar === "function") await refreshPlayerBar();
+    } catch (e) { el.checked = !el.checked; toast(e.message, "err"); }
   },
   "ply-seek": async el => {
     PLY.dragging = false;

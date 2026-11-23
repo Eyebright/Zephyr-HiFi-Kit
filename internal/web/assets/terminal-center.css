@@ -50,3 +50,16 @@
 }
 
 
+
+/* Inline playback-device registry under each terminal row. */
+.tc-dev-row > td { padding: 0 12px 10px; border-top: 0; }
+.tc-devs { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 10px; border: 1px dashed var(--line); border-radius: var(--r-sm); background: rgba(var(--panel-rgb),.35); }
+.tc-devs > .lbl { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.tc-dev { display: flex; align-items: center; gap: 7px; padding: 4px 8px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--card); }
+.tc-dev.on { border-color: rgba(var(--amber-rgb),.4); }
+.tc-dev.absent { opacity: .65; }
+.tc-dev-name { font-size: 12.5px; font-weight: 600; }
+.tc-dev-input { width: 140px; }
+.switch.sm .track { width: 30px; height: 17px; }
+.switch.sm .track::after { width: 11px; height: 11px; }
+.switch.sm input:checked + .track::after { left: 15px; }

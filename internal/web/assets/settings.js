@@ -84,7 +84,7 @@ function settingsRequireAdmin() {
   return false;
 }
 function settingsLegacyManage(el) {
-  return SETTINGS_LEGACY_MANAGE.has(el.dataset.act) || SETTINGS_LEGACY_MANAGE.has(el.dataset.change) || ["ver-lc", "node-device", "ply-device"].includes(el.dataset.change);
+  return SETTINGS_LEGACY_MANAGE.has(el.dataset.act) || SETTINGS_LEGACY_MANAGE.has(el.dataset.change) || ["ver-lc", "tc-dev-act"].includes(el.dataset.change);
 }
 function settingsApplyAccess() {
   if (!settingsHere()) return;
