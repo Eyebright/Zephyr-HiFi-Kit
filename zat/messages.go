@@ -123,6 +123,10 @@ type Status struct {
 	PrefDevice   string `json:"pref_device,omitempty"`
 	ClockPPM     int    `json:"clock_ppm"`
 	DacHolderPID int    `json:"dac_holder_pid"`
+	// Optional hotplug refresh: present only when the endpoint's playback
+	// device list changed since HELLO, so older sources simply ignore it.
+	ALSADevices    []string     `json:"alsa_devices,omitempty"`
+	ALSADeviceInfo []ALSADevice `json:"alsa_device_info,omitempty"`
 }
 
 // TrackMeta carries now-playing metadata source→sink.

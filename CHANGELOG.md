@@ -3,6 +3,18 @@
 和风HiFi音乐播放套件。最新版本在前，版本号与 Git 标签、GitHub Releases 一致。
 Newest first; version numbers match Git tags and GitHub Releases.
 
+## 0.66 — 2026-11-23
+
+**中文**
+- 设备热插拔同步：ZAT STATUS 新增可选设备列表字段；终端以 /proc/asound/cards 探测声卡变化并随心跳上报，DAC 插拔或开关机后控制台设备列表秒级刷新，无需重连；旧终端不受影响（需终端 Agent 0.66）。
+- 设备名称展示：终端抽屉「设备与维护」的 ALSA 输出选项与 DAC 设备行显示终端上报名称（如 AUDIO · hw:3,0），不再只有 hw 编号。
+- 设置页排版：修复音乐文件夹 / 备份与维护 / 关于我们各卡片黏连无间距的问题，分区内卡片间距统一 16px。
+
+**English**
+- Hotplug sync: ZAT STATUS carries optional ALSA device-list fields; the agent probes /proc/asound/cards for card changes and reports them with its heartbeat, so the console device picker refreshes within seconds of a DAC plug/unplug or power cycle without reconnecting. Older agents are unaffected (requires terminal agent 0.66).
+- Device names: the terminal drawer's Devices & Maintenance tab shows reported ALSA names in the output picker and the DAC device row (e.g. AUDIO · hw:3,0) instead of bare hw ids.
+- Settings spacing: fixed cards sticking together in Music Folders / Backup & Maintenance / About; card spacing within each section is now a uniform 16px.
+
 ## 0.65 — 2026-11-23
 
 **中文**

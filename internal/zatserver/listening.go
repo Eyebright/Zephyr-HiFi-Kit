@@ -12,6 +12,12 @@ import (
 func (e *endpoint) acceptStatus(st zat.Status, now time.Time) {
 	e.mu.Lock()
 	e.alsaDevice, e.prefDevice, e.underruns = st.ALSADevice, st.PrefDevice, st.Underruns
+	if len(st.ALSADevices) > 0 {
+		e.caps.ALSADevices = st.ALSADevices
+	}
+	if len(st.ALSADeviceInfo) > 0 {
+		e.caps.ALSADeviceInfo = st.ALSADeviceInfo
+	}
 	ps := e.play
 	valid := ps != nil && st.SessionID == ps.sessionID && ps.ctx.Err() == nil
 	if valid {

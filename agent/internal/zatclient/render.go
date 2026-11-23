@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"hifihub/agent/internal/audio"
 	"hifihub/agent/internal/player"
 	"hifihub/zat"
 )
@@ -16,7 +17,12 @@ import (
 const (
 	pcmQueueChunks = 8 // bounded PCM queue: full queue backpressures the source
 	statusEvery    = 500 * time.Millisecond
+	// Fallback re-enumeration when /proc/asound/cards is unavailable.
+	devRefreshEvery = 60 * time.Second
 )
+
+// cardsSignature is a seam for tests; production reads procfs.
+var cardsSignature = audio.CardsSignature
 
 type audioChunk struct {
 	pcm     []byte
@@ -70,6 +76,10 @@ type session struct {
 	frameBytes  int
 	prebufferMS int
 	bitPerfect  bool
+
+	// Hotplug reporting state, owned by statusLoop.
+	cardsSig   string
+	devRefresh time.Time
 
 	pcmCh      chan audioChunk
 	ctrlCh     chan renderCmd
@@ -455,6 +465,24 @@ func (s *session) stopPlayback() {
 	s.publish()
 }
 
+// deviceReport re-enumerates ALSA outputs when the sound card list changes
+// (DAC hotplug) so STATUS refreshes the source's device picker without a
+// reconnect. Returns nil when nothing changed.
+func (s *session) deviceReport(now time.Time) ([]string, []zat.ALSADevice) {
+	sig := cardsSignature()
+	if sig == s.cardsSig && !s.devRefresh.IsZero() && (sig != "" || now.Sub(s.devRefresh) < devRefreshEvery) {
+		return nil, nil
+	}
+	s.cardsSig, s.devRefresh = sig, now
+	var hws []string
+	var info []zat.ALSADevice
+	for _, d := range s.c.devices() {
+		hws = append(hws, d.HW)
+		info = append(info, d)
+	}
+	return hws, info
+}
+
 func (s *session) statusLoop(ctx context.Context) {
 	t := time.NewTicker(statusEvery)
 	defer t.Stop()
@@ -463,12 +491,14 @@ func (s *session) statusLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
+			hws, info := s.deviceReport(time.Now())
 			s.mu.Lock()
 			sid := s.sessionID
 			st := zat.Status{
 				SessionID: sid, State: string(s.state), PTS: s.pts,
 				BufferMS: s.bufferMSLocked(), ALSADevice: s.device,
 				PrefDevice: s.c.PreferredDevice(),
+				ALSADevices: hws, ALSADeviceInfo: info,
 			}
 			s.mu.Unlock()
 			// Report even before the first SETUP so the source can monitor the

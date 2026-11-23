@@ -55,6 +55,16 @@ func ParseAplayL(out string) []ALSADevice {
 	return devs
 }
 
+// CardsSignature returns the raw /proc/asound/cards content, a cheap hotplug
+// change probe; empty when procfs is unavailable.
+func CardsSignature() string {
+	b, err := os.ReadFile("/proc/asound/cards")
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
 // ListDevices runs `aplay -l` and parses the result.
 func ListDevices(run systemctrl.Runner) ([]ALSADevice, error) {
 	out, err := run.Run(context.Background(), "aplay", "-l")

@@ -211,7 +211,7 @@ type endpoint struct {
 	trackID    string
 	title      string
 	meta       zat.TrackMeta
-	// caps is immutable after HELLO; the rest track the latest STATUS report.
+	// caps is set at HELLO; STATUS may refresh only the ALSA device lists.
 	caps       zat.Caps
 	alsaDevice string
 	prefDevice string
@@ -1227,13 +1227,13 @@ func (s *Server) Status(nodeID string) (PlayStatus, error) {
 		st.SessionID = e.play.sessionID
 		st.Playing = e.state == zat.StatePlaying
 	}
-	e.mu.Unlock()
 	if len(e.caps.ALSADevices) > 0 {
 		st.Devices = e.caps.ALSADevices
 	}
 	if len(e.caps.ALSADeviceInfo) > 0 {
 		st.DeviceInfo = e.caps.ALSADeviceInfo
 	}
+	e.mu.Unlock()
 	return st, nil
 }
 

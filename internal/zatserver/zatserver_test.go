@@ -477,3 +477,57 @@ func TestSetDeviceAndStatusReport(t *testing.T) {
 		t.Fatalf("expected ErrNotConnected after disconnect, got %v", err)
 	}
 }
+
+func TestStatusRefreshesHotpluggedDevices(t *testing.T) {
+	h := setup(t)
+	nodeID, secret := h.register(t, "ep-hotplug", true)
+	conn, err := net.Dial("tcp", h.srv.Addr())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
+	hello := zat.Hello{NodeID: nodeID, SecretSHA256: hash(secret), AgentVersion: "test",
+		Caps: zat.Caps{MaxChannels: 2, ALSADevices: []string{"hw:0,0"},
+			ALSADeviceInfo: []zat.ALSADevice{{HW: "hw:0,0", Name: "b1"}}}}
+	f, _ := zat.ControlFrame(zat.TypeHello, 1, hello)
+	if err := zat.WriteFrame(conn, f); err != nil {
+		t.Fatal(err)
+	}
+	if ack, err := zat.ReadFrame(conn); err != nil || ack.Type != zat.TypeHelloAck {
+		t.Fatalf("hello ack: %v %s", err, ack.Type)
+	}
+
+	stf, _ := zat.ControlFrame(zat.TypeStatus, 2, zat.Status{State: "authenticated",
+		ALSADevices:    []string{"hw:0,0", "hw:3,0"},
+		ALSADeviceInfo: []zat.ALSADevice{{HW: "hw:0,0", Name: "b1"}, {HW: "hw:3,0", Name: "AUDIO"}}})
+	if err := zat.WriteFrame(conn, stf); err != nil {
+		t.Fatal(err)
+	}
+	var st PlayStatus
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		st, _ = h.srv.Status(nodeID)
+		if len(st.Devices) == 2 && st.Devices[1] == "hw:3,0" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if len(st.Devices) != 2 || st.Devices[1] != "hw:3,0" || len(st.DeviceInfo) != 2 || st.DeviceInfo[1].Name != "AUDIO" {
+		t.Fatalf("hotplugged devices not adopted from STATUS: %+v", st)
+	}
+	if err := h.srv.SetDevice(nodeID, "hw:3,0"); err != nil {
+		t.Fatalf("SetDevice on hotplugged device: %v", err)
+	}
+
+	// A STATUS without device fields must keep the refreshed list.
+	stf, _ = zat.ControlFrame(zat.TypeStatus, 3, zat.Status{State: "authenticated", ALSADevice: "hw:3,0"})
+	if err := zat.WriteFrame(conn, stf); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(100 * time.Millisecond)
+	st, _ = h.srv.Status(nodeID)
+	if len(st.Devices) != 2 || st.Devices[1] != "hw:3,0" {
+		t.Fatalf("plain STATUS cleared device list: %+v", st)
+	}
+}

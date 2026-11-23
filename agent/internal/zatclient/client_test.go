@@ -838,3 +838,40 @@ func TestDoPSetupLocksVolume(t *testing.T) {
 		t.Fatal("client did not finish")
 	}
 }
+
+func TestDeviceReportTracksHotplug(t *testing.T) {
+	old := cardsSignature
+	defer func() { cardsSignature = old }()
+	sig := "cards-v1"
+	cardsSignature = func() string { return sig }
+	devs := []zat.ALSADevice{{HW: "hw:0,0", Name: "b1"}}
+	c := New("127.0.0.1:0", "test", func() (string, string) { return "", "" }, func() []zat.ALSADevice { return devs })
+	s := newSession(c, nil, "n")
+	now := time.Now()
+	hws, info := s.deviceReport(now)
+	if len(hws) != 1 || hws[0] != "hw:0,0" || len(info) != 1 || info[0].Name != "b1" {
+		t.Fatalf("first report wrong: %v %v", hws, info)
+	}
+	if hws, _ := s.deviceReport(now.Add(time.Second)); hws != nil {
+		t.Fatalf("unchanged card list must not re-report: %v", hws)
+	}
+	sig = "cards-v2"
+	devs = append(devs, zat.ALSADevice{HW: "hw:3,0", Name: "AUDIO"})
+	hws, info = s.deviceReport(now.Add(2 * time.Second))
+	if len(hws) != 2 || hws[1] != "hw:3,0" || len(info) != 2 || info[1].Name != "AUDIO" {
+		t.Fatalf("hotplug not reported: %v %v", hws, info)
+	}
+
+	// Without procfs the signature stays empty; fall back to periodic refresh.
+	sig = ""
+	s2 := newSession(c, nil, "n2")
+	if hws, _ := s2.deviceReport(now); len(hws) != 2 {
+		t.Fatalf("first report without procfs: %v", hws)
+	}
+	if hws, _ := s2.deviceReport(now.Add(10 * time.Second)); hws != nil {
+		t.Fatalf("fallback refreshed too early: %v", hws)
+	}
+	if hws, _ := s2.deviceReport(now.Add(devRefreshEvery + time.Second)); len(hws) != 2 {
+		t.Fatalf("fallback refresh missing: %v", hws)
+	}
+}

@@ -259,6 +259,14 @@ test("services drawer shows only installed services and separates source and run
   assert.doesNotMatch(html, /未安装项目/);
 });
 
+test("maintenance drawer labels ALSA devices with reported names", () => {
+  const h = harness();
+  h.run(`TC.detailTab='maintenance'; S.nodePlay.a={connected:true, devices:["hw:2,0"], device_info:[{hw:"hw:2,0", name:"Headphones"}], pref_device:"hw:2,0"}`);
+  const html = h.run("nodeDrawerBody({node_id:'a',status:'online',dac_device:'hw:2,0'}, [])");
+  assert.match(html, /<option value="hw:2,0" selected>Headphones · hw:2,0<\/option>/);
+  assert.match(html, /Headphones · hw:2,0/);
+});
+
 test("terminal detail reads playback summary but never a duplicate queue", async () => {
   const h = harness(); h.nodes = [h.node("a")];
   await h.run("openNodeDrawer('a')");

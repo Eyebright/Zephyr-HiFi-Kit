@@ -188,6 +188,9 @@ TCP 保证有序可靠，简化垂直切片）。v0.2 再拆分控制/音频通�
 { "session_id": "s-123", "state": "playing", "pts": 4800000,
   "buffer_ms": 240, "underruns": 0, "alsa_device": "hw:1,0",
   "pref_device": "hw:1,0", "clock_ppm": 0, "dac_holder_pid": 4242 }
+// 热插拔刷新（可选，仅声卡列表变化时携带；旧源忽略未知字段）：
+// { …, "alsa_devices": ["hw:0,0","hw:3,0"],
+//   "alsa_device_info": [{"hw":"hw:0,0","name":"b1"},{"hw":"hw:3,0","name":"AUDIO"}] }
 
 // SET_DEVICE (source→sink；与终端本地控制台设备选择同语义，下次 SETUP 生效)
 { "device": "hw:1,0" }
