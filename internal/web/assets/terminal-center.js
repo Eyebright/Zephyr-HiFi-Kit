@@ -23,8 +23,7 @@ function tcRolloutLabel(state) {
 function cleanupTerminalCenter() { TC.epoch++; TC.busy = null; TC.loading = true; stopPoll("tc:upgrades"); }
 function shellNodes() {
   return `<section id="terminal-center">
-    <div class="tc-heading"><div><h1>${esc(tcT("tcTitle"))}</h1><p class="hint">${esc(tcT("tcSubtitle"))}</p></div>
-      <button class="btn ghost sm" data-act="tc-advanced">${icon("sliders", 15)} ${esc(tcT("tcAdvanced"))}</button></div>
+    <div class="page-head"><div><h1>${esc(tcT("tcTitle"))}</h1><p class="ph-sub">${esc(tcT("tcSubtitle"))}</p></div><div class="ph-actions"><button class="btn ghost sm" data-act="tc-advanced">${icon("sliders", 15)} ${esc(tcT("tcAdvanced"))}</button></div></div>
     <nav class="tc-tabs" aria-label="${esc(tcT("tcWorkspace"))}">${[["nodes", tcT("node")], ["tasks", tcT("taskRecords")]].map(([tab, name]) => `<button class="btn ghost ${TC.tab === tab ? "active" : ""}" data-act="tc-tab" data-tab="${tab}" aria-pressed="${TC.tab === tab}">${esc(name)}</button>`).join("")}</nav>
     <div id="tc-access"></div><div id="tc-errors" role="status"></div><div id="tc-workspace">${tcWorkspace()}</div>
   </section>`;
@@ -32,14 +31,14 @@ function shellNodes() {
 function terminalCenterLanguageChanged() {
   const root = $("#terminal-center"); if (!root) return;
   const next = document.createElement("div"); next.innerHTML = shellNodes();
-  for (const selector of [".tc-heading", ".tc-tabs"]) root.querySelector(selector)?.replaceWith(next.querySelector(selector));
+  for (const selector of [".page-head", ".tc-tabs"]) root.querySelector(selector)?.replaceWith(next.querySelector(selector));
   const add = root.querySelector("[data-act='wz-open']");
   if (add) add.innerHTML = icon("plus", 14) + " " + esc(tcT("tcAdd"));
   paintTerminalFilters(true);
   paintTerminalCenter();
 }
 function tcWorkspace() {
-  if (TC.tab === "tasks") return `<section class="card tc-tasks"><div class="tc-task-filters" id="tc-task-filters"></div><div id="tc-task-list"></div><div id="tc-task-pages" class="tc-pages"></div></section>`;
+  if (TC.tab === "tasks") return `<section class="card tc-tasks"><div class="tc-task-filters toolbar" id="tc-task-filters"></div><div id="tc-task-list"></div><div id="tc-task-pages" class="tc-pages"></div></section>`;
   const upgradable = S.nodes.filter(n => tcOutdated(n) && n.status === "online" && n.authorized !== false).length;
   return `<section class="card"><div class="sec-head tc-node-head"><div class="chips" id="nd-chips"></div><div class="spacer"></div><span id="tc-seats" class="hint"></span>${TC.admin && upgradable ? `<button class="btn ghost sm" data-act="node-upgrade-all">${icon("refresh", 14)} ${esc(tcT("tcUpgradeAll"))} (${esc(I18n.number(upgradable))})</button>` : ""}<button class="btn primary sm" data-act="wz-open">${icon("plus", 14)} ${esc(tcT("tcAdd"))}</button></div><div id="nd-bulk"></div><div id="nd-table"></div></section>`;
 }

@@ -93,6 +93,7 @@ I18n.register("errors", {
   apt_source_invalid: ["无法添加 APT 源，请检查源配置。", "無法新增 APT 來源，請檢查來源設定。", "Unable to add the APT repository. Check its configuration."],
   node_not_found: ["终端不存在。", "終端不存在。", "The endpoint was not found."],
   library_unavailable: ["媒体库未启用或不可用。", "媒體庫未啟用或無法使用。", "The media library is not enabled or is unavailable."],
+  cover_size_invalid: ["封面尺寸仅支持 96、256、384 或 640。", "封面尺寸僅支援 96、256、384 或 640。", "Cover sizes are limited to 96, 256, 384 or 640."],
   update_unavailable: ["更新服务未启用。", "更新服務未啟用。", "The update service is not enabled."],
   file_not_found: ["文件不存在。", "檔案不存在。", "The file was not found."],
   metrics_unavailable: ["指标服务不可用。", "指標服務無法使用。", "Metrics are unavailable."],

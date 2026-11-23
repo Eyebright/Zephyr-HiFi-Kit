@@ -120,7 +120,8 @@ func (a *API) route(pattern string, h http.HandlerFunc) {
 		"POST /api/v1/jobs", "POST /api/v1/jobs/{id}/advance",
 		"POST /api/v1/rollouts", "POST /api/v1/rollouts/{id}/advance", "DELETE /api/v1/rollouts/{id}",
 		"POST /api/v1/update/check", "POST /api/v1/update/apply", "POST /api/v1/update/auto",
-		"POST /api/v1/update/fleet/policy", "POST /api/v1/update/fleet/converge", "POST /api/v1/update/fleet/{id}/retry":
+		"POST /api/v1/update/fleet/policy", "POST /api/v1/update/fleet/converge", "POST /api/v1/update/fleet/{id}/retry",
+		"POST /api/v1/alerts/{id}/ack", "POST /api/v1/alerts/{id}/resolve", "POST /api/v1/alerts/ack-all", "POST /api/v1/alerts/scan":
 		h = a.requireSettingsAdmin(h)
 	}
 	a.mux.HandleFunc(pattern, a.withAudit(h))
@@ -274,6 +275,7 @@ func (a *API) routes() {
 	a.route("GET /api/v1/tracks", a.listTracks)
 	a.route("GET /api/v1/tracks/{id}", a.getTrack)
 	a.route("GET /api/v1/covers/{hash}", a.getCover)
+	a.route("GET /api/v1/covers/{hash}/{size}", a.getCoverSized)
 
 	// ZAT push playback to terminals. GET play status is dispatched through the
 	// {sub} wildcard below: a literal "/nodes/{id}/play" would ambiguity-conflict

@@ -341,7 +341,7 @@ function openDrawer(title, sub, body, foot = "", opts = {}) {
     <div class="drawer${opts.wide ? " drawer-wide" : ""}" role="dialog" aria-modal="true">
       <div class="drawer-head">
         ${back}
-        <div style="flex:1;min-width:0">
+        <div class="u-flex1">
           <div class="d-title">${title}</div>
           ${sub ? `<div class="d-sub truncate">${sub}</div>` : ""}
         </div>
@@ -661,7 +661,7 @@ function ovAlbumCard(g, info = {}) {
     : `<button class="ov-album-artist truncate" data-act="artist-albums" data-name="${esc(favArtist || artist || "")}">${esc(artist || appT("m117"))}</button>`;
   return `<article class="ov-album">
     <button class="ov-album-open" ${missing ? 'disabled aria-disabled="true"' : `data-act="album-open" data-ak="${key}"`} ${missing ? `title="${esc(unavailable)}"` : ""} aria-label="${appH("m130", { value: album || appT("m128") })}">
-      <span class="al-cover">${hash ? `<img class="al-img" src="/api/v1/covers/${esc(hash)}" alt="" loading="lazy">` : icon("disc", 30)}<span class="al-cnt mono">${esc(count)}</span></span>
+      <span class="al-cover">${hash ? `<img class="al-img" src="/api/v1/covers/${esc(hash)}/384" alt="" loading="lazy">` : icon("disc", 30)}<span class="al-cnt mono">${esc(count)}</span></span>
       <span class="al-name truncate">${esc(album || appT("m128"))}</span>
     </button>
     ${artistLine}
@@ -720,7 +720,7 @@ function paintOvPlaylists() {
 // Keep focused controls mounted while live playback fields update.
 const PB_MODES = [["sequence", "modeSequence", "queueModeSequence"], ["loop_all", "modeLoopAll", "queueModeLoopAll"], ["loop_one", "modeLoopOne", "queueModeLoopOne"], ["shuffle", "modeShuffle", "queueModeShuffle"]];
 function pbModeShell(prefix = "pb") {
-  return `<details class="pb-mode" id="${prefix}-mode" data-disabled="1"><summary id="${prefix}-mode-btn" aria-label="${appH("queueMode")}" title="${appH("queueMode")}">${icon("modeSequence", 18)}</summary><div class="pb-mode-menu" role="menu">${PB_MODES.map(([m, ic, k]) => `<button class="pb-mode-item" role="menuitemradio" aria-checked="false" data-act="pb-mode-set" data-mode="${m}">${icon(ic, 16)}<span>${appT(k)}</span><span class="pb-mode-check">${icon("check", 13)}</span></button>`).join("")}</div></details>`;
+  return `<details class="pop pb-mode" id="${prefix}-mode" data-disabled="1"><summary id="${prefix}-mode-btn" aria-label="${appH("queueMode")}" title="${appH("queueMode")}">${icon("modeSequence", 18)}</summary><div class="pop-menu" role="menu">${PB_MODES.map(([m, ic, k]) => `<button class="pop-item" role="menuitemradio" aria-checked="false" data-act="pb-mode-set" data-mode="${m}">${icon(ic, 16)}<span>${appT(k)}</span><span class="pop-check">${icon("check", 13)}</span></button>`).join("")}</div></details>`;
 }
 function paintModePopover(prefix, mode, enabled) {
   const modeDef = PB_MODES.find(x => x[0] === mode) || PB_MODES[0];
@@ -746,13 +746,13 @@ const PB = {
   seekContext: null, seekPending: 0, volPending: 0
 };
 function terminalPopoverHtml(prefix = "pb") {
-  return `<details class="pb-pop pb-term" id="${prefix}-term-wrap" data-disabled="1"><summary id="${prefix}-term" aria-label="${appH("m164")}" title="${appH("m164")}">${icon("server", 14)}<span class="pb-term-name truncate" id="${prefix}-node-label">—</span></summary><div class="pb-pop-menu pb-term-menu" role="menu" id="${prefix}-term-menu"></div></details>`;
+  return `<details class="pop pb-term" id="${prefix}-term-wrap" data-disabled="1"><summary id="${prefix}-term" aria-label="${appH("m164")}" title="${appH("m164")}">${icon("server", 14)}<span class="pb-term-name truncate" id="${prefix}-node-label">—</span></summary><div class="pop-menu pb-term-menu" role="menu" id="${prefix}-term-menu"></div></details>`;
 }
 function volumePopoverHtml(prefix = "pb") {
-  return `<details class="pb-pop pb-vol" id="${prefix}-vol-wrap"><summary id="${prefix}-vol-btn" aria-label="${appH("m163")}" title="${appH("m163")}">${icon("speaker", 16)}<span class="pb-vol-val mono" id="${prefix}-volume-value">100</span></summary><div class="pb-pop-menu pb-vol-menu"><input id="${prefix}-volume" type="range" min="0" max="100" step="1" value="100" data-change="${prefix}-volume" aria-label="${appH("m163")}" disabled></div></details>`;
+  return `<details class="pop pb-vol" id="${prefix}-vol-wrap"><summary id="${prefix}-vol-btn" aria-label="${appH("m163")}" title="${appH("m163")}">${icon("speaker", 16)}<span class="pb-vol-val mono" id="${prefix}-volume-value">100</span></summary><div class="pop-menu pb-vol-menu"><input id="${prefix}-volume" type="range" min="0" max="100" step="1" value="100" data-change="${prefix}-volume" aria-label="${appH("m163")}" disabled></div></details>`;
 }
 function devicePopoverHtml(prefix = "ply") {
-  return `<details class="pb-pop pb-dev" id="${prefix}-dev-wrap" data-disabled="1"><summary id="${prefix}-dev-btn" aria-label="${appH("m166")}" title="${appH("m166")}">${icon("speaker", 14)}<span class="pb-term-name truncate" id="${prefix}-dev-label">—</span></summary><div class="pb-pop-menu" role="menu" id="${prefix}-dev-menu"></div></details>`;
+  return `<details class="pop pb-dev" id="${prefix}-dev-wrap" data-disabled="1"><summary id="${prefix}-dev-btn" aria-label="${appH("m166")}" title="${appH("m166")}">${icon("speaker", 14)}<span class="pb-term-name truncate" id="${prefix}-dev-label">—</span></summary><div class="pop-menu" role="menu" id="${prefix}-dev-menu"></div></details>`;
 }
 function paintDeviceMenu(prefix, p, connected) {
   const wrap = document.getElementById(`${prefix}-dev-wrap`), menu = document.getElementById(`${prefix}-dev-menu`);
@@ -769,7 +769,7 @@ function paintDeviceMenu(prefix, p, connected) {
   menu.dataset.sig = sig;
   menu.innerHTML = devs.map(d => {
     const nm = d === "default" ? appT("m262") : names.get(d) ? names.get(d) + " · " + d : d;
-    return `<button class="pb-pop-item ${d === cur ? "active" : ""}" role="menuitemradio" aria-checked="${d === cur}" data-act="${prefix}-device-pick" data-dev="${esc(d)}">${icon("speaker", 13)}<span class="truncate">${esc(nm)}</span>${d === cur ? icon("check", 13) : ""}</button>`;
+    return `<button class="pop-item ${d === cur ? "active" : ""}" role="menuitemradio" aria-checked="${d === cur}" data-act="${prefix}-device-pick" data-dev="${esc(d)}">${icon("speaker", 13)}<span class="truncate">${esc(nm)}</span>${d === cur ? icon("check", 13) : ""}</button>`;
   }).join("");
 }
 function playerBarShell() {
@@ -935,9 +935,9 @@ function paintTerminalMenu(prefix, nodes, currentID, disabled, fallback) {
   menu.innerHTML = nodes.length
     ? nodes.map(n => {
         const on = n.status === "online", sel = n.node_id === currentID;
-        return `<button class="pb-pop-item ${sel ? "active" : ""}" role="menuitemradio" aria-checked="${sel}" data-act="${prefix}-node-pick" data-id="${esc(n.node_id)}" ${on ? "" : "disabled"}>${icon("server", 13)}<span class="truncate">${esc(n.alias || shortId(n.node_id))}</span><span class="pb-pop-extra">${on ? "" : esc(appT("m177"))}</span>${sel ? icon("check", 13) : ""}</button>`;
+        return `<button class="pop-item ${sel ? "active" : ""}" role="menuitemradio" aria-checked="${sel}" data-act="${prefix}-node-pick" data-id="${esc(n.node_id)}" ${on ? "" : "disabled"}>${icon("server", 13)}<span class="truncate">${esc(n.alias || shortId(n.node_id))}</span><span class="pop-extra">${on ? "" : esc(appT("m177"))}</span>${sel ? icon("check", 13) : ""}</button>`;
       }).join("")
-    : `<div class="pb-pop-head">${appH("m175")}</div>`;
+    : `<div class="pop-head">${appH("m175")}</div>`;
 }
 function playerBarBeginRange(el) {
   if (el.disabled) return;
@@ -1038,7 +1038,7 @@ function albumGroupArtist(g) {
 }
 function albumCard(g, i, sm) {
   return `<div class="album-card ${sm ? "sm" : ""}" data-act="album-open" data-ak="${esc(albumKey(g))}" role="button" tabindex="0">
-    <div class="al-cover">${albumCoverHash(g) ? `<img class="al-img" src="/api/v1/covers/${esc(albumCoverHash(g))}" alt="" loading="lazy">` : icon("disc", sm ? 22 : 30)}<span class="al-cnt mono">${appH("m151", { count: appN(g.tracks.length) })}</span></div>
+    <div class="al-cover">${albumCoverHash(g) ? `<img class="al-img" src="/api/v1/covers/${esc(albumCoverHash(g))}/384" alt="" loading="lazy">` : icon("disc", sm ? 22 : 30)}<span class="al-cnt mono">${appH("m151", { count: appN(g.tracks.length) })}</span></div>
     <div class="al-name truncate">${esc(g.album || appT("m128"))}</div>
     <div class="al-artist truncate">${esc(g.artist || appT("m117"))}</div>
     ${sm ? "" : `<div class="al-meta mono">${fmtDur(g.ms)}</div>`}
@@ -1125,17 +1125,17 @@ function wzStep1() {
   const opt = (v, l, cur) => `<option value="${v}" ${v === cur ? "selected" : ""}>${esc(l)}</option>`;
   const seg = (v, label, cur) => `<button class="btn sm ${v === cur ? "primary" : "ghost"}" data-act="wz-method" data-v="${v}">${esc(label)}</button>`;
   let h = `<div id="wz-err"></div>
-    <div class="field"><label>${appH("m897")}</label><div style="display:flex;gap:8px">${seg("manual", appT("m898"), WZ.method)}${seg("ssh", appT("m899"), WZ.method)}</div></div>
+    <div class="field"><label>${appH("m897")}</label><div class="seg-row">${seg("manual", appT("m898"), WZ.method)}${seg("ssh", appT("m899"), WZ.method)}</div></div>
     <div class="f-row">
       <div class="field"><label>${appH("m219")}</label><input id="wz-alias" class="inp" placeholder="${appH("m220")}" value="${esc(WZ.alias)}" maxlength="60"></div>
       <div class="field"><label>${appH("m221")}</label><input id="wz-group" class="inp" placeholder="${appH("m222")}" value="${esc(WZ.group)}" maxlength="40"></div>
     </div>`;
   if (WZ.method === "ssh" && WZ.sshInfo) {
     const i = WZ.sshInfo, f = WZ.sshForm;
-    h += `<div class="token-box" style="flex-direction:column;align-items:flex-start;gap:6px">
+    h += `<div class="token-box col">
       <div><b>${esc(i.hostname || f.host)}</b> · ${esc(f.user)}@${esc(f.host)}:${esc(f.port)}</div>
-      <div class="mono" style="font-size:12px;overflow-wrap:anywhere">${appH("m909")}: ${esc(i.fingerprint)}</div>
-      <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted)">
+      <div class="mono u-break12">${appH("m909")}: ${esc(i.fingerprint)}</div>
+      <div class="ssh-meta">
         <span>${appH("m912")}: ${esc(i.arch || "—")}</span><span>${appH("m911")}: ${esc(i.os_release || "—")}</span>
         <span>${appH("m913")}: ${esc(i.sudo === "passwordless" ? appT("m914") : appT("m915"))}</span>
         ${i.has_agent ? `<span class="badge ok">hifihub-agent</span>` : ""}
@@ -1146,14 +1146,14 @@ function wzStep1() {
     const f = WZ.sshForm, key = f.auth === "key";
     h += `<div class="f-row">
       <div class="field"><label>${appH("m900")}</label><input id="wz-ssh-host" class="inp" placeholder="192.168.0.123" value="${esc(f.host)}" maxlength="253"></div>
-      <div class="field" style="max-width:110px"><label>${appH("m930")}</label><input id="wz-ssh-port" class="inp" value="${esc(f.port)}" inputmode="numeric" maxlength="5"></div>
+      <div class="field w-port"><label>${appH("m930")}</label><input id="wz-ssh-port" class="inp" value="${esc(f.port)}" inputmode="numeric" maxlength="5"></div>
     </div>
     <div class="f-row">
       <div class="field"><label>${appH("m901")}</label><input id="wz-ssh-user" class="inp" placeholder="pi" value="${esc(f.user)}" maxlength="64" autocomplete="username"></div>
       <div class="field"><label>${appH("m902")}</label><select id="wz-ssh-auth" class="inp" data-change="wz-ssh-auth">${opt("password", appT("m903"), f.auth)}${opt("key", appT("m904"), f.auth)}</select></div>
     </div>
     ${key
-      ? `<div class="field"><label>${appH("m904")}</label><textarea id="wz-ssh-key" class="inp" rows="5" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" style="font-family:var(--mono);font-size:12px"></textarea>
+      ? `<div class="field"><label>${appH("m904")}</label><textarea id="wz-ssh-key" class="inp mono-note" rows="5" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"></textarea>
          <input id="wz-ssh-passphrase" class="inp mt8" placeholder="${appH("m905")}" autocomplete="off"></div>`
       : `<div class="field"><label>${appH("m903")}</label><input id="wz-ssh-pass" class="inp" type="password" autocomplete="current-password" placeholder="${appH("m903")}"></div>`}
     <div class="f-hint">${appH("m906")}</div>`;
@@ -1177,14 +1177,14 @@ function wzStep2() {
     return `<div class="field"><label>${appH("m235")}</label>
       <div class="f-hint">${appH("m237")} <span class="wz-count" id="wz-cd">--:--</span> ${appH("m238")}</div>
     </div>
-    <div id="wz-prog">${sshProgressHtml()}</div>` + (failed ? "" : `<div class="waiting"><span class="w-pulse"></span><div style="flex:1"><div class="w-txt">${appH("m239")}</div><div class="w-sub">${appH("m240")}</div></div><span class="spin"></span></div>`);
+    <div id="wz-prog">${sshProgressHtml()}</div>` + (failed ? "" : `<div class="waiting"><span class="w-pulse"></span><div class="u-flex1x"><div class="w-txt">${appH("m239")}</div><div class="w-sub">${appH("m240")}</div></div><span class="spin"></span></div>`);
   }
   const android = WZ.arch === "android";
   const installPanel = android
     ? `<div class="field"><label>${appH("m229")}</label>
       <div class="f-hint">${appH("m230")}</div>
       <a class="btn sm block" href="${ANDROID_APK}" target="_blank" rel="noopener">${icon("download", 14)} ${appH("m231")}</a>
-      <div class="cmd-box" style="white-space:pre-wrap"><span id="wz-cmd">${esc(installCmd())}</span></div>
+      <div class="cmd-box wrap"><span id="wz-cmd">${esc(installCmd())}</span></div>
       <button class="btn sm block" data-act="wz-copy-cmd">${icon("copy", 14)} ${appH("m232")}</button>
     </div>`
     : `<div class="field"><label>${appH("m233")}</label>
@@ -1196,21 +1196,21 @@ function wzStep2() {
       <div class="f-hint">${appH("m237")} <span class="wz-count" id="wz-cd">--:--</span> ${appH("m238")}</div>
     </div>
     ${installPanel}
-    <div class="waiting"><span class="w-pulse"></span><div style="flex:1"><div class="w-txt">${appH("m239")}</div><div class="w-sub">${appH("m240")}</div></div><span class="spin"></span></div>`;
+    <div class="waiting"><span class="w-pulse"></span><div class="u-flex1x"><div class="w-txt">${appH("m239")}</div><div class="w-sub">${appH("m240")}</div></div><span class="spin"></span></div>`;
 }
 const SSH_STAGE_LABEL = { connect: "m920", download: "m921", install: "m922", verify: "m923" };
 function sshProgressHtml() {
   const names = ["connect", "download", "install", "verify"];
   const job = WZ.job;
   const steps = (job && job.steps && job.steps.length) ? job.steps : names.map(n => ({ name: n, state: "pending" }));
-  let h = `<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">` + steps.map(s => {
-    const mark = s.state === "done" ? icon("check", 13) : s.state === "running" ? `<span class="spin"></span>` : s.state === "failed" ? icon("alert", 13) : `<span class="sdot" style="width:8px;height:8px"></span>`;
+  let h = `<div class="ssh-steps">` + steps.map(s => {
+    const mark = s.state === "done" ? icon("check", 13) : s.state === "running" ? `<span class="spin"></span>` : s.state === "failed" ? icon("alert", 13) : `<span class="sdot"></span>`;
     const color = s.state === "done" ? "var(--green)" : s.state === "failed" ? "var(--red)" : s.state === "running" ? "var(--gold)" : "var(--muted)";
-    return `<div style="display:flex;align-items:center;gap:8px;color:${color};font-size:13px"><span style="display:inline-flex;width:16px;justify-content:center">${mark}</span><span style="flex:1">${esc(appT(SSH_STAGE_LABEL[s.name] || s.name))}</span>${s.detail ? `<span class="mono" style="font-size:11px;color:var(--muted);max-width:55%;overflow-wrap:anywhere;text-align:right">${esc(s.detail)}</span>` : ""}</div>`;
+    return `<div class="ssh-step" style="color:${color}"><span class="ssh-step-mark">${mark}</span><span class="ssh-step-label">${esc(appT(SSH_STAGE_LABEL[s.name] || s.name))}</span>${s.detail ? `<span class="mono ssh-step-detail">${esc(s.detail)}</span>` : ""}</div>`;
   }).join("") + `</div>`;
   if (job && job.state === "done") h += `<div class="banner ok">${icon("check", 15)}<span>${appH("m927")}</span></div>`;
   if (job && job.state === "failed") {
-    h += `<div class="banner warn">${icon("alert", 15)}<div style="flex:1"><b>${appH("m924")}</b><div class="mono" style="font-size:12px;overflow-wrap:anywhere;margin-top:4px">${esc(job.error || "")}</div></div></div>
+    h += `<div class="banner warn">${icon("alert", 15)}<div class="u-flex1x"><b>${appH("m924")}</b><div class="mono ssh-step-error">${esc(job.error || "")}</div></div></div>
       <button class="btn sm block mt8" data-act="wz-ssh-retry">${icon("refresh", 14)} ${appH("m925")}</button>`;
   }
   return h;
@@ -1252,7 +1252,7 @@ function tickWzCountdown() {
   if (left <= 0) {
     stopPoll("wz:token"); stopPoll("wz:cd");
     const w = $(".waiting");
-    if (w) w.innerHTML = `${icon("clock", 18)}<div style="flex:1"><div class="w-txt txt-warn">${appH("m252")}</div><div class="w-sub">${appH("m253")}</div></div><button class="btn sm primary" data-act="wz-reissue">${appH("m254")}</button>`;
+    if (w) w.innerHTML = `${icon("clock", 18)}<div class="u-flex1x"><div class="w-txt txt-warn">${appH("m252")}</div><div class="w-sub">${appH("m253")}</div></div><button class="btn sm primary" data-act="wz-reissue">${appH("m254")}</button>`;
   }
 }
 async function wzReissue() {
@@ -1485,7 +1485,7 @@ function osBody() {
   if (!pkgs.length) h += empty("check", st.last_check ? appT("m279") : appT("m280"), "", true);
   else {
     const allSel = pkgs.every(p => OSC.sel.has(p.name));
-    h += `<div class="tbl-wrap"><table class="tbl" style="min-width:0"><thead><tr><th style="width:34px"><label class="check"><input type="checkbox" data-change="os-pkg-all" ${allSel ? "checked" : ""} ${OSC.busy ? "disabled" : ""}><span class="box"></span></label></th><th>${appH("m281")}</th><th>${appH("m282")}</th><th>${appH("m283")}</th></tr></thead><tbody>` +
+    h += `<div class="tbl-wrap"><table class="tbl min0"><thead><tr><th class="th-check"><label class="check"><input type="checkbox" data-change="os-pkg-all" ${allSel ? "checked" : ""} ${OSC.busy ? "disabled" : ""}><span class="box"></span></label></th><th>${appH("m281")}</th><th>${appH("m282")}</th><th>${appH("m283")}</th></tr></thead><tbody>` +
       pkgs.map(p => `<tr><td><label class="check"><input type="checkbox" data-change="os-pkg" data-name="${esc(p.name)}" ${OSC.sel.has(p.name) ? "checked" : ""} ${OSC.busy ? "disabled" : ""}><span class="box"></span></label></td><td class="cell-mono">${esc(p.name)}</td><td class="cell-mono sub">${esc(p.current || "—")}</td><td class="cell-mono txt-ok">${esc(p.candidate || "—")}</td></tr>`).join("") +
       `</tbody></table></div>`;
   }
@@ -1566,7 +1566,7 @@ function netBody() {
   h += `<div class="d-sec"><span class="lbl">${appH("m297")}</span>`;
   if (!rs.length) h += empty("wifi", appT("m298"), "", true);
   else {
-    h += `<div class="tbl-wrap"><table class="tbl" style="min-width:0"><thead><tr><th>${appH("m294")}</th><th>${appH("m299")}</th><th>${appH("m300")}</th><th>${appH("m301")}</th></tr></thead><tbody>` +
+    h += `<div class="tbl-wrap"><table class="tbl min0"><thead><tr><th>${appH("m294")}</th><th>${appH("m299")}</th><th>${appH("m300")}</th><th>${appH("m301")}</th></tr></thead><tbody>` +
       rs.map(r => `<tr><td>${esc(r.name || "—")}</td><td>${r.ok ? badge(appT("m302"), "ok") : badge(appT("m034"), "err")}</td><td class="cell-mono">${r.ms != null ? r.ms + " ms" : "—"}</td><td class="sub">${esc(r.detail || "—")}</td></tr>`).join("") +
       `</tbody></table></div>`;
   }
@@ -1673,7 +1673,7 @@ function cfgBody() {
     <div class="field"><label>${appH("m319")}</label>
       <div class="stepper">
         <button class="step-btn" data-act="cfg-off" data-d="-15">−15</button>
-        <span class="inp" id="cfg-off-val" style="display:inline-flex;align-items:center;justify-content:center">${esc(typeof (CFG.offline) === "number" ? appN(CFG.offline) : (CFG.offline))}s</span>
+        <span class="inp stepper-val" id="cfg-off-val">${esc(typeof (CFG.offline) === "number" ? appN(CFG.offline) : (CFG.offline))}s</span>
         <button class="step-btn" data-act="cfg-off" data-d="15">+15</button>
       </div>
       <div class="f-hint">${appH("m320")}</div>
@@ -1703,7 +1703,7 @@ function cfgBody() {
     <div class="field"><label>${appH("m331")}</label><input id="cfg-win" class="inp mono" placeholder="${appH("m332")}" value="${esc(n.os_window || "")}"><div class="f-hint">${appH("m333")}</div></div>
   </div>
   <div class="m-sec"><span class="lbl">${appH("m334")}</span><div id="cfg-seat"></div></div>
-  <div class="m-sec"><span class="lbl" style="color:var(--red)">${appH("m335")}</span>
+  <div class="m-sec"><span class="lbl lbl-danger">${appH("m335")}</span>
     <div class="banner err">${icon("alert", 15)}<span>${appH("m336")}</span></div>
     <button class="btn danger" data-act="cfg-delete" data-id="${esc(n.node_id)}">${icon("trash", 15)} ${appH("m337")}</button>
   </div>`;
@@ -1862,7 +1862,7 @@ function paintApps() {
     </div>`;
   const pub = list.filter(a => a.origin === "distro" || a.origin === "vendor");
   const self = list.filter(a => !(a.origin === "distro" || a.origin === "vendor"));
-  const group = (title, hint, items) => `<div class="settings-card-head" style="margin-top:16px"><h3>${title} <span class="txt-faint">· ${appN(items.length)}</span></h3></div>
+  const group = (title, hint, items) => `<div class="settings-card-head mt16"><h3>${title} <span class="txt-faint">· ${appN(items.length)}</span></h3></div>
     <div class="f-hint mb12">${hint}</div>` +
     (items.length ? `<div class="grid cols-3">${items.map(card).join("")}</div>` : empty("box", appT("m941"), "", true));
   el.innerHTML = group(appH("m932"), appH("m938"), pub) + group(appH("m933"), appH("m939"), self);
@@ -1885,7 +1885,7 @@ function appModalBody() {
     kvRow(appT("m383"), `<span class="mono">${esc(a.app_id || APPV.id)}</span>`) +
     kvRow(appT("m384"), esc(a.name || "—")) +
     kvRow(appT("m385"), catBadge(a.category)) +
-    kvRow(appT("m937"), `<select class="inp" style="width:150px;padding:5px 26px 5px 8px;font-size:12px" data-change="app-origin" data-id="${esc(APPV.id)}">
+    kvRow(appT("m937"), `<select class="inp sel-w150" data-change="app-origin" data-id="${esc(APPV.id)}">
       <option value="distro" ${a.origin === "distro" ? "selected" : ""}>${appH("m934")}</option>
       <option value="vendor" ${a.origin === "vendor" ? "selected" : ""}>${appH("m935")}</option>
       <option value="self" ${(a.origin || "self") === "self" ? "selected" : ""}>${appH("m936")}</option>
@@ -1901,7 +1901,7 @@ function appModalBody() {
       <td class="cell-mono">${esc(v.version)}<div class="sub">${esc(v.format || "")}</div></td>
       <td class="cell-mono">${esc(v.arch || "—")}</td>
       <td>${v.signed ? badge(appT("m400"), "ok") : badge(appT("m401"), "warn")}${v.banned ? " " + badge(appT("m402"), "err") : ""}</td>
-      <td><select class="inp" style="width:104px;padding:5px 26px 5px 8px;font-size:12px" data-change="ver-lc" data-id="${esc(APPV.id)}" data-ver="${esc(v.version)}" data-arch="${esc(v.arch)}">
+      <td><select class="inp sel-w104" data-change="ver-lc" data-id="${esc(APPV.id)}" data-ver="${esc(v.version)}" data-arch="${esc(v.arch)}">
         ${["available", "deprecated", "revoked"].map(s => `<option value="${s}" ${(v.lifecycle || "available") === s ? "selected" : ""}>${({ available: appT("m049"), deprecated: appT("m050"), revoked: appT("m051") })[s]}</option>`).join("")}
       </select></td>
       <td class="cell-mono sub" title="${esc(v.sha256 || "")}">${esc((v.sha256 || "—").slice(0, 10))}</td>
@@ -2104,7 +2104,7 @@ async function openBomHistory(id) {
 function bomHistoryHtml() {
   const vs = BOMH.versions;
   if (!vs.length) return empty("layers", appT("m477"));
-  return `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>${appH("m395")}</th><th>${appH("m463")}</th><th>${appH("m048")}</th><th>${appH("m464")}</th><th style="text-align:right">${appH("m399")}</th></tr></thead><tbody>` +
+  return `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>${appH("m395")}</th><th>${appH("m463")}</th><th>${appH("m048")}</th><th>${appH("m464")}</th><th class="u-right">${appH("m399")}</th></tr></thead><tbody>` +
     vs.map(b => `<tr>
       <td class="cell-mono">v<span class="txt-info">${b.version}</span></td>
       <td>${b.status === "published" ? badge(appT("m465"), "ok") : badge(appT("m466"), "warn")}</td>
@@ -2233,9 +2233,9 @@ async function openBomEditor(id, ver) {
 }
 function bomRowsHtml(rows) {
   return rows.map((r, i) => `<div class="bom-row" data-i="${i}">
-    <div style="display:flex;gap:8px;min-width:0">
-      <input class="inp mono b-app" list="app-ids" placeholder="${appH("m383")}" value="${esc(r.app_id)}" style="flex:1;min-width:0">
-      <select class="inp b-ch" style="width:96px;flex:none">
+    <div class="bom-src-row">
+      <input class="inp mono b-app bom-src-app" list="app-ids" placeholder="${appH("m383")}" value="${esc(r.app_id)}">
+      <select class="inp b-ch bom-src-ch">
         ${["", "stable", "beta", "nightly"].map(c => `<option value="${c}" ${r.channel === c ? "selected" : ""}>${c || appH("m378")}</option>`).join("")}
       </select>
     </div>
@@ -2532,7 +2532,7 @@ function openRolloutCreate() {
 function roRingsHtml() {
   return ROD.rings.map((r, i) => `<div class="ring-row" data-i="${i}">
     <input class="inp ro-name-i" placeholder="${appH("m595")}" value="${esc(r.name)}" maxlength="30">
-    <input class="inp mono ro-pct-i" type="number" min="1" max="100" data-change="ro-pct" data-i="${i}" value="${r.percent}" style="text-align:center">
+    <input class="inp mono ro-pct-i ring-pct" type="number" min="1" max="100" data-change="ro-pct" data-i="${i}" value="${r.percent}">
     <button class="row-del" data-act="ro-ring-del" data-i="${i}" title="${appH("m516")}" aria-label="${appH("m516")}">${icon("x", 14)}</button>
   </div>`).join("");
 }
@@ -2723,7 +2723,7 @@ function paintUpdateFleet() {
   h += meter(appT("m659", { value: (rep.ring || 0) + 1, count: rep.ring_size || 1 }), pct, appT("m660", { value: conv, count: appN(parts.length) }), pct === 100 ? "green" : "cyan");
   const list = nodes.filter(r => { const n = S.nodes.find(x => x.node_id === r.node_id); return hit(n && n.alias, r.node_id, r.current, r.target, r.state, r.detail); });
   if (!list.length) { el.innerHTML = h + empty("search", appT("m661"), "", true); return; }
-  h += `<div class="tbl-wrap mt12"><table class="tbl"><thead><tr><th>${appH("m559")}</th><th>${appH("m395")}</th><th>${appH("m463")}</th><th>${appH("m662")}</th><th>${appH("m663")}</th><th>${appH("m664")}</th><th style="text-align:right">${appH("m399")}</th></tr></thead><tbody>` +
+  h += `<div class="tbl-wrap mt12"><table class="tbl"><thead><tr><th>${appH("m559")}</th><th>${appH("m395")}</th><th>${appH("m463")}</th><th>${appH("m662")}</th><th>${appH("m663")}</th><th>${appH("m664")}</th><th class="u-right">${appH("m399")}</th></tr></thead><tbody>` +
     list.map(r => {
       const n = S.nodes.find(x => x.node_id === r.node_id);
       const alias = n ? (n.alias || shortId(r.node_id)) : shortId(r.node_id);
@@ -3070,7 +3070,7 @@ function alertsHtml() {
   h += list.map(a => {
     const st = a.status === "acked" ? "ack" : a.status;
     return `<div class="alert-item sev-${esc(a.severity || "info")}">
-      <div class="a-top">${sevBadge(a.severity)}${alertStatusBadge(a)}<span class="badge muted">${esc(a.kind || "alert")}</span><span class="spacer"></span><span class="txt-faint" style="font-size:11px">${ago(a.at)}</span></div>
+      <div class="a-top">${sevBadge(a.severity)}${alertStatusBadge(a)}<span class="badge muted">${esc(a.kind || "alert")}</span><span class="spacer"></span><span class="txt-faint u-fs11">${ago(a.at)}</span></div>
       <div class="a-msg">${esc(I18n.has("app.alert_" + a.kind) ? appT("alert_" + a.kind) : a.message || "—")}</div>
       ${a.message && I18n.has("app.alert_" + a.kind) ? `<details class="a-meta"><summary>${appH("originalDiagnostic")}</summary><div>${esc(a.message)}</div></details>` : ""}
       <div class="a-meta">${a.node_id ? `<button class="btn ghost xs" data-act="node-open" data-id="${esc(a.node_id)}">${icon("server", 12)} ${esc(shortId(a.node_id))}</button>` : ""}<span class="txt-faint">${fmtTime(a.at)}</span></div>
@@ -3158,7 +3158,13 @@ function albumHue(s) {
   return h % 360;
 }
 function coverArt(album, artist, cls, icSize, hash) {
-  if (hash) return `<img class="cover ${cls || ""}" src="/api/v1/covers/${esc(hash)}" alt="" loading="lazy">`;
+  if (hash) {
+    // Serve only the pixels each surface needs, at 2x for HiDPI: 22px icons use
+    // 96, player/list thumbs 256, album cards 384 and large art 640.
+    const c = cls || "";
+    const size = /big/.test(c) ? 640 : /rel-art/.test(c) ? 96 : /lb-art/.test(c) ? 384 : 256;
+    return `<img class="cover ${cls || ""}" src="/api/v1/covers/${esc(hash)}/${size}" alt="" loading="lazy">`;
+  }
   const hue = albumHue(String(artist || "") + "/" + String(album || ""));
   return `<div class="cover ${cls || ""}" style="--h:${hue}">${icon("disc", icSize || 20)}</div>`;
 }
@@ -3352,48 +3358,30 @@ async function trackEnqueueGo(next = false) {
   }
 }
 /* ---- album detail ---- */
-function openAlbum(key) {
-  const g = albumByKey(key); if (!g) { toast(appT("m834"), "warn"); return; }
-  const dec = g.tracks.filter(t => t.decodable).length;
-  const meta = albumGroupMeta(g);
-  const metaText = [meta.year > 0 ? String(meta.year) : "", meta.genres.slice(0, 3).join(" / ")].filter(Boolean).join(" · ");
-  const rows = g.tracks.map((t, i) => `
-    <div class="q-row">
-      <span class="q-idx mono">${i + 1}</span>
-      <span class="q-info">
-        <span class="q-title truncate">${esc(t.title || "—")}</span>
-        <span class="q-sub txt-faint">${esc(t.codec || "?")}${t.rate ? " · " + appFixed(t.rate / 1000, 1) + " kHz" : ""}${t.duration_ms ? " · " + fmtDur(t.duration_ms) : ""}${t.decodable ? "" : appH("m835")}</span>
-      </span>
-      <span class="q-acts">
-        <button class="btn xs ghost" data-act="track-pl" data-id="${esc(t.id)}" title="${appH("m836")}">${icon("layers", 12)}</button>
-        <button class="btn xs ghost" data-act="track-play" data-id="${esc(t.id)}" ${t.decodable ? "" : "disabled"} title="${appH("m763")}">${icon("send", 12)}</button>
-      </span>
-    </div>`).join("");
-  openModal(`${icon("disc", 18)} ${appH("m099")}`, `
-    <div style="display:flex;gap:12px;align-items:center">
-      ${coverArt(g.album, g.artist, "thumb", 22, albumCoverHash(g))}
-      <div class="tp-track" style="min-width:0">
-        <div class="tp-title truncate">${esc(g.album || appT("m128"))}</div>
-        <div class="tp-meta">${appH("m838", { value: g.artist || appT("m117"), count: appN(g.tracks.length), value2: fmtDur(g.ms) })}${dec < g.tracks.length ? appH("m837", { value: dec }) : ""}${metaText ? " · " + esc(metaText) : ""}</div>
-      </div>
-    </div>
-    <div class="divider"></div>
-    <div class="q-list">${rows}</div>
-    <div id="album-related" class="album-related"></div>`,
-    `<button class="btn ghost" data-act="modal-close">${appH("m040")}</button><div class="spacer"></div>
-     ${typeof favoriteAlbumHeart === "function" ? favoriteAlbumHeart(albumGroupArtist(g), g.album || "", "modal-heart") : ""}
-     <button class="btn" data-act="album-pl" data-ak="${esc(key)}">${icon("layers", 15)} ${appH("m836")}</button>
-     <button class="btn primary" data-act="album-push" data-ak="${esc(key)}" ${dec ? "" : "disabled"}>${icon("send", 15)} ${appH("m839")}</button>`);
-  loadAlbumRelated(albumGroupArtist(g), g.album || "");
+function albumRelatedCards(list) {
+  return `<div class="album-related-grid">` + list.map(a => {
+    const cover = a.cover_hash
+      ? `<img class="ar-cover" src="/api/v1/covers/${esc(a.cover_hash)}/256" alt="" loading="lazy">`
+      : `<span class="ar-cover ar-empty">${icon("disc", 40)}</span>`;
+    return `<button class="album-related-card" data-act="related-open" data-artist="${esc(a.artist || "")}" data-album="${esc(a.album || "")}" title="${esc([a.artist, a.album].filter(Boolean).join(" · "))}">
+      ${cover}
+      <span class="ar-name truncate">${esc(a.album || appT("m128"))}</span>
+      <span class="ar-meta truncate">${esc([a.artist, a.year > 0 ? String(a.year) : ""].filter(Boolean).join(" · ") || appT("m117"))}</span>
+    </button>`;
+  }).join("") + `</div>`;
 }
 function loadAlbumRelated(artist, album) {
   const el = $("#album-related");
-  if (!el || !artist || !album || typeof relatedStripHTML !== "function") return;
+  if (!el) return;
+  el.hidden = true;
+  if (!artist || !album) return;
   api("GET", "/library/related?artist=" + encodeURIComponent(artist) + "&album=" + encodeURIComponent(album) + "&limit=6").then(r => {
     if (!document.body.contains(el)) return;
     const list = (r && r.items) || [];
-    el.innerHTML = list.length ? `<div class="album-related-head">${icon("disc", 13)} ${esc(typeof lbT === "function" ? lbT("relatedAlbums") : "")}</div>` + relatedStripHTML(list) : "";
-  }).catch(() => {});
+    if (!list.length) { el.hidden = true; el.innerHTML = ""; return; }
+    el.innerHTML = `<div class="album-related-head">${icon("disc", 14)} ${esc(typeof lbT === "function" ? lbT("relatedAlbums") : "")}</div>` + albumRelatedCards(list);
+    el.hidden = false;
+  }).catch(() => { el.hidden = true; });
 }
 function albumPush(key) {
   const g = albumByKey(key); if (!g) { toast(appT("m834"), "warn"); return; }
@@ -3402,8 +3390,155 @@ function albumPush(key) {
   openPushPicker({ trackIDs: ids, label: (g.album || appT("m128")) + " · " + (g.artist || appT("m117")) });
 }
 
-/* ---- add tracks to a playlist (picker + create) ---- */
-const PP = { ids: [] };
+/* ---- independent album page ---- */
+const ALB = { artist: "", album: "", tracks: [], total: 0, error: null, seq: 0, sel: new Set() };
+function albumPageActive() { return !!ALB.album || !!ALB.artist; }
+function albumPageReset() { ALB.artist = ""; ALB.album = ""; ALB.tracks = []; ALB.total = 0; ALB.error = null; ALB.seq++; ALB.sel.clear(); }
+async function openAlbumPage(artist, album) {
+  if (!album && !artist) return;
+  ALB.artist = artist || ""; ALB.album = album || ""; ALB.tracks = []; ALB.total = 0; ALB.error = null; ALB.sel.clear();
+  clearTimeout(LB.searchTimer); LB.sel.clear(); S.libTab = "albums";
+  const state = lbState();
+  state.frames = [{ get label() { return lbT("albums"); }, query: lbDefaultAlbumsQuery() }];
+  if (S.view === "library") { if (typeof renderSidebarNav === "function") renderSidebarNav(); return refreshLibraryBrowser(); }
+  setView("library");
+}
+function openAlbumPageFromKey(key) {
+  let artist = "", album = "";
+  try { const parts = JSON.parse(key); artist = parts[0] || ""; album = parts[1] || ""; } catch (e) { /* legacy key */ }
+  if (!album) return;
+  const g = albumByKey(key);
+  if (g) artist = albumGroupArtist(g);
+  return openAlbumPage(artist, album);
+}
+async function albumPageLoad() {
+  const artist = ALB.artist, album = ALB.album, seq = ++ALB.seq;
+  const active = () => ALB.artist === artist && ALB.album === album && seq === ALB.seq && S.view === "library" && S.libTab === "albums";
+  try {
+    const q = new URLSearchParams({ category: "tracks", artist, album, artist_mode: "album", page: "1", page_size: "200", field: "all", sort: "name", direction: "asc", q: "" });
+    const r = await api("GET", "/library/browse?" + q);
+    if (!active()) return;
+    ALB.total = Number(r && r.total) || 0;
+    ALB.tracks = ((r && r.items) || []).map(i => i.track).filter(Boolean)
+      .sort((a, b) => (a.disc_number || 0) - (b.disc_number || 0) || (a.track_number || 0) - (b.track_number || 0) || String(a.title || "").localeCompare(String(b.title || ""), "zh"));
+    LB.busy = false;
+    if (typeof paintLibraryBrowserHeader === "function") paintLibraryBrowserHeader();
+    if (typeof paintLibraryBrowserItems === "function") paintLibraryBrowserItems();
+    const pages = $("#lb-pages"); if (pages) pages.innerHTML = "";
+  } catch (e) {
+    if (!active()) return;
+    LB.busy = false; ALB.error = e;
+    if (typeof paintLibraryBrowserItems === "function") paintLibraryBrowserItems();
+  }
+}
+function albumPageMeta(tracks) {
+  let year = 0, ms = 0; const genres = new Set(), composers = new Set(), artists = new Set();
+  let codec = "", rate = 0, bits = 0, mqa = false, dsd = false, cue = false;
+  for (const t of tracks) {
+    if (t.year > year) year = t.year;
+    ms += t.duration_ms || 0;
+    genreNames(t.genre).forEach(g => genres.add(g));
+    String(t.composer || "").split(";").forEach(c => { const v = c.trim(); if (v) composers.add(v); });
+    if (t.album_artist) artists.add(t.album_artist);
+    if (!codec && t.decodable) { codec = t.codec || ""; rate = t.rate || 0; bits = t.bits || 0; }
+    if (t.mqa) mqa = true;
+    if (t.codec === "dsd") dsd = true;
+    if (t.cue_end) cue = true;
+  }
+  return { year, ms, genres: [...genres], composers: [...composers], albumArtists: [...artists], codec, rate, bits, mqa, dsd, cue };
+}
+function paintAlbumSelection() {
+  const decIds = ALB.tracks.filter(t => t.decodable).map(t => t.id);
+  const all = decIds.length > 0 && decIds.every(id => ALB.sel.has(id));
+  document.querySelectorAll("#lb-body .album-track").forEach(row => {
+    const on = ALB.sel.has(row.dataset.id);
+    row.classList.toggle("selected", on);
+    const cb = row.querySelector('input[data-change="album-track-sel"]');
+    if (cb) cb.checked = on;
+  });
+  const head = $("#album-sel-all"); if (head) head.checked = all;
+  const bar = $("#album-sel-bar"); if (!bar) return;
+  const cnt = bar.querySelector(".b-cnt");
+  if (cnt) cnt.textContent = typeof lbT === "function" ? lbT("libSelectedCount", { count: I18n.number(ALB.sel.size) }) : String(ALB.sel.size);
+  bar.querySelectorAll('[data-act="album-sel-push"], [data-act="album-sel-pl"], [data-act="album-sel-clear"]').forEach(b => { b.disabled = ALB.sel.size === 0; });
+}
+function albumPageHeader(el) {
+  if (!el) return;
+  el.innerHTML = `<div class="lb-crumbs"><button class="btn ghost xs" data-act="album-page-back">${icon("chevL", 12)} ${esc(appT("m064"))}</button></div>`;
+}
+function albumPageItems(el) {
+  if (!el) return;
+  if (ALB.error) {
+    el.innerHTML = empty("alert", appT("m070") + ((ALB.error && ALB.error.message) || appT("m071")), `<button class="btn primary" data-act="album-page-retry">${icon("refresh", 15)} ${appH("m072")}</button>`, true);
+    return;
+  }
+  if (!ALB.tracks.length) { el.innerHTML = empty("refresh", appT("m149"), "", true); return; }
+  const tracks = ALB.tracks, meta = albumPageMeta(tracks);
+  const hash = (tracks.find(t => t.cover_hash) || {}).cover_hash || "";
+  const dec = tracks.filter(t => t.decodable).length;
+  const badges = [
+    meta.mqa ? badge("MQA", "gold") : "",
+    meta.dsd ? badge("DSD", "gold") : "",
+    meta.cue ? badge("CUE", "gold") : "",
+    meta.codec ? `<span class="tag-mono">${esc(String(meta.codec).toUpperCase())}${meta.rate ? " · " + appFixed(meta.rate / 1000, 1) + " kHz" : ""}${meta.bits ? " · " + meta.bits + " bit" : ""}</span>` : ""
+  ].filter(Boolean).join(" ");
+  const folder = String((tracks[0] && tracks[0].rel_path) || "").replace(/[^\\/]+$/, "");
+  const cover = hash
+    ? `<img class="album-hero-cover" src="/api/v1/covers/${esc(hash)}/640" srcset="/api/v1/covers/${esc(hash)}/384 384w, /api/v1/covers/${esc(hash)}/640 640w" sizes="220px" alt="${esc(ALB.album)}" loading="eager">`
+    : `<div class="album-hero-cover album-hero-empty">${icon("disc", 64)}</div>`;
+  const selCount = ALB.sel.size;
+  const decIds = tracks.filter(t => t.decodable).map(t => t.id);
+  const rows = tracks.map((t, i) => `
+    <div class="album-track${t.decodable ? "" : " is-missing"}${ALB.sel.has(t.id) ? " selected" : ""}" data-act="album-track-play" data-id="${esc(t.id)}">
+      <label class="check at-check" title="${esc(t.title || "")}"><input type="checkbox" data-change="album-track-sel" data-id="${esc(t.id)}" aria-label="${esc(t.title || "")}" ${ALB.sel.has(t.id) ? "checked" : ""} ${t.decodable ? "" : "disabled"}><span class="box"></span></label>
+      <span class="at-idx mono">${t.track_number || i + 1}</span>
+      <span class="at-info">
+        <span class="at-title truncate">${esc(t.title || "—")}${t.mqa ? " " + badge("MQA", "gold") : ""}${t.codec === "dsd" ? " " + badge("DSD", "gold") : ""}${t.cue_end ? " " + badge("CUE", "gold") : ""}${t.decodable ? "" : " " + badge(appH("m835"), "warn")}</span>
+        <span class="at-sub txt-faint">${esc([t.codec || "?", t.rate ? appFixed(t.rate / 1000, 1) + " kHz" : "", t.bits ? t.bits + " bit" : ""].filter(Boolean).join(" · "))}</span>
+      </span>
+      <span class="at-dur mono">${t.duration_ms ? fmtDur(t.duration_ms) : "—"}</span>
+      <span class="at-acts">
+        <button class="btn xs ghost" data-act="track-pl" data-id="${esc(t.id)}" title="${appH("m836")}">${icon("layers", 12)}</button>
+        <button class="btn xs ghost" data-act="track-play" data-id="${esc(t.id)}" ${t.decodable ? "" : "disabled"} title="${appH("m763")}">${icon("send", 12)}</button>
+      </span>
+    </div>`).join("");
+  el.innerHTML = `
+    <div class="album-hero">
+      <button class="album-hero-cover-btn" data-act="album-cover-zoom" data-hash="${esc(hash)}" title="${esc(ALB.album)}">${cover}</button>
+      <div class="album-hero-info">
+        <div class="album-hero-kicker">ALBUM</div>
+        <h1 class="album-hero-title">${esc(ALB.album || appT("m128"))}</h1>
+        <button class="album-hero-artist" data-act="album-artist-open" data-name="${esc(ALB.artist)}">${esc(ALB.artist || appT("m117"))}</button>
+        <div class="album-hero-meta">${[meta.year > 0 ? String(meta.year) : "", meta.genres.slice(0, 4).join(" / "), appH("m151", { count: appN(tracks.length) }), fmtDur(meta.ms)].filter(Boolean).join(" · ")}</div>
+        <div class="album-hero-badges">${badges}</div>
+        <div class="album-hero-actions">
+          <button class="btn primary" data-act="album-page-push" ${dec ? "" : "disabled"}>${icon("send", 15)} ${appH("m839")}</button>
+          <button class="btn ghost" data-act="album-page-pl" ${dec ? "" : "disabled"}>${icon("layers", 15)} ${appH("m836")}</button>
+          <button class="btn ghost" data-act="album-open-folder" title="${esc(folder)}">${icon("folder", 15)} ${appH("m966")}</button>
+          <div class="spacer"></div>
+          ${typeof favoriteAlbumButton === "function" ? favoriteAlbumButton(ALB.artist, ALB.album) : ""}
+        </div>
+      </div>
+    </div>
+    <div class="album-layout">
+      <section class="card album-main">
+        <div class="album-sel-bar" id="album-sel-bar">
+          <span class="b-cnt">${esc(typeof lbT === "function" ? lbT("libSelectedCount", { count: I18n.number(selCount) }) : String(selCount))}</span>
+          <div class="spacer"></div>
+          <button class="btn ghost xs" data-act="album-sel-all">${esc(typeof lbT === "function" ? lbT("libSelectPage") : "Select all")}</button>
+          <button class="btn xs" data-act="album-sel-push" ${selCount ? "" : "disabled"}>${appH("m839")}</button>
+          <button class="btn ghost xs" data-act="album-sel-pl" ${selCount ? "" : "disabled"}>${appH("m836")}</button>
+          <button class="btn ghost xs" data-act="album-sel-clear" ${selCount ? "" : "disabled"}>${esc(typeof lbT === "function" ? lbT("tcClearSelection") : "Clear")}</button>
+        </div>
+        <div class="album-track-head"><label class="check at-check"><input type="checkbox" id="album-sel-all" data-change="album-sel-head" aria-label="${appH("m963")}"><span class="box"></span></label><span class="at-idx">#</span><span class="at-info">${appH("m963")}</span><span class="at-dur">${appH("m964")}</span><span class="at-acts"></span></div>
+        ${rows}
+      </section>
+    </div>
+    <section id="album-related" class="card album-related-section" hidden></section>`;
+  loadAlbumRelated(ALB.artist, ALB.album);
+}
+
+
 const PLNEW = { ids: [] };
 async function openPlPicker(trackIDs) {
   PP.ids = trackIDs;
@@ -3784,8 +3919,8 @@ function sleepRemain(stopAt) {
 // switching to fixed positioning when opened.
 document.addEventListener("toggle", e => {
   const d = e.target;
-  if (!d || !d.classList || (!d.classList.contains("pb-sleep") && !d.classList.contains("pb-pop") && !d.classList.contains("pb-mode"))) return;
-  const menu = d.querySelector(".pb-sleep-menu, .pb-pop-menu, .pb-mode-menu"), sum = d.querySelector("summary");
+  if (!d || !d.classList || !d.classList.contains("pop")) return;
+  const menu = d.querySelector(".pop-menu"), sum = d.querySelector("summary");
   if (!menu || !sum) return;
   if (d.open) {
     const r = sum.getBoundingClientRect();
@@ -3824,17 +3959,17 @@ document.addEventListener("toggle", e => {
 }, true);
 // Clicking anywhere outside an open menu closes it.
 document.addEventListener("click", e => {
-  document.querySelectorAll(".pb-sleep[open], .pb-pop[open], .pb-mode[open]").forEach(d => {
+  document.querySelectorAll(".pop[open]").forEach(d => {
     if (!d.contains(e.target)) d.open = false;
   });
 });
 function sleepPopoverHtml(prefix, nodeID) {
   const idAttr = nodeID ? ` data-id="${esc(nodeID)}"` : "";
-  return `<details class="pb-sleep" id="${prefix}-sleep-wrap" data-disabled="1"><summary id="${prefix}-sleep" title="${appH("m942")}">${icon("clock", 14)}<span class="pb-sleep-remain mono" id="${prefix}-sleep-label" hidden></span></summary>
-    <div class="pb-sleep-menu" role="menu">
+  return `<details class="pop pb-sleep" id="${prefix}-sleep-wrap" data-disabled="1"><summary id="${prefix}-sleep" title="${appH("m942")}">${icon("clock", 14)}<span class="pb-sleep-remain mono" id="${prefix}-sleep-label" hidden></span></summary>
+    <div class="pop-menu pb-sleep-menu" role="menu">
       <div class="pb-sleep-head" id="${prefix}-sleep-remain">${appH("m953")}</div>
-      ${[15, 30, 60, 120].map(m => `<button class="pb-sleep-item" role="menuitem" data-act="sleep-set" data-min="${m}"${idAttr}>${appH(SLEEP_LABELS[m])}</button>`).join("")}
-      <button class="pb-sleep-item danger" role="menuitem" id="${prefix}-sleep-cancel" data-act="sleep-cancel"${idAttr} hidden>${icon("trash", 13)} ${appH("m947")}</button>
+      ${[15, 30, 60, 120].map(m => `<button class="pop-item" role="menuitem" data-act="sleep-set" data-min="${m}"${idAttr}>${appH(SLEEP_LABELS[m])}</button>`).join("")}
+      <button class="pop-item danger" role="menuitem" id="${prefix}-sleep-cancel" data-act="sleep-cancel"${idAttr} hidden>${icon("trash", 13)} ${appH("m947")}</button>
     </div>
   </details>`;
 }
@@ -3853,7 +3988,7 @@ function paintSleepPopover(prefix, nodeID, stopAt) {
   if (cancel) { cancel.hidden = !stopAt; if (nodeID) cancel.dataset.id = nodeID; }
   if (nodeID) wrap.querySelectorAll('[data-act="sleep-set"]').forEach(b => { b.dataset.id = nodeID; });
 }
-function closeSleepPopovers() { document.querySelectorAll(".pb-sleep[open], .pb-pop[open], .pb-mode[open]").forEach(d => { d.open = false; }); }
+function closeSleepPopovers() { document.querySelectorAll(".pop[open]").forEach(d => { d.open = false; }); }
 async function sleepSet(rawID, minutes) {
   const id = rawID || PB.id;
   if (!id || !minutes) { toast(appT("m951"), "warn"); return; }
@@ -4106,7 +4241,38 @@ Object.assign(ACT, {
   "ov-more": ds => { if (ds.kind === "recent") { OV.recentMore = !OV.recentMore; paintOvRecent(); } else { OV.addedMore = !OV.addedMore; paintOvAlbums(); } },
   "ov-recent-tab": ds => { OV.recentTab = ds.tab === "albums" ? "albums" : "tracks"; OV.recentMore = false; paintOvRecent(); },
   "ov-track-play": ds => openTrackPlay(ds.id),
-  "album-open": ds => openAlbum(ds.ak),
+  "album-open": ds => openAlbumPageFromKey(ds.ak),
+  "album-page-back": () => { albumPageReset(); if (S.view === "library") { if (typeof renderSidebarNav === "function") renderSidebarNav(); return refreshLibraryBrowser(); } setView("library"); },
+  "album-page-retry": () => refreshLibraryBrowser(),
+  "album-page-push": () => { const ids = ALB.tracks.filter(t => t.decodable).map(t => t.id); if (ids.length) openPushPicker({ trackIDs: ids, label: [ALB.album, ALB.artist].filter(Boolean).join(" · ") }); },
+  "album-page-pl": () => { const ids = ALB.tracks.filter(t => t.decodable).map(t => t.id); if (ids.length) openPlPicker(ids); },
+  "album-artist-open": ds => { if (ds.name && typeof openArtistAlbums === "function") return openArtistAlbums(ds.name); },
+  "album-cover-zoom": ds => { if (ds.hash) openModal(`${icon("disc", 18)} ${appH("m958")}`, `<img class="album-zoom-img" src="/api/v1/covers/${esc(ds.hash)}/640" alt="">`, `<button class="btn ghost" data-act="modal-close">${appH("m063")}</button>`); },
+  "album-sel-all": () => { ALB.tracks.filter(t => t.decodable).forEach(t => ALB.sel.add(t.id)); paintAlbumSelection(); },
+  "album-sel-clear": () => { ALB.sel.clear(); paintAlbumSelection(); },
+  "album-sel-push": () => {
+    const ids = ALB.tracks.filter(t => t.decodable && ALB.sel.has(t.id)).map(t => t.id);
+    if (ids.length) openPushPicker({ trackIDs: ids, label: [ALB.album, ALB.artist].filter(Boolean).join(" · ") });
+  },
+  "album-sel-pl": () => {
+    const ids = ALB.tracks.filter(t => t.decodable && ALB.sel.has(t.id)).map(t => t.id);
+    if (ids.length) openPlPicker(ids);
+  },
+  "album-open-folder": () => {
+    const t = ALB.tracks.find(x => x.mount_id && x.rel_path) || ALB.tracks[0];
+    if (!t || !t.mount_id) { toast(appT("m172"), "warn"); return; }
+    const rel = String(t.rel_path || "").replace(/\\/g, "/");
+    const dir = rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : "";
+    S.libTab = "folders"; albumPageReset();
+    const state = lbState();
+    state.frames = [
+      { get label() { return lbT("libFolders"); }, query: { category: "folders", page: 1, page_size: lbPageSize("folders"), field: "path", sort: "name", direction: "asc", artist_mode: "album", q: "" } },
+      { label: dir || t.mount_id, query: { category: "folders", page: 1, page_size: lbPageSize("folders"), field: "path", sort: "name", direction: "asc", artist_mode: "album", q: "", mount_id: t.mount_id, directory: dir, recursive: false } },
+    ];
+    if (S.view === "library") { if (typeof renderSidebarNav === "function") renderSidebarNav(); return refreshLibraryBrowser(); }
+    setView("library");
+  },
+  "album-track-play": ds => { const t = ALB.tracks.find(x => x.id === ds.id); if (t && t.decodable) openPushPicker({ trackIDs: [t.id], track: { id: t.id, title: t.title, artist: t.artist, album: t.album, codec: t.codec, mqa: t.mqa, duration_ms: t.duration_ms }, label: ALB.album }); },
   "artist-albums": ds => { if (typeof openArtistAlbums === "function") openArtistAlbums(ds.name || ""); },
   "album-push": ds => albumPush(ds.ak),
   "album-pl": ds => { const g = albumByKey(ds.ak); if (g) openPlPicker(g.tracks.map(t => t.id)); },
@@ -4240,7 +4406,7 @@ function appLanguageChanged() {
   attr("#mobile-nav-toggle", "aria-label", "openNavigation");
   attr("#xp-account", "aria-label", "adminPreferences");
   attr(".topbar .bell", "title", "m746"); attr(".topbar .bell", "aria-label", "m746");
-  attr("#player-bar", "aria-label", "m154"); attr(".player-bar-tools", "aria-label", "m161");
+  attr("#player-bar", "aria-label", "m154");
   for (const [selector, key] of [["#pb-prev", "m158"], ["#pb-next", "m160"]]) {
     attr(selector, "title", key); attr(selector, "aria-label", key);
   }
@@ -4277,6 +4443,15 @@ function onClick(e) {
     if (r && typeof r.catch === "function") r.catch(err => toast((err && err.message) || appT("m896"), "err"));
   } catch (err) { toast((err && err.message) || appT("m896"), "err"); }
 }
+CHG["album-track-sel"] = (el, ds) => {
+  if (el.checked) ALB.sel.add(ds.id); else ALB.sel.delete(ds.id);
+  paintAlbumSelection();
+};
+CHG["album-sel-head"] = el => {
+  ALB.sel.clear();
+  if (el.checked) ALB.tracks.filter(t => t.decodable).forEach(t => ALB.sel.add(t.id));
+  paintAlbumSelection();
+};
 function onChange(e) {
   const el = e.target.closest("[data-change]");
   if (!el) return;

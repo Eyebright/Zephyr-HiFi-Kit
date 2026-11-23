@@ -1424,7 +1424,7 @@ test("settings translation retains embedded async roots and repaints cached auth
       const content = section === "authorization" ? [languageTree("note"), languageTree("grid", [languageTree("#lic-card"), languageTree("#gpg-card")]), languageTree("banner")]
         : section === "packages" ? [languageTree("note"), languageTree("sources"), languageTree("apps", [languageTree(".sec-head"), languageTree("#cat-apps")]), languageTree("#bom-report"), languageTree("boms", [languageTree(".sec-head"), languageTree("#cat-boms")])]
           : [languageTree("update", [languageTree("#upd-body", [languageTree("#upd-server")])]), languageTree("#settings-maintenance-counts")];
-      return languageTree("#settings-page", [languageTree(".settings-heading"), languageTree("#settings-admin"), languageTree(".settings-anchors"), languageTree(".settings-section-heading"), languageTree("#settings-content-" + section, content)]);
+      return languageTree("#settings-page", [languageTree(".page-head"), languageTree("#settings-admin"), languageTree(".settings-anchors"), languageTree(".settings-section-heading"), languageTree("#settings-content-" + section, content)]);
     };
     const page = fixture(), query = h.document.querySelector, queryAll = h.document.querySelectorAll;
     const strip = selector => selector.startsWith("#settings-page ") ? selector.slice("#settings-page ".length) : null;
@@ -1435,13 +1435,13 @@ test("settings translation retains embedded async roots and repaints cached auth
     const admin = page.querySelector("#settings-admin"), content = page.querySelector("#settings-content-" + section);
     const snapshot = h.run("JSON.stringify([S,SETTINGS.epoch,SETTINGS.refreshSeq,SETTINGS.session,Array.from(SETTINGS.busy),SETTINGS.maintenance])");
     for (const locale of ["en", "zh-TW", "zh-CN"]) {
-      const oldHeading = page.querySelector(".settings-heading"), oldSectionHeading = page.querySelector(".settings-section-heading");
+      const oldHeading = page.querySelector(".page-head"), oldSectionHeading = page.querySelector(".settings-section-heading");
       const oldPackageHeads = section === "packages" ? retained.slice(0, 2).map(node => node.parentElement.querySelector(".sec-head")) : [];
       let next;
       h.document.createElement = tag => { assert.equal(tag, "div"); next = fixture(); return next; };
       h.run(`I18n.setPreference(${JSON.stringify(locale)})`);
       assert.ok(next.innerHTML.includes(h.run("settingsT('刷新状态')")), "real shell is generated in the selected language");
-      assert.notEqual(page.querySelector(".settings-heading"), oldHeading);
+      assert.notEqual(page.querySelector(".page-head"), oldHeading);
       assert.notEqual(page.querySelector(".settings-section-heading"), oldSectionHeading);
       assert.equal(page.querySelector("#settings-content-" + section), content);
       assert.equal(page.querySelector("#settings-admin"), admin);

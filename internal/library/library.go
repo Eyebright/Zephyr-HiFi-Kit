@@ -585,20 +585,38 @@ func (s *Service) ScanChanges(ctx context.Context, id string, full bool) (ScanRe
 			return ScanResult{}, err
 		}
 	}
+	// Album-level fill: a later sibling may have resolved art for tracks that
+	// were walked earlier in the same directory (WAV before an embedded FLAC).
+	for _, t := range changed {
+		if t.CoverHash != "" {
+			continue
+		}
+		hash := coverCacheHash(coverCache[filepath.Dir(t.Path)])
+		if hash == "" {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE tracks SET cover_hash=? WHERE id=?`, hash, t.ID); err != nil {
+			return ScanResult{}, err
+		}
+		result.CoversFilled++
+	}
 	// Unchanged tracks keep their tags, but art may have appeared (or become
 	// readable) since the last scan; fill only empty covers, sidecar-only so a
 	// routine sync never reopens every FLAC to re-check embedded pictures.
 	for _, t := range backfill {
 		dir := filepath.Dir(t.Path)
-		hash, ok := coverCache[dir]
-		if !ok {
+		state := coverCache[dir]
+		hash := coverCacheHash(state)
+		if hash == "" && state == "" {
 			if c, cerr := sidecarCover(dir, root); cerr == nil {
 				hash, err = coverBytes(ctx, tx, c, now)
 				if err != nil {
 					return ScanResult{}, err
 				}
+				coverCache[dir] = hash
+			} else {
+				coverCache[dir] = coverSidecarNone
 			}
-			coverCache[dir] = hash
 		}
 		if hash == "" {
 			continue
@@ -697,34 +715,64 @@ func rememberTrackIdentities(ctx context.Context, tx *sql.Tx, mountID string) er
 	return err
 }
 
+// Directory cover cache sentinels: "-e" means the first embedded scan found no
+// art, "-s" means the sidecar lookup found no image. A cached hash always wins.
+const (
+	coverEmbeddedNone = "\x00embed-none"
+	coverSidecarNone  = "\x00sidecar-none"
+)
+
+func coverCacheHash(state string) string {
+	if state == coverEmbeddedNone || state == coverSidecarNone {
+		return ""
+	}
+	return state
+}
+
 func (s *Service) storeCover(ctx context.Context, tx *sql.Tx, p, container, root string, cache map[string]string, now int64) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	if container == "flac" {
+	dir := filepath.Dir(p)
+	if hash := coverCacheHash(cache[dir]); hash != "" {
+		return hash, nil
+	}
+	state := cache[dir]
+	// Embedded art wins, but only the first FLAC in a directory is opened;
+	// every sibling reuses the album-level result.
+	if container == "flac" && state != coverEmbeddedNone {
 		c, err := media.ReadFLACCover(p)
 		if err == nil {
-			return coverBytes(ctx, tx, c, now)
+			hash, err := coverBytes(ctx, tx, c, now)
+			if err != nil {
+				return "", err
+			}
+			cache[dir] = hash
+			return hash, nil
 		}
 		if !errors.Is(err, media.ErrNoCover) {
 			return "", err
 		}
+		state = coverEmbeddedNone
+		cache[dir] = state
 	}
-	dir := filepath.Dir(p)
-	if hash, ok := cache[dir]; ok {
-		return hash, nil
+	if state != coverSidecarNone {
+		c, err := sidecarCover(dir, root)
+		if err == nil {
+			hash, err := coverBytes(ctx, tx, c, now)
+			if err != nil {
+				return "", err
+			}
+			cache[dir] = hash
+			return hash, nil
+		}
+		if state == coverEmbeddedNone {
+			cache[dir] = coverEmbeddedNone
+		} else {
+			cache[dir] = coverSidecarNone
+		}
 	}
-	c, err := sidecarCover(dir, root)
-	if err != nil {
-		cache[dir] = ""
-		return "", nil
-	}
-	hash, err := coverBytes(ctx, tx, c, now)
-	if err != nil {
-		return "", err
-	}
-	cache[dir] = hash
-	return hash, nil
+	return "", nil
 }
 
 // sidecarCover checks the track's folder and, for multi-disc layouts, its
@@ -761,6 +809,7 @@ func (s *Service) pruneCovers() {
 		SELECT cover_hash FROM tracks WHERE cover_hash <> ''
 		UNION SELECT cover_hash FROM play_history WHERE cover_hash <> ''
 		UNION SELECT cover_hash FROM favorites WHERE cover_hash <> '')`)
+	_, _ = s.db.Exec(`DELETE FROM cover_variants WHERE hash NOT IN (SELECT hash FROM covers)`)
 }
 
 // GetCover returns cached album art by content hash.

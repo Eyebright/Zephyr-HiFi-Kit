@@ -123,7 +123,7 @@ function shellSettings(languageOnly = false) {
   const anchors = `<nav class="settings-anchors" aria-label="${esc(settingsT("设置分区"))}">${SETTINGS_SECTIONS.map(([id, name]) => `<button class="chip ${id === section[0] ? "active" : ""}" data-act="settings-anchor" data-anchor="${esc(id)}" aria-pressed="${id === section[0]}">${esc(name)}</button>`).join("")}</nav>`;
   const blocks = SETTINGS_SECTIONS.map(([id, name, ic, desc]) => settingsHTML`<section class="settings-block" id="settings-block-${id}"><header class="settings-section-heading"><h2>${icon(ic, 20)}${esc(name)}</h2><p>${esc(desc)}</p></header><div id="settings-content-${id}">${settingsSectionShell(id)}</div></section>`).join("");
   return settingsHTML`<div id="settings-page" class="settings-page">
-    <header class="settings-heading"><div><span class="settings-eyebrow">Zephyr HiFi Kit / 设置</span><h1>设置</h1><p>音乐来源、播放能力与服务端管理，集中在这里。</p></div>${settingsButton("settings-refresh", "刷新状态", { icon: "refresh" })}</header>
+    <header class="page-head"><div><span class="settings-eyebrow">Zephyr HiFi Kit / 设置</span><h1>设置</h1><p class="ph-sub">音乐来源、播放能力与服务端管理，集中在这里。</p></div><div class="ph-actions">${settingsButton("settings-refresh", "刷新状态", { icon: "refresh" })}</div></header>
     <div class="settings-layout"><div class="settings-main"><section id="settings-admin" class="card settings-admin" aria-label="管理员解锁">${settingsNote("正在检查管理员会话…")}</section>
       ${anchors}
       <div id="settings-section-error" role="status" aria-live="polite"></div>
@@ -641,7 +641,7 @@ function settingsLanguageChanged() {
     const fresh = Array.from(next.querySelectorAll(selector));
     olds.forEach((old, i) => { if (fresh[i]) old.replaceWith(fresh[i]); });
   };
-  [".settings-heading", ".settings-section-heading", ".settings-anchors"].forEach(swap);
+  [".page-head", ".settings-section-heading", ".settings-anchors"].forEach(swap);
   const admin = $("#settings-admin");
   if (admin) { admin.setAttribute("aria-label", settingsT("管理员解锁")); delete admin.dataset.signature; settingsPaintSession(); }
   for (const [id] of SETTINGS_SECTIONS) {

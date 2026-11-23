@@ -123,3 +123,20 @@ func TestAssetETagReturnsNotModified(t *testing.T) {
 		t.Fatalf("revalidation status = %d", rec.Code)
 	}
 }
+
+func TestConsoleSecurityHeaders(t *testing.T) {
+	h := Handler()
+	for _, path := range []string{"/", "/app.js", "/no-shell-route"} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
+		if got := rec.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+			t.Fatalf("%s nosniff: %q", path, got)
+		}
+		if got := rec.Header().Get("X-Frame-Options"); got != "DENY" {
+			t.Fatalf("%s frame options: %q", path, got)
+		}
+		if got := rec.Header().Get("Content-Security-Policy"); got != "frame-ancestors 'none'" {
+			t.Fatalf("%s csp: %q", path, got)
+		}
+	}
+}

@@ -518,6 +518,17 @@ CREATE TABLE IF NOT EXISTS covers (
   created_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS cover_variants (
+  hash       TEXT NOT NULL,
+  size       INTEGER NOT NULL,
+  mime       TEXT NOT NULL,
+  width      INTEGER NOT NULL,
+  height     INTEGER NOT NULL,
+  data       BLOB NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (hash,size)
+);
+
 CREATE TABLE IF NOT EXISTS node_queue (
   node_id       TEXT PRIMARY KEY,
   track_ids     TEXT NOT NULL DEFAULT '[]',

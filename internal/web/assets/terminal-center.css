@@ -1,10 +1,7 @@
 #terminal-center { min-width: 0; }
-.tc-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
-.tc-heading h1 { margin: 0 0 4px; font-size: 24px; font-weight: 650; letter-spacing: -.03em; }
-.tc-heading p { margin: 0; }
 .tc-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; border-bottom: 1px solid var(--soft); padding-bottom: 10px; }
 .tc-tabs .btn { min-height: 36px; border-radius: 8px; }
-.tc-tabs .btn.active { color: var(--gold); background: rgba(246,168,33,.09); border-color: rgba(246,168,33,.28); }
+.tc-tabs .btn.active { color: var(--gold); background: rgba(var(--amber-rgb),.09); border-color: rgba(var(--amber-rgb),.28); }
 .tc-readonly { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 12px; margin-bottom: 14px; }
 .tc-readonly > span { display: inline-flex; align-items: center; gap: 8px; }
 .tc-node-head { flex-wrap: wrap; gap: 10px; }
@@ -37,21 +34,19 @@
 .tc-advanced-details .acts { flex-wrap: wrap; }
 .tc-ring { border-bottom: 1px solid var(--soft); padding: 14px 0; }
 .tc-ring p { margin: 6px 0; }
-#tc-advanced .upd-grid { grid-template-columns: minmax(0, 1fr); }
 #tc-errors .banner { align-items: flex-start; }
 @media (max-width: 640px) {
-  .tc-heading { align-items: flex-start; gap: 10px; margin-bottom: 16px; }
-  .tc-heading h1 { font-size: 21px; }
-  .tc-heading > button { flex-shrink: 0; }
-  .tc-node-head { padding: 12px; }
-  .tc-node-head .chips { flex-basis: 100%; }
-  .tc-node-head .spacer { display: none; }
-  .tc-node-head #tc-seats { flex: 1; }
-  .tc-task-filters { gap: 10px; padding: 12px; }
-  .tc-task-filters .field { min-width: 120px; }
-  .tc-task-filters > .hint { flex-basis: 100%; padding-bottom: 0; }
-  .tc-tabs { gap: 4px; }
-  .tc-tabs .btn { padding-inline: 10px; }
-  .tc-bulk > .b-cnt { flex-basis: 100%; }
-  .tc-resources strong { font-size: 14px; }
+.tc-node-head { padding: 12px; }
+.tc-node-head .chips { flex-basis: 100%; }
+.tc-node-head .spacer { display: none; }
+.tc-node-head #tc-seats { flex: 1; }
+.tc-task-filters { gap: 10px; padding: 12px; }
+.tc-task-filters .field { min-width: 120px; }
+.tc-task-filters > .hint { flex-basis: 100%; padding-bottom: 0; }
+.tc-tabs { gap: 4px; }
+.tc-tabs .btn { padding-inline: 10px; }
+.tc-bulk > .b-cnt { flex-basis: 100%; }
+.tc-resources strong { font-size: 14px; }
 }
+
+

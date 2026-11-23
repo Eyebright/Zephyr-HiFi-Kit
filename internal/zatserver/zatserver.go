@@ -11,6 +11,7 @@ package zatserver
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
@@ -390,7 +391,7 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 		s.sendError(conn, zat.ErrNotAuthorized, "node not authorized")
 		return
 	}
-	if secretHash(n.Secret) != hello.SecretSHA256 {
+	if subtle.ConstantTimeCompare([]byte(secretHash(n.Secret)), []byte(hello.SecretSHA256)) != 1 {
 		s.sendError(conn, zat.ErrAuthFailed, "secret mismatch")
 		return
 	}

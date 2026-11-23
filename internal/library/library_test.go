@@ -370,12 +370,17 @@ func TestScanExtractsAndPrunesCovers(t *testing.T) {
 	for _, tr := range tracks {
 		if tr.Title == "song" {
 			hash = tr.CoverHash
-		} else if tr.CoverHash != "" {
-			t.Fatalf("wav must not carry a cover: %+v", tr)
 		}
 	}
 	if hash == "" {
 		t.Fatalf("flac cover not extracted: %+v", tracks)
+	}
+	// Album-level resolution: every track in the folder shares the art found for
+	// the album, including WAV siblings scanned before the FLAC.
+	for _, tr := range tracks {
+		if tr.CoverHash != hash {
+			t.Fatalf("album tracks must share the directory cover: %+v", tr)
+		}
 	}
 	mime, data, err := s.GetCover(hash)
 	if err != nil || mime != "image/png" || string(data) != string(art) {

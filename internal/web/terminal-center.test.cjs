@@ -102,14 +102,14 @@ test("terminal language changes retain the workspace and repaint cached tabs wit
       paintTerminalFilters=(force)=>{ filterPaints.push(force); return filtersForLanguageTest(force); };`);
     const parts = new Map();
     const part = (selector, innerHTML) => ({ innerHTML, replaceWith(next) { assert.ok(next); parts.set(selector, part(selector, next.innerHTML)); } });
-    for (const selector of [".tc-heading", ".tc-tabs"]) parts.set(selector, part(selector, "old labels"));
+    for (const selector of [".page-head", ".tc-tabs"]) parts.set(selector, part(selector, "old labels"));
     const add = { innerHTML: "old add label" };
     root.querySelector = selector => selector === "[data-act='wz-open']" ? tab === "nodes" ? add : null : parts.get(selector) || null;
     // Only extract the two replaceable shell fragments, not a simulated browser DOM.
     h.context.document.createElement = tag => {
       assert.equal(tag, "div");
       return { innerHTML: "", querySelector(selector) {
-        const html = selector === ".tc-heading" ? this.innerHTML.match(/<div class="tc-heading">([\s\S]*?)<nav class="tc-tabs"/)[1]
+        const html = selector === ".page-head" ? this.innerHTML.match(/<div class="page-head">([\s\S]*?)<nav class="tc-tabs"/)[1]
           : this.innerHTML.match(/<nav class="tc-tabs"[\s\S]*?<\/nav>/)[0];
         return { innerHTML: html };
       } };
@@ -127,7 +127,7 @@ test("terminal language changes retain the workspace and repaint cached tabs wit
       ["zh-CN", "终端中心", "添加终端", "任务记录"]
     ]) {
       h.run(`filterPaints.length=0; I18n.setPreference(${JSON.stringify(locale)}); terminalCenterLanguageChanged()`);
-      assert.ok(parts.get(".tc-heading").innerHTML.includes(title));
+      assert.ok(parts.get(".page-head").innerHTML.includes(title));
       assert.ok(parts.get(".tc-tabs").innerHTML.includes(taskLabel));
       assert.ok(parts.get(".tc-tabs").innerHTML.includes(`data-tab="${tab}" aria-pressed="true"`));
       assert.equal(h.elements.get("#terminal-center"), root); assert.equal(h.elements.get("#tc-workspace"), workspace);

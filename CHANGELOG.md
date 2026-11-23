@@ -3,6 +3,20 @@
 和风HiFi音乐播放套件。最新版本在前，版本号与 Git 标签、GitHub Releases 一致。
 Newest first; version numbers match Git tags and GitHub Releases.
 
+## 0.65 — 2026-11-23
+
+**中文**
+- 专辑封面效率：封面按专辑目录一次性解析（内嵌优先，旁置 cover/folder 等图片兜底），惰性生成 96/256/384/640 四档缩略索引并按显示尺寸供给，immutable 缓存；列表不再整张下发原图，清晰度与流量兼顾。
+- 专辑详情页：独立页面展示大封面与艺术家/年份/风格等信息；曲目支持多选与批量入队/推送；相似专辑独立成行（无相似时隐藏）；新增「打开文件夹」定位到源目录；窄屏封面与信息居中。
+- 界面样式统一：清理死代码并加入样式守卫测试；弹层样式合并、颜色收敛为 RGB 变量、静态内联样式迁入类；各页页头、工具栏、空状态与表单统一为共享组件。
+- 安全加固：告警确认/全部确认/解决/扫描纳入管理员门禁；ZAT HELLO 的密钥摘要比对改为常量时间比较；控制台所有响应增加 nosniff 与禁止 iframe 嵌套头；govulncheck 对服务端与终端模块扫描均无已知漏洞。
+
+**English**
+- Cover efficiency: covers resolve once per album directory (embedded first, sidecar cover/folder images as fallback) and lazily render 96/256/384/640 px indexed variants served at display size with immutable caching; lists no longer download full originals.
+- Album page: a dedicated page with a large cover and artist/year/genre info, multi-select tracks with bulk queue/push actions, a separate related-albums row (hidden when empty), an "open folder" jump to the source directory, and a centered hero on narrow screens.
+- Style unification: dead CSS removed behind a style-guard test; popovers merged, colors consolidated into RGB tokens and static inline styles moved into classes; page headers, toolbars, empty states and forms share common components.
+- Security hardening: alert ack/ack-all/resolve/scan now require the admin session; the ZAT HELLO secret-digest comparison is constant-time; every console response carries nosniff and frame-ancestors 'none'; govulncheck reports no known vulnerabilities for the server and agent modules.
+
 ## 0.64 — 2026-11-22
 
 **中文**

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 
 	"hifihub/server/internal/library"
 	"hifihub/server/internal/zatserver"
@@ -184,6 +185,30 @@ func (a *API) getCover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	mime, data, err := a.lib.GetCover(r.PathValue("hash"))
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", mime)
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
+}
+
+// getCoverSized serves a lazily rendered thumbnail (96/256/640 px long edge).
+func (a *API) getCoverSized(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
+	if a.lib == nil {
+		writeErrorCode(w, http.StatusServiceUnavailable, "library_unavailable", "媒体库未启用")
+		return
+	}
+	size, err := strconv.Atoi(r.PathValue("size"))
+	if err != nil || !library.CoverSizes[size] {
+		writeErrorCode(w, http.StatusBadRequest, "cover_size_invalid", "封面尺寸仅支持 96、256、384、640")
+		return
+	}
+	mime, data, err := a.lib.GetCoverVariant(r.PathValue("hash"), size)
 	if err != nil {
 		fail(w, err)
 		return
