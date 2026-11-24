@@ -1050,6 +1050,11 @@ func TestDSDDefaultsToPCMConversion(t *testing.T) {
 		t.Fatal(err)
 	}
 	tracks, _ := h.lib.ListTracks(m.ID)
+	old := openFallbackPCM
+	defer func() { openFallbackPCM = old }()
+	openFallbackPCM = func(path string, rate, channels, durationMS int) (decode.Decoder, error) {
+		return &fakePCMDecoder{format: decode.PCMFormat{Format: zat.S24LE, Rate: rate, Channels: channels}, total: uint64(rate)}, nil
+	}
 	ready := make(chan struct{}, 1)
 	events := make(chan ctrlEvent, 64)
 	go runCtrlEndpointOpts(t, h.srv.Addr(), nodeID, secret, ctrlOpts{caps: zat.Caps{MaxChannels: 2, DoP: true, ALSADevices: []string{"hw:0,0"}}}, ready, events)

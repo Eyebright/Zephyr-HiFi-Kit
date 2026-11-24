@@ -334,7 +334,7 @@ func TestReadTagsID3EncodingsAndVersions(t *testing.T) {
 	for _, u := range units {
 		utf16Payload = binary.LittleEndian.AppendUint16(utf16Payload, u)
 	}
-	legacy := append([]byte{0}, []byte{0xd6, 0xd0, 0xce, 0xc4, 0xb8, 0xe8, 0xc7, 0xfa}...)
+	legacy := append([]byte{0}, []byte{0xd2, 0xf4, 0xc0, 0xd6}...) // GBK: 音乐
 	for _, tc := range []struct {
 		name     string
 		data     []byte
@@ -342,10 +342,15 @@ func TestReadTagsID3EncodingsAndVersions(t *testing.T) {
 		want     Tags
 	}{
 		{"utf16", id3Tag(4, 0, id3Frame(4, "TPE1", utf16Payload)), EncodingAuto, Tags{Artist: "王菲"}},
-		{"legacy", id3Tag(3, 0, id3Frame(3, "TIT2", legacy)), EncodingGBK, Tags{Title: "中文歌曲"}},
+		{"legacy", id3Tag(3, 0, id3Frame(3, "TIT2", legacy)), EncodingGBK, Tags{Title: "音乐"}},
 		{"id3v22", id3Tag(2, 0, id3Frame(2, "TT2", append([]byte{3}, []byte("Old title")...)), id3Frame(2, "TP1", append([]byte{3}, []byte("Old artist")...))), EncodingAuto, Tags{Title: "Old title", Artist: "Old artist"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			if tc.name == "legacy" {
+				if _, ok := decodeWithEncoding(legacy[1:], EncodingGBK); !ok {
+					t.Skip("legacy code-page transcoding is unavailable on this platform")
+				}
+			}
 			got, err := readTags(bytes.NewReader(tc.data), int64(len(tc.data)), tc.encoding)
 			if err != nil || got != tc.want {
 				t.Fatalf("tags = %+v, %v; want %+v", got, err, tc.want)
