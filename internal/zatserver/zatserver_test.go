@@ -286,7 +286,7 @@ func TestPushPlaybackRoundTrip(t *testing.T) {
 	if res.setup.ALSADevice != "default" {
 		t.Fatalf("alsa device wrong: %q", res.setup.ALSADevice)
 	}
-	if res.meta.Title != "song" || res.meta.Artist != "" || res.meta.Album != "" {
+	if res.meta.Title != "song" || res.meta.Artist != "Artist" || res.meta.Album != "Album" {
 		t.Fatalf("track meta wrong: %+v", res.meta)
 	}
 	if string(res.pcm) != string(pcm) {

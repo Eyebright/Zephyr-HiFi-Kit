@@ -1,6 +1,7 @@
 package zat
 
 import (
+	"bytes"
 	"encoding/json"
 	"testing"
 )
@@ -57,6 +58,21 @@ func TestStatusJSONContract(t *testing.T) {
 	}
 	if got.State != "playing" || got.PTS != 48000 || got.DacHolderPID != 4242 {
 		t.Fatalf("status roundtrip mismatch: %+v", got)
+	}
+	if bytes.Contains(f.Payload, []byte(`"alsa_devices"`)) {
+		t.Fatalf("nil hotplug report must be omitted: %s", f.Payload)
+	}
+	st.ALSADevices = []string{}
+	st.ALSADeviceInfo = []ALSADevice{}
+	f, err = ControlFrame(TypeStatus, 10, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := UnmarshalPayload(f.Payload, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.ALSADevices == nil || len(got.ALSADevices) != 0 || got.ALSADeviceInfo == nil || len(got.ALSADeviceInfo) != 0 {
+		t.Fatalf("empty hotplug report was lost: %s", f.Payload)
 	}
 }
 

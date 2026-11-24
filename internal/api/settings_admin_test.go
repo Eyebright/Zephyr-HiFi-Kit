@@ -34,6 +34,17 @@ func adminTestRequest(method, body string) *http.Request {
 	return r
 }
 
+// adminRemoteRequest simulates a remote (non-loopback) HTTPS client so the admin
+// session gate still applies; loopback is trusted and bypasses the password.
+func adminRemoteRequest(method, body string) *http.Request {
+	r := httptest.NewRequest(method, "https://localhost/api/v1/settings/session", strings.NewReader(body))
+	r.RemoteAddr = "192.0.2.1:24680"
+	r.TLS = &tls.ConnectionState{}
+	r.Header.Set("Origin", "https://localhost")
+	r.Header.Set("Content-Type", "application/json")
+	return r
+}
+
 func adminTestSetup(t *testing.T, a *API) *http.Cookie {
 	t.Helper()
 	w := httptest.NewRecorder()
@@ -101,7 +112,7 @@ func TestSettingsAdminSessionLifecycle(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &status); err != nil {
 		t.Fatal(err)
 	}
-	if status["authenticated"] != true || status["configured"] != true || status["can_setup"] != false || len(status) != 4 {
+	if status["authenticated"] != true || status["configured"] != true || status["can_setup"] != false || len(status) != 5 {
 		t.Fatalf("status: %s", w.Body.String())
 	}
 	if strings.Contains(w.Body.String(), a.cfg.DataDir) || strings.Contains(w.Body.String(), adminTestPassword) {
@@ -123,7 +134,7 @@ func TestSettingsAdminSessionLifecycle(t *testing.T) {
 	}
 	called = false
 	w = httptest.NewRecorder()
-	guard(w, req)
+	guard(w, adminRemoteRequest("POST", `{}`))
 	if w.Code != 401 || called {
 		t.Fatal("logged-out token accepted")
 	}
@@ -199,7 +210,7 @@ func TestSettingsAdminMutationGuard(t *testing.T) {
 	a := adminTestAPI(t)
 	guard := a.requireSettingsAdmin(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) })
 	w := httptest.NewRecorder()
-	guard(w, adminTestRequest("POST", `{}`))
+	guard(w, adminRemoteRequest("POST", `{}`))
 	if w.Code != 401 {
 		t.Fatalf("unconfigured allowed: %d", w.Code)
 	}
@@ -209,7 +220,13 @@ func TestSettingsAdminMutationGuard(t *testing.T) {
 		change func(*http.Request)
 		want   int
 	}{
-		{"unauthenticated", func(r *http.Request) { r.Header.Del("Cookie") }, 401},
+		{"unauthenticated", func(r *http.Request) {
+			r.Header.Del("Cookie")
+			r.RemoteAddr = "192.0.2.1:1"
+			r.TLS = &tls.ConnectionState{}
+			r.Host = "localhost"
+			r.Header.Set("Origin", "https://localhost")
+		}, 401},
 		{"cross-origin", func(r *http.Request) { r.Header.Set("Origin", "https://evil.example") }, 403},
 		{"cross-site", func(r *http.Request) { r.Header.Set("Sec-Fetch-Site", "cross-site") }, 403},
 		{"form", func(r *http.Request) { r.Header.Set("Content-Type", "application/x-www-form-urlencoded") }, 415},

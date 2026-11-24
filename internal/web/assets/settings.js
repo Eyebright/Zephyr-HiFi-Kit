@@ -48,13 +48,14 @@ function settingsTranslatedList(items, columns) {
 const SETTINGS = {
   section: "profile", session: null, sessionError: "", authBusy: false,
   epoch: 0, refreshSeq: 0, sessionSeq: 0, authSeq: 0, busy: new Set(), mounts: [], counts: new Map(),
-  maintenance: null, observer: null
+  maintenance: null, metadataPreview: null, metadataSeq: 0, observer: null, pendingJump: ""
 };
 const SETTINGS_SECTIONS = settingsTranslatedList([
   ["profile", "管理员与偏好", "user", "管理员称呼、会话安全与首次使用引导"],
   ["authorization", "授权信息", "shield", "终端席位、许可证扩容与验签公钥"],
   ["folders", "音乐文件夹", "folder", "服务端本地目录与 NAS 音乐源"],
-  ["packages", "软件包与源", "box", "应用版本、软件包、签名与安装源；安装执行见终端中心"],
+  ["devices", "音频设备", "speaker", "播放终端与每台设备的激活、命名、DSD 输出与均衡"],
+  ["packages", "软件包与源", "box", "应用版本、软件包、签名与安装源；安装执行见音频设备"],
   ["maintenance", "备份与维护", "database", "服务端自升级、音乐数据备份、恢复与操作日志清理"],
   ["about", "关于我们", "info", "产品介绍、服务端版本、许可与第三方实现来源"]
 ], [1, 3]);
@@ -117,7 +118,7 @@ function settingsObserve() {
   settingsApplyAccess();
 }
 function shellSettings(languageOnly = false) {
-  if (!languageOnly) SETTINGS.epoch++;
+  if (!languageOnly) { SETTINGS.epoch++; settingsInvalidateMetadata(false); }
   const section = SETTINGS_SECTIONS.find(x => x[0] === SETTINGS.section) || SETTINGS_SECTIONS[0];
   SETTINGS.section = section[0];
   const anchors = `<nav class="settings-anchors" aria-label="${esc(settingsT("设置分区"))}">${SETTINGS_SECTIONS.map(([id, name]) => `<button class="chip ${id === section[0] ? "active" : ""}" data-act="settings-anchor" data-anchor="${esc(id)}" aria-pressed="${id === section[0]}">${esc(name)}</button>`).join("")}</nav>`;
@@ -132,15 +133,16 @@ function shellSettings(languageOnly = false) {
 }
 function openSettings(section = "profile") {
   SETTINGS.section = SETTINGS_SECTIONS.some(x => x[0] === section) ? section : "profile";
+  SETTINGS.pendingJump = SETTINGS.section;
   if (typeof experienceOpenSettings === "function") experienceOpenSettings();
   setView("settings");
   if (typeof renderSidebarNav === "function") renderSidebarNav();
   if (SETTINGS.section !== "profile") {
-    const jump = () => settingsAnchorsJump(SETTINGS.section);
+    const jump = () => { if (SETTINGS.pendingJump === section) settingsAnchorsJump(section); };
     if (typeof requestAnimationFrame === "function") requestAnimationFrame(jump); else jump();
   }
 }
-function settingsAnchorsJump(id) {
+function settingsAnchorsJump(id, smooth = true) {
   if (!SETTINGS_SECTIONS.some(x => x[0] === id)) return;
   SETTINGS.section = id;
   document.querySelectorAll("#settings-page .settings-anchors .chip").forEach(chip => {
@@ -149,7 +151,7 @@ function settingsAnchorsJump(id) {
     chip.setAttribute("aria-pressed", String(active));
   });
   const el = $("#settings-block-" + id);
-  if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  if (el && el.scrollIntoView) el.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "start" });
 }
 // Scroll-spy keeps the anchor bar in sync while the single settings page scrolls.
 let settingsSpyBound = false;
@@ -185,9 +187,10 @@ function settingsSectionShell(id = SETTINGS.section) {
   switch (id) {
     case "profile": return typeof experienceProfileShell === "function" ? experienceProfileShell() : settingsNote("管理员资料界面尚未加载，请刷新页面。", "warn");
     case "authorization": return settingsNote("服务端内置 3 台终端席位，日常无需许可证；席位扩容已收进高级项。此处公钥仅用于验证第三方签名的应用包，不生成、上传或导出签发私钥。") + shellKeys();
-    case "packages": return settingsNote("这里只维护应用版本、软件包、签名与安装源；安装执行请前往终端中心。当前交付支持 Linux DEB、APT 与受支持的 Linux 归档包，架构相同不代表操作系统兼容：Windows/macOS 文件不能当作 Linux 可安装包。") + settingsHTML`<section class="card"><div class="settings-card-head"><h3>${icon("globe", 17)} 安装源管理</h3>${settingsButton("apt-sources", "安装源管理", { icon: "globe" })}</div><p>可只读浏览 APT 安装源，添加或删除源需解锁管理员。应用名仍打开原版本与入库流程；BOM 高级管理保留在下方，不在这里执行终端安装。</p></section>` + shellCatalog();
+    case "packages": return settingsNote("这里只维护应用版本、软件包、签名与安装源；安装执行请前往「音频设备」。当前交付支持 Linux DEB、APT 与受支持的 Linux 归档包，架构相同不代表操作系统兼容：Windows/macOS 文件不能当作 Linux 可安装包。") + settingsHTML`<section class="card"><div class="settings-card-head"><h3>${icon("globe", 17)} 安装源管理</h3>${settingsButton("apt-sources", "安装源管理", { icon: "globe" })}</div><p>可只读浏览 APT 安装源，添加或删除源需解锁管理员。应用名仍打开原版本与入库流程；BOM 高级管理保留在下方，不在这里执行终端安装。</p></section>` + shellCatalog();
     case "about": return settingsAboutShell();
     case "maintenance": return settingsMaintenanceShell();
+    case "devices": return typeof shellNodes === "function" ? shellNodes() : settingsNote("音频设备界面尚未加载，请刷新页面。", "warn");
     default: return settingsFoldersShell();
   }
 }
@@ -219,14 +222,17 @@ function settingsPaintSession() {
 async function settingsRefreshSession(duringAuth = false) {
   if (SETTINGS.authBusy && !duringAuth) return SETTINGS.session;
   const seq = ++SETTINGS.sessionSeq;
+  const wasAuthenticated = settingsAdmin();
   try {
     const session = await api("GET", "/settings/session");
     if (seq !== SETTINGS.sessionSeq) return;
     if (!session || !["configured", "authenticated", "can_setup", "secure_context"].every(k => typeof session[k] === "boolean")) throw new Error("管理员会话响应不完整");
     SETTINGS.session = session; SETTINGS.sessionError = "";
+    if (wasAuthenticated !== settingsAdmin()) settingsInvalidateMetadata();
   } catch (e) {
     if (seq !== SETTINGS.sessionSeq) return;
     SETTINGS.session = null;
+    settingsInvalidateMetadata();
     SETTINGS.sessionError = e.status === 404 ? "管理员接口尚不可用，请确认服务端已更新。" : "无法确认管理员会话，请检查连接后重试。";
   }
   if (settingsHere()) { settingsPaintSession(); settingsApplyAccess(); }
@@ -250,6 +256,7 @@ async function settingsAuthenticate(options = {}) {
   const seq = ++SETTINGS.authSeq, epoch = SETTINGS.epoch, view = S.view;
   if (typeof experienceAuthenticationStarted === "function") experienceAuthenticationStarted();
   SETTINGS.sessionSeq++; // Invalidate any pre-login session read.
+  settingsInvalidateMetadata();
   SETTINGS.authBusy = true; settingsPaintSession();
   if (typeof experienceApplyAccess === "function") experienceApplyAccess();
   let failure = "", authenticated = false;
@@ -280,8 +287,10 @@ async function settingsAuthenticate(options = {}) {
 async function settingsLogout() {
   if (SETTINGS.authBusy) return;
   SETTINGS.authSeq++; SETTINGS.sessionSeq++;
+  settingsInvalidateMetadata();
   SETTINGS.authBusy = true;
   SETTINGS.session = SETTINGS.session ? { ...SETTINGS.session, authenticated: false } : null;
+  settingsPaintMetadataOrganization();
   if (typeof experienceSessionChanged === "function") experienceSessionChanged(true);
   settingsPaintSession(); settingsApplyAccess();
   try {
@@ -301,6 +310,7 @@ async function settingsLogout() {
 async function settingsFailure(e, target) {
   if (e.status === 401) {
     SETTINGS.session = null;
+    settingsInvalidateMetadata();
     await settingsRefreshSession();
   }
   const message = e.status === 401 ? "管理员会话已失效，请重新解锁后重试。" : e.message || "操作失败，请重试。";
@@ -317,19 +327,28 @@ async function refreshSettings() {
   settingsError("settings-section-error", "");
   // Register before awaiting so a late response cannot restart a stopped view poll.
   poll("view:server-update", () => { if (settingsHere()) return refreshUpdateLive(); }, 4000);
+  poll("view:devices", () => { if (settingsHere() && SETTINGS.section === "devices" && typeof refreshTerminalCenter === "function") return refreshTerminalCenter(); }, 4000);
   const loaders = [
     () => typeof refreshExperienceProfile === "function" ? refreshExperienceProfile(current) : null,
     () => refreshKeys(),
     () => refreshCatalog(),
     () => settingsRefreshAbout(current),
     () => settingsRefreshFolders(current),
-    () => Promise.all([settingsRefreshMaintenance(current), refreshUpdate()])
+    () => Promise.all([settingsRefreshMaintenance(current), refreshUpdate()]),
+    () => typeof refreshTerminalCenter === "function" ? refreshTerminalCenter() : null
   ];
   const results = await Promise.allSettled(loaders.map(async run => run()));
   if (!current()) return;
   const failed = results.find(r => r.status === "rejected");
   if (failed) await settingsFailure(failed.reason, "settings-section-error");
-  if (current()) settingsApplyAccess();
+  if (current()) {
+    settingsApplyAccess();
+    if (SETTINGS.pendingJump) {
+      const section = SETTINGS.pendingJump;
+      SETTINGS.pendingJump = "";
+      settingsAnchorsJump(section, false);
+    }
+  }
 }
 
 function settingsFoldersShell() {
@@ -501,8 +520,9 @@ async function settingsRefreshAbout(current) {
 }
 
 function settingsMaintenanceShell() {
-  return settingsHTML`<section class="card" aria-label="服务端自升级"><p>这里只管理服务端自升级；检查、应用更新与自动升级开关均需管理员解锁。终端 Agent 升级策略请前往终端中心的高级维护。</p><div id="upd-body" data-update-scope="server"><div id="upd-server"></div></div></section>
+  return settingsHTML`<section class="card" aria-label="服务端自升级"><p>这里只管理服务端自升级；检查、应用更新与自动升级开关均需管理员解锁。终端 Agent 升级策略请前往「音频设备」的高级维护。</p><div id="upd-body" data-update-scope="server"><div id="upd-server"></div></div></section>
     <section class="card"><h3>音乐数据概况</h3><div id="settings-maintenance-counts" class="settings-count-grid">${settingsNote("解锁管理员后读取维护统计。")}</div></section>
+    <section class="card"><h3>${icon("edit", 17)} ${settingsT("音乐分类整理")}</h3><p>${settingsT("先读取音频内嵌标签，再用保守目录规则补齐缺失字段；保留有效标签，不把平铺单曲合并为一张专辑。不会修改音频文件，也不会联网识别。")}</p><div class="settings-maintenance-row"><div><strong>${settingsT("未分类曲目整理")}</strong><p>${settingsT("先预览预计形成的专辑分组、未识别曲目与收藏影响，确认后才回填曲库。")}</p></div><span class="acts">${settingsButton("metadata-preview", "只读预览", { admin: true, task: "maintenance", icon: "eye" })}${settingsHTML`<button id="metadata-apply" type="button" class="btn danger sm" data-act="metadata-apply" data-settings-admin data-settings-task="maintenance" disabled>${settingsT("按预览整理…")}</button>`}</span></div><div id="metadata-organization-note" class="settings-small" role="status" aria-live="polite">${settingsT("先运行只读预览；确认前不会修改曲库。")}</div></section>
     <section class="card"><h3>${icon("edit", 17)} 标签编码修复</h3><p>自动用文件名与上级目录修复被写成 “?” 的标题、艺术家与专辑，先预览影响数量再修复。原始音频与曲目 ID 不变。</p><div class="settings-maintenance-row"><div><strong>乱码标签回填</strong><p>仅修改损坏字段；无文件名/目录可依据的字段保持原样。</p></div><span class="acts">${settingsButton("text-repair-preview", "预览乱码修复", { icon: "eye" })}${settingsButton("text-repair-apply", "修复乱码标签…", { admin: true, task: "maintenance", className: "danger sm" })}</span></div><div id="text-repair-note" class="settings-small" role="status"></div></section>
     <div id="settings-maintenance-error" role="status" aria-live="polite"></div>
     <section class="card"><h3>${icon("download", 17)} 音乐数据备份</h3><p>下载音乐 JSON：包括源的非凭据配置、曲库、封面、播放列表与播放历史。不包含账号凭据、终端身份、许可证、签发私钥或原音频。</p><p class="settings-small">备份中可能包含音乐目录、曲目及收听记录，请妥善保管。</p>${settingsButton("settings-backup", "下载音乐 JSON 备份", { admin: true, task: "maintenance", icon: "download", className: "primary" })}</section>
@@ -512,8 +532,9 @@ function settingsMaintenanceShell() {
 }
 async function settingsRefreshMaintenance(current) {
   if (!settingsAdmin()) {
-    SETTINGS.maintenance = null;
+    SETTINGS.maintenance = null; settingsInvalidateMetadata(false);
     const el = $("#settings-maintenance-counts"); if (el) el.innerHTML = settingsNote("维护统计、备份、恢复与清理均需管理员解锁。");
+    settingsPaintMetadataOrganization();
     return;
   }
   const result = await api("GET", "/settings/maintenance");
@@ -574,6 +595,79 @@ async function settingsRestore() {
     settingsToast("音乐数据已恢复，请检查源路径与 NAS 凭据。", "ok"); await refreshSettings();
   } catch (e) { await settingsFailure(e, "settings-maintenance-error"); }
   finally { backup = null; SETTINGS.busy.delete("maintenance"); settingsApplyAccess(); }
+}
+function settingsInvalidateMetadata(repaint = true) {
+  SETTINGS.metadataSeq++;
+  SETTINGS.metadataPreview = null;
+  if (repaint && settingsHere()) settingsPaintMetadataOrganization();
+}
+function settingsPaintMetadataOrganization() {
+  const note = $("#metadata-organization-note"), apply = $("#metadata-apply"), preview = SETTINGS.metadataPreview;
+  if (!note || !apply) return;
+  const ready = !!preview && typeof preview.preview_token === "string" && !!preview.preview_token && Number.isFinite(preview.count) && preview.count > 0;
+  if (ready) apply.dataset.settingsBlocked = "false"; else apply.dataset.settingsBlocked = "true";
+  settingsApplyAccess();
+  if (!preview) { note.innerHTML = settingsNote("先运行只读预览；确认前不会修改曲库。"); return; }
+  if (!Number.isFinite(preview.count) || preview.count < 0) { note.innerHTML = settingsNote("分类预览结果无效，请重新预览。", "err"); return; }
+  const blocks = [];
+  if (!preview.count) {
+    blocks.push(settingsNote("没有需要整理的音乐分类。"));
+  } else {
+    const kind = preview.unavailable > 0 ? "warn" : "info";
+    blocks.push(settingsNote(settingsT("待整理 {count} 首；预计形成 {albums} 个专辑分组，其中 {unidentified} 首仍标记为未识别。", { count: settingsNumber(preview.count), albums: settingsNumber(preview.estimated_albums || 0), unidentified: settingsNumber(preview.unidentified || 0) }), kind));
+    const formats = Object.entries(preview.formats || {}).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name, count]) => `${name} ${settingsNumber(count)}`).join("、");
+    if (formats) blocks.push(settingsHTML`<p class="settings-small">${esc(settingsT("格式分布：{formats}", { formats }))}</p>`);
+    const kept = (preview.favorite_risks || []).filter(x => x.action === "keep").length;
+    if (kept) blocks.push(settingsNote(settingsT("{count} 个收藏专辑因目标不唯一而保留原收藏记录。", { count: settingsNumber(kept) }), "warn"));
+    if (preview.unavailable > 0) blocks.push(settingsNote(settingsT("{count} 首音乐源不可用，将保持原分类不变；确认整理时会明确跳过这些曲目。", { count: settingsNumber(preview.unavailable) }), "warn"));
+    if (preview.tag_errors > 0) blocks.push(settingsNote(settingsT("{count} 首标签解析异常；仍按可读取标签与目录规则预览。", { count: settingsNumber(preview.tag_errors) }), "warn"));
+    const samples = (preview.samples || []).slice(0, 8);
+    if (samples.length) blocks.push(settingsHTML`<ul class="settings-small">${samples.map(s => settingsHTML`<li>${esc(s.rel_path)} → ${esc(s.new_artist || "—")} / ${esc(s.new_album || "—")}</li>`).join("")}</ul>`);
+  }
+  note.innerHTML = blocks.join("");
+}
+async function settingsMetadataPreview() {
+  if (SETTINGS.busy.has("maintenance") || !settingsRequireAdmin()) return;
+  const epoch = SETTINGS.epoch, seq = ++SETTINGS.metadataSeq;
+  SETTINGS.metadataPreview = null; settingsPaintMetadataOrganization();
+  SETTINGS.busy.add("maintenance"); settingsApplyAccess(); settingsError("settings-maintenance-error", "");
+  try {
+    const preview = await api("GET", "/settings/maintenance/metadata-preview");
+    if (!settingsHere() || epoch !== SETTINGS.epoch || seq !== SETTINGS.metadataSeq) return;
+    if (!preview || typeof preview.preview_token !== "string" || !preview.preview_token || !Number.isFinite(preview.count) || preview.count < 0) throw new Error("分类预览结果无效，请重新预览。");
+    SETTINGS.metadataPreview = preview;
+    settingsPaintMetadataOrganization();
+    settingsToast(settingsT("分类预览完成：{count} 首", { count: settingsNumber(preview.count) }), "ok");
+  } catch (e) {
+    if (!settingsHere() || epoch !== SETTINGS.epoch || seq !== SETTINGS.metadataSeq) return;
+    settingsInvalidateMetadata(); await settingsFailure(e, "settings-maintenance-error");
+  } finally { SETTINGS.busy.delete("maintenance"); settingsApplyAccess(); }
+}
+async function settingsMetadataApply() {
+  const preview = SETTINGS.metadataPreview;
+  if (!preview?.count || typeof preview.preview_token !== "string" || !preview.preview_token) { settingsError("settings-maintenance-error", "请先运行只读预览。"); return; }
+  if (SETTINGS.busy.has("maintenance") || !settingsRequireAdmin()) return;
+  const epoch = SETTINGS.epoch, seq = SETTINGS.metadataSeq;
+  SETTINGS.busy.add("maintenance"); settingsApplyAccess(); settingsError("settings-maintenance-error", "");
+  try {
+    const skipped = preview.unavailable > 0 ? settingsNumber(preview.unavailable) : "0";
+    const message = settingsT("将只补齐 {count} 首曲目的缺失标签，预计形成 {albums} 个专辑分组。有效标签与原音频不变；不唯一的收藏专辑会保留原记录。", { count: settingsNumber(preview.count), albums: settingsNumber(preview.estimated_albums || 0) }) + (preview.unavailable > 0 ? " " + settingsT("{count} 首音乐源不可用，将保持原分类不变；确认整理时会明确跳过这些曲目。", { count: skipped }) : "");
+    const ok = await confirmDlg({ title: settingsT("确认整理音乐分类"), message, okText: preview.unavailable > 0 ? settingsT("开始整理并跳过 {count} 首", { count: skipped }) : settingsT("开始整理") });
+    if (!ok) { settingsPaintMetadataOrganization(); return; }
+    if (!settingsHere() || epoch !== SETTINGS.epoch || seq !== SETTINGS.metadataSeq || !settingsRequireAdmin()) return;
+    await settingsEnsureIdle();
+    if (!settingsHere() || epoch !== SETTINGS.epoch || seq !== SETTINGS.metadataSeq || !settingsRequireAdmin()) return;
+    const result = await api("POST", "/settings/maintenance/metadata-organize", { confirm: "ORGANIZE", preview_token: preview.preview_token, skip_unavailable: preview.unavailable > 0 });
+    if (!settingsHere() || epoch !== SETTINGS.epoch || seq !== SETTINGS.metadataSeq) return;
+    if (!Number.isFinite(result?.updated) || result.updated < 0 || !Number.isFinite(result?.skipped) || result.skipped < 0) throw new Error("服务端未返回整理结果，请刷新状态核实后重试。");
+    SETTINGS.metadataSeq++; SETTINGS.metadataPreview = null; settingsPaintMetadataOrganization();
+    settingsToast(settingsT("已整理 {count} 首；跳过 {skipped} 首不可用曲目；{kept} 个收藏专辑因目标不唯一而保留。", { count: settingsNumber(result.updated), skipped: settingsNumber(result.skipped), kept: settingsNumber(result.favorite_kept || 0) }), "ok");
+    await refreshSettings();
+  } catch (e) {
+    if (!settingsHere() || epoch !== SETTINGS.epoch || seq !== SETTINGS.metadataSeq) return;
+    if (e.code === "metadata_preview_mismatch" || e.code === "metadata_source_unavailable") settingsInvalidateMetadata();
+    await settingsFailure(e, "settings-maintenance-error");
+  } finally { SETTINGS.busy.delete("maintenance"); settingsApplyAccess(); }
 }
 async function settingsTextRepairPreview() {
   const note = $("#text-repair-note");
@@ -667,7 +761,7 @@ function settingsLanguageChanged() {
       const update = $("#upd-body");
       old.replaceChildren(...fresh.childNodes);
       if (update) $("#upd-body")?.replaceWith(update);
-      paintUpdateServer(); settingsPaintMaintenance();
+      paintUpdateServer(); settingsPaintMaintenance(); settingsPaintMetadataOrganization();
     } else if (id === "folders") {
       const editor = $("#settings-folder-editor [data-settings-form='settings-mount-save']")?.dataset.id;
       const countNote = $("#settings-count-note");
@@ -675,6 +769,8 @@ function settingsLanguageChanged() {
       settingsPaintSources();
       if (editor) settingsEditMount(editor, true);
       if (countNote) $("#settings-count-note")?.replaceWith(countNote);
+    } else if (id === "devices") {
+      terminalCenterLanguageChanged();
     } else if (id === "about") {
       const version = $("#settings-about-version")?.dataset.version;
       old.replaceChildren(...fresh.childNodes);
@@ -688,7 +784,7 @@ function settingsLanguageChanged() {
 
 Object.assign(ACT, {
   "settings-open": ds => openSettings(ds.section || "profile"),
-  "settings-anchor": ds => settingsAnchorsJump(ds.anchor || "profile"),
+  "settings-anchor": ds => { SETTINGS.pendingJump = ""; settingsAnchorsJump(ds.anchor || "profile"); },
   "settings-refresh": () => refreshSettings(),
   "settings-session-refresh": () => settingsRefreshSession(),
   "settings-auth-submit": () => settingsAuthenticate(),
@@ -703,6 +799,8 @@ Object.assign(ACT, {
   "settings-backup": () => settingsBackup(),
   "settings-restore": () => settingsRestore(),
   "settings-cleanup": ds => settingsCleanup(ds.kind),
+  "metadata-preview": () => settingsMetadataPreview(),
+  "metadata-apply": () => settingsMetadataApply(),
   "text-repair-preview": () => settingsTextRepairPreview(),
   "text-repair-apply": () => settingsTextRepairApply()
 });

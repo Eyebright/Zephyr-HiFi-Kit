@@ -11,10 +11,10 @@ function harness() {
   const elements = new Map();
   const element = () => ({ innerHTML: "", textContent: "", dataset: {}, contains: () => false, classList: { toggle() {}, add() {}, remove() {} }, setAttribute() {}, querySelectorAll: () => [] });
   for (const id of ["terminal-center", "tc-access", "tc-errors", "tc-workspace", "nd-chips", "nd-bulk", "nd-table", "tc-seats", "tc-task-filters", "tc-task-list", "tc-task-pages", "drawer-root", "modal-root"]) elements.set("#" + id, element());
-  const h = { elements, calls: [], nodes: [], jobs: [], rollouts: [], commands: {}, apps: {}, statuses: {}, authenticated: false, actions: [] };
+  const h = { elements, calls: [], nodes: [], jobs: [], rollouts: [], commands: {}, apps: {}, devices: {}, statuses: {}, authenticated: false, actions: [], playerRefreshes: 0 };
   const context = {
     console, URL, URLSearchParams, AbortController, setTimeout: () => 1, clearTimeout() {}, setInterval: () => 1, clearInterval() {},
-    document: { hidden: false, activeElement: null, addEventListener() {}, querySelector: s => elements.get(s) || null, querySelectorAll: () => [] },
+    document: { hidden: false, activeElement: null, addEventListener() {}, getElementById: () => null, querySelector: s => elements.get(s) || null, querySelectorAll: () => [] },
     navigator: {}, location: { protocol: "http:", host: "localhost" },
     __api: async (method, route, body) => {
       h.calls.push({ method, route, body });
@@ -26,27 +26,30 @@ function harness() {
       if (route === "/license") return { effective_seats: 3, builtin_seats: 3 };
       if (route === "/settings/session") return { authenticated: h.authenticated };
       if (route === "/update/fleet") return { nodes: [] };
-      const match = route.match(/^\/nodes\/([^/]+)(?:\/(.+))?$/);
+      const [pathname, query = ""] = route.split("?");
+      const match = pathname.match(/^\/nodes\/([^/]+)(?:\/(.+))?$/);
       if (match) {
         const id = decodeURIComponent(match[1]);
         if (!match[2]) return h.nodes.find(n => n.node_id === id);
         if (match[2] === "commands") return h.commands[id] || [];
         if (match[2] === "apps") return h.apps[id] || [];
+        if (match[2] === "devices") return { devices: h.devices[id] || [] };
         if (match[2] === "local/api/status") return h.statuses[id];
-        if (match[2] === "play") return { connected: false };
+        if (match[2] === "play") return { connected: false, device_key: new URLSearchParams(query).get("device_key") };
       }
       throw new Error("Unexpected route: " + route);
     },
     __toast: (...args) => h.actions.push(args),
     __drawer: (title, sub, body, foot, opts) => { h.drawer = { title, body, foot, opts }; },
     __player: id => h.actions.push(["player", id]),
+    __refreshPlayer: () => { h.playerRefreshes++; },
     __view: view => h.actions.push(["view", view])
   };
   context.window = context;
   vm.createContext(context);
   for (const file of ["i18n.js", "i18n-app.js", "i18n-features.js", "i18n-errors.js", "app.js"]) vm.runInContext(fs.readFileSync(path.join(assets, file), "utf8"), context);
   vm.runInContext(fs.readFileSync(path.join(assets, "terminal-center.js"), "utf8"), context);
-  vm.runInContext(`req = (method, route, opts) => __api(method, route, opts?.body ? JSON.parse(opts.body) : undefined); toast = __toast; S.view = 'nodes'; openDrawer = (title, sub, body, foot, opts) => { drawerCtx = opts.ctx; __drawer(title, sub, body, foot, opts); }; setDrawerBody = html => __drawer('', '', html, '', {}); openPlayer = __player;`, context);
+  vm.runInContext(`req = (method, route, opts) => __api(method, route, opts?.body ? JSON.parse(opts.body) : undefined); toast = __toast; S.view = 'nodes'; openDrawer = (title, sub, body, foot, opts) => { drawerCtx = opts.ctx; __drawer(title, sub, body, foot, opts); }; setDrawerBody = html => __drawer('', '', html, '', {}); openPlayer = __player; refreshPlayerBar = async () => { __refreshPlayer(); };`, context);
   h.run = source => vm.runInContext(source, context);
   h.context = context;
   h.node = (id, status = "offline") => ({ node_id: id, alias: "终端 " + id, status, arch: "arm64", distro: "debian", playing: false, authorized: true });
@@ -122,9 +125,9 @@ test("terminal language changes retain the workspace and repaint cached tabs wit
     }
     const state = h.run("JSON.stringify([S,TC])"), busy = h.run("TC.busy"), commands = h.run("TC.commands");
     for (const [locale, title, addLabel, taskLabel] of [
-      ["en", "Terminal center", "Add terminal", "Task history"],
-      ["zh-TW", "終端中心", "新增終端", "工作紀錄"],
-      ["zh-CN", "终端中心", "添加终端", "任务记录"]
+      ["en", "Audio devices", "Add terminal", "Task history"],
+      ["zh-TW", "音訊裝置", "新增終端", "工作紀錄"],
+      ["zh-CN", "音频设备", "添加终端", "任务记录"]
     ]) {
       h.run(`filterPaints.length=0; I18n.setPreference(${JSON.stringify(locale)}); terminalCenterLanguageChanged()`);
       assert.ok(parts.get(".page-head").innerHTML.includes(title));
@@ -153,12 +156,12 @@ test("terminal language changes retain the workspace and repaint cached tabs wit
   });
 });
 
-test("navigation contains one terminal entry, with no old deployment selectors", () => {
+test("audio devices live in settings, with no standalone terminal nav or old deployment selectors", () => {
   const h = harness();
-  assert.equal(h.run("NAV.filter(x => x.id === 'nodes' && x.name === '终端中心').length"), 1);
+  assert.equal(h.run("NAV.some(x => x.id === 'nodes')"), false);
   assert.equal(h.run("NAV.some(x => x.id === 'deliver')"), false);
   const shell = h.run("shellNodes()");
-  assert.match(shell, /终端中心工作区/);
+  assert.match(shell, /音频设备工作区/);
   assert.doesNotMatch(shell, /dl-bom|dl-nodes|nd-stats/);
   assert.equal(h.run("'jobSel' in S || 'aptCmds' in S"), false);
 });
@@ -221,6 +224,28 @@ test("refresh prunes removed selections without selecting newly discovered termi
   assert.equal(h.run("S.sel.has('a')"), true);
 });
 
+test("settings audio devices load even after scroll-spy changes section before refresh starts", async () => {
+  const h = harness(); h.nodes = [h.node("a")];
+  h.run("SETTINGS={section:'folders'}; S.view='settings'");
+  await h.run("refreshTerminalCenter()");
+  assert.equal(h.run("S.nodes[0].node_id"), "a");
+  assert.equal(h.run("TC.loading"), false);
+  assert.match(h.elements.get("#nd-table").innerHTML, /终端 a/);
+});
+
+test("late center response survives settings scroll-spy moving to another section", async () => {
+  const h = harness(), pending = deferred();
+  h.nodes = [h.node("a")];
+  h.run("SETTINGS={section:'devices'}; S.view='settings'");
+  h.override = (_, route) => route === "/nodes" ? pending.promise : undefined;
+  const work = h.run("refreshTerminalCenter()");
+  h.run("SETTINGS.section='folders'");
+  pending.resolve(h.nodes); await work;
+  assert.equal(h.run("S.nodes[0].node_id"), "a");
+  assert.equal(h.run("TC.loading"), false);
+  assert.match(h.elements.get("#nd-table").innerHTML, /终端 a/);
+});
+
 test("late center response cannot overwrite a different view or a new center instance", async () => {
   const h = harness(), pending = deferred();
   h.nodes = [h.node("a")];
@@ -267,29 +292,76 @@ test("maintenance drawer no longer offers raw ALSA or DAC pickers", () => {
   assert.match(html, /播放设备的激活与命名/);
 });
 
-test("terminal rows expand the playback device registry with activate and naming", () => {
+test("terminal rows render playback devices as a headerless table with activate and naming", () => {
   const h = harness();
-  h.run(`TC.admin=true; S.nodeDevs.a=[{hw:"hw:3,0",name:"客厅 DAC",reported_name:"AUDIO",enabled:true,present:true},{hw:"hw:2,0",name:"",reported_name:"Headphones",enabled:false,present:false}]`);
+  h.run(`TC.admin=true; S.nodeDevs.a=[{hw:"hw:3,0",name:"客厅 DAC",reported_name:"AUDIO",enabled:true,present:true,online:true},{hw:"hw:2,0",name:"",reported_name:"Headphones",enabled:false,present:false,online:false}]`);
   const html = h.run("nodeRow({node_id:'a',alias:'moode',status:'online'})");
   assert.match(html, /tc-dev-row/);
+  assert.match(html, /<table class="tbl tc-device-table"><tbody>/);
+  assert.doesNotMatch(html, /<thead>/);
+  assert.doesNotMatch(html, /data-act="tc-device-player"/);
+  assert.equal((html.match(/<tr class="tc-device-row/g) || []).length, 2);
   assert.match(html, /客厅 DAC/);
   assert.match(html, /data-change="tc-dev-act" data-id="a" data-hw="hw:3,0" checked/);
+  assert.match(html, /a::hw:3,0/);
+  assert.match(html, /a::hw:2,0/);
   assert.match(html, /Headphones/);
   assert.match(html, /未上报/);
   assert.match(html, /data-act="tc-dev-rename" data-id="a" data-hw="hw:2,0"/);
+  assert.match(html, /自定义名称/);
+  assert.match(html, /data-act="node-delete" data-id="a"/);
   h.run("TC.devEdit={id:'a',hw:'hw:2,0',value:'x'}");
   const editing = h.run("nodeRow({node_id:'a',alias:'moode',status:'online'})");
   assert.match(editing, /tc-dev-input/);
+  assert.match(editing, /data-id="a" data-hw="hw:2,0"/);
   assert.match(editing, /data-act="tc-dev-rename-save"/);
 });
 
-test("terminal detail reads playback summary but never a duplicate queue", async () => {
-  const h = harness(); h.nodes = [h.node("a")];
+test("device rename draft survives periodic table repaint with focus and caret", () => {
+  const h = harness(), table = h.elements.get("#nd-table");
+  h.run(`TC.admin=true; TC.loading=false; S.nodes=[{node_id:'a',alias:'moode',status:'online',authorized:true}];
+    S.nodeDevs.a=[{hw:'hw:1,0',name:'旧名称',reported_name:'AUDIO',enabled:true,present:true,online:true}];
+    TC.devEdit={id:'a',hw:'hw:1,0',value:''};`);
+  const active = {
+    classList: { contains: cls => cls === "tc-dev-input" },
+    dataset: { id: "a", hw: "hw:1,0" }, value: "新名称", selectionStart: 2, selectionEnd: 2, selectionDirection: "none"
+  };
+  h.context.document.activeElement = active;
+  const restored = {
+    dataset: { id: "a", hw: "hw:1,0" }, value: "",
+    focus(opts) { h.focus = opts; },
+    setSelectionRange(start, end, direction) { h.selection = [start, end, direction]; }
+  };
+  table.querySelectorAll = selector => selector === ".tc-dev-input" ? [restored] : [];
+  h.run("paintNodeTable()");
+  assert.equal(h.run("TC.devEdit.value"), "新名称");
+  assert.equal(restored.value, "新名称");
+  assert.equal(h.focus.preventScroll, true);
+  assert.deepEqual(Array.from(h.selection), [2, 2, "none"]);
+  assert.match(table.innerHTML, /新名称/);
+});
+
+test("typing in the device rename input updates the draft before repaint", () => {
+  const h = harness();
+  h.run("TC.devEdit={id:'a',hw:'hw:1,0',value:''}");
+  h.run("onInput({target:{classList:{contains:cls=>cls==='tc-dev-input'},value:'实时草稿'}})");
+  assert.equal(h.run("TC.devEdit.value"), "实时草稿");
+});
+
+test("terminal detail reads each playable device summary but never a duplicate queue", async () => {
+  const h = harness(); h.nodes = [h.node("a", "online")];
+  h.devices.a = [
+    { hw: "hw:1,0", name: "Living DAC", enabled: true, present: true, online: true },
+    { hw: "hw:2,0", name: "Headphones", enabled: true, present: true, online: true },
+    { hw: "hw:3,0", name: "Absent DAC", enabled: true, present: false, online: true }
+  ];
   await h.run("openNodeDrawer('a')");
-  assert.ok(h.calls.some(c => c.route === "/nodes/a/play"));
+  const reads = h.calls.filter(c => c.route.startsWith("/nodes/a/play?"));
+  assert.deepEqual(reads.map(c => new URLSearchParams(c.route.split("?")[1]).get("device_key")), ["a::hw:1,0", "a::hw:2,0"]);
   assert.ok(h.calls.every(c => !c.route.endsWith("/queue")));
   const html = h.run("nodeDrawerBody(TC.detail, [])");
-  assert.match(html, /打开该终端播放器/); assert.doesNotMatch(html, /播放队列|node-q-prev/);
+  assert.match(html, /a::hw:1,0/); assert.match(html, /a::hw:2,0/); assert.match(html, /a::hw:3,0/);
+  assert.doesNotMatch(html, /播放队列|node-q-prev/);
 });
 
 test("late terminal detail response does not reopen or overwrite another drawer", async () => {
@@ -301,14 +373,25 @@ test("late terminal detail response does not reopen or overwrite another drawer"
   assert.equal(h.drawer, before);
 });
 
-test("opening player closes terminal detail in place and passes the explicit terminal to openPlayer", () => {
+test("opening a device player closes terminal detail and passes the explicit device key", () => {
   const h = harness(), root = h.elements.get("#drawer-root");
   root.innerHTML = "terminal detail"; root.firstElementChild = {};
-  h.run("setView=__view; S.search='keep filter'; S.sel.add('selected'); drawerCtx={kind:'node',id:'explicit'}; drawerOnClose=()=>__toast('drawer-closed'); ACT['tc-player']({id:'explicit'})");
+  h.run(`PB.devices=[{node_id:'explicit',device_key:'explicit::hw:3,0',hw:'hw:3,0',name:'Living DAC',enabled:true,present:true,online:true}];
+    setView=__view; S.search='keep filter'; S.sel.add('selected'); drawerCtx={kind:'node',id:'explicit'}; drawerOnClose=()=>__toast('drawer-closed');
+    ACT['tc-device-player']({id:'explicit',deviceKey:'explicit::hw:3,0'})`);
   assert.equal(h.run("S.view"), "nodes");
   assert.equal(h.run("S.search"), "keep filter"); assert.equal(h.run("S.sel.has('selected')"), true);
   assert.equal(h.run("drawerCtx"), null); assert.equal(root.innerHTML, "");
-  assert.deepEqual(h.actions, [["drawer-closed"], ["player", "explicit"]]);
+  assert.deepEqual(h.actions, [["drawer-closed"], ["player", "explicit::hw:3,0"]]);
+});
+
+test("terminal device player rejects another terminal's key and unavailable devices", async () => {
+  const h = harness();
+  h.run(`PB.devices=[{node_id:'a',device_key:'a::hw:1,0',hw:'hw:1,0',enabled:true,present:true,online:true}];`);
+  await h.run("tcOpenTerminalPlayer('b','a::hw:1,0')");
+  await h.run("tcOpenTerminalPlayer('a','a::hw:9,0')");
+  assert.equal(h.actions.some(a => a[0] === "player"), false);
+  assert.equal(h.playerRefreshes, 1);
 });
 
 test("management actions recheck authentication and never issue writes when logged out", async () => {
@@ -318,8 +401,67 @@ test("management actions recheck authentication and never issue writes when logg
   assert.match(h.actions[0][0], /登录管理员/);
 });
 
+test("terminal deletion rechecks admin, confirms the endpoint and honors cancellation", async () => {
+  const h = harness();
+  h.run(`S.nodes=[{node_id:'a',alias:'客厅终端',status:'online',authorized:true}];
+    window.confirmCalls=[]; window.deleteCalls=[];
+    confirmDlg=async opts => { window.confirmCalls.push(opts); return false; };
+    deleteNodes=async ids => { window.deleteCalls.push(ids); };`);
+  await h.run("ACT['node-delete']({id:'a'})");
+  assert.deepEqual(JSON.parse(h.run("JSON.stringify(window.confirmCalls)")), []);
+  assert.deepEqual(JSON.parse(h.run("JSON.stringify(window.deleteCalls)")), []);
+  assert.ok(h.calls.every(c => c.method === "GET"));
+  assert.match(h.actions[0][0], /管理员/);
+
+  h.authenticated = true;
+  await h.run("ACT['node-delete']({id:'a'})");
+  const confirmations = JSON.parse(h.run("JSON.stringify(window.confirmCalls)"));
+  assert.equal(confirmations.length, 1);
+  assert.equal(confirmations[0].title, "删除终端");
+  assert.equal(confirmations[0].okText, "删除终端");
+  assert.match(confirmations[0].message, /客厅终端/);
+  assert.deepEqual(JSON.parse(h.run("JSON.stringify(window.deleteCalls)")), []);
+  assert.ok(h.calls.every(c => c.method === "GET"));
+
+  h.run("confirmDlg=async()=>true");
+  await h.run("ACT['node-delete']({id:'a'})");
+  assert.deepEqual(JSON.parse(h.run("JSON.stringify(window.deleteCalls)")), [["a"]]);
+});
+
+test("terminal deletion uses DELETE and provides the existing restore undo", async () => {
+  const h = harness(), node = h.node("a"); h.nodes = [node]; h.authenticated = true;
+  h.run(`S.nodes=[${JSON.stringify(node)}]; confirmDlg=async()=>true; refreshCurrent=async()=>{};`);
+  h.override = (method, route, body) => {
+    if (method === "DELETE" && route === "/nodes/a") { h.nodes = []; return { ok: true, node }; }
+    if (method === "POST" && route === "/nodes/restore") { h.nodes = [body.node]; return { ok: true }; }
+    return undefined;
+  };
+  await h.run("ACT['node-delete']({id:'a'})");
+  assert.ok(h.calls.some(c => c.method === "DELETE" && c.route === "/nodes/a"));
+  const notice = h.actions.find(a => a[1] === "ok" && a[2]?.undo);
+  assert.ok(notice, "successful deletion must expose undo");
+  await notice[2].undo();
+  const restore = h.calls.find(c => c.method === "POST" && c.route === "/nodes/restore");
+  assert.deepEqual(JSON.parse(JSON.stringify(restore.body)), { node });
+  assert.equal(h.nodes.length, 1);
+  assert.equal(h.nodes[0].node_id, "a");
+});
+
+test("terminal deletion reports a playing endpoint rejection without undo", async () => {
+  const h = harness(); h.nodes = [h.node("a", "online")]; h.authenticated = true;
+  h.run("S.nodes=[{node_id:'a',alias:'客厅终端',status:'online',authorized:true}]; confirmDlg=async()=>true; refreshCurrent=async()=>{};");
+  h.override = (method, route) => {
+    if (method === "DELETE" && route === "/nodes/a") throw new Error("终端正在播放");
+    return undefined;
+  };
+  await h.run("ACT['node-delete']({id:'a'})");
+  assert.ok(h.calls.some(c => c.method === "DELETE" && c.route === "/nodes/a"));
+  assert.ok(h.actions.some(a => a[1] === "err" && a[0].includes("终端正在播放")));
+  assert.equal(h.actions.some(a => a[2]?.undo), false);
+});
+
 test("maintenance changes stop after logout or detaching the original control", async () => {
-  for (const change of ["upd-policy", "node-device"]) {
+  for (const change of ["upd-policy"]) {
     const h = harness();
     await h.run(`CHG['${change}']({isConnected:true}, {id:'a'})`);
     assert.ok(h.calls.every(c => c.method === "GET"));
@@ -382,15 +524,18 @@ test("node table surfaces target version, build flavor and direct upgrade", () =
   assert.match(en, /0\.4\.3/);
 });
 
-test("server device selector shows ALSA card names with hardware ids", () => {
-  const h = harness();
-  const html = h.run(`nodePlayOpts(["default","hw:3,0"], "hw:3,0", new Map([["hw:3,0","AUDIO"]]))`);
-  assert.match(html, /AUDIO · hw:3,0/);
-  assert.match(html, /value="hw:3,0" selected/);
-  const dvHtml = h.run(`(() => { const dv = nodePlayDevs({devices:["hw:0,0"], device_info:[{hw:"hw:0,0", name:"b1"}], pref_device:"hw:0,0"}); return nodePlayOpts(dv.devs, dv.cur, dv.names); })()`);
-  assert.match(dvHtml, /b1 · hw:0,0/);
-  const curated = h.run(`(() => { const dv = nodePlayDevs({play_devices:[{hw:"hw:3,0",name:"客厅 DAC",present:true},{hw:"hw:2,0",name:"Headphones",present:false}], pref_device:"hw:3,0"}); return nodePlayOpts(dv.devs, dv.cur, dv.names, dv.absent); })()`);
-  assert.match(curated, /客厅 DAC · hw:3,0/);
-  assert.match(curated, /value="hw:2,0" disabled/);
-  assert.doesNotMatch(curated, /hw:0,0/);
+test("device activation and naming use the registry endpoints", async () => {
+  const h = harness(); h.nodes = [h.node("a", "online")];
+  h.devices.a = [{ hw: "hw:1,0", name: "", reported_name: "AUDIO", enabled: false, present: true, online: true }];
+  h.override = (method, route, body) => {
+    if (method === "POST" && route === "/nodes/a/devices/hw%3A1%2C0/activate") return { enabled: body.enabled };
+    if (method === "PATCH" && route === "/nodes/a/devices/hw%3A1%2C0") return body;
+  };
+  await h.run("CHG['tc-dev-act']({checked:true},{id:'a',hw:'hw:1,0'})");
+  assert.deepEqual(JSON.parse(JSON.stringify(h.calls.find(c => c.method === "POST").body)), { enabled: true });
+  const input = { value: "  Living DAC  " };
+  const control = { closest: () => ({ querySelector: () => input }) };
+  h.context.control = control;
+  await h.run("ACT['tc-dev-rename-save']({id:'a',hw:'hw:1,0'}, control)");
+  assert.deepEqual(JSON.parse(JSON.stringify(h.calls.find(c => c.method === "PATCH").body)), { name: "Living DAC" });
 });

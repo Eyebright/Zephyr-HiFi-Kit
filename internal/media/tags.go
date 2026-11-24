@@ -48,6 +48,17 @@ func ReadTagsWithEncoding(path, encoding string) (Tags, error) {
 	if err != nil {
 		return Tags{}, err
 	}
+	var h [12]byte
+	n, err := f.ReadAt(h[:], 0)
+	if err != nil && err != io.EOF {
+		return Tags{}, err
+	}
+	if needsAudioMeta(h[:n]) {
+		if err := f.Close(); err != nil {
+			return Tags{}, err
+		}
+		return readAudioMetaTags(path)
+	}
 	return readTags(f, st.Size(), encoding)
 }
 
@@ -66,6 +77,20 @@ func readTags(r io.ReaderAt, size int64, encoding string) (Tags, error) {
 			return Tags{}, errInvalidTags
 		}
 		return readWAVTags(r, end, encoding)
+	case n >= 3 && string(h[:3]) == "ID3":
+		tags, err := parseID3v2(r, 0, size, encoding)
+		if err != nil {
+			return tags, err
+		}
+		return preferTags(tags, readID3v1(r, size, encoding)), nil
+	case n >= 4 && string(h[:4]) == "DSD ":
+		return readDSFTags(r, size, encoding)
+	case n >= 11 && string(h[:4]) == "FRM8" && string(h[8:11]) == "DFF":
+		return readDFFTags(r, size, encoding)
+	case n >= 3 && string(h[:3]) == "TAG":
+		return readID3v1(r, size, encoding), nil
+	case n == 12 && string(h[:4]) == "FORM" && (string(h[8:]) == "AIFF" || string(h[8:]) == "AIFC"):
+		return readAIFFTags(r, size, encoding)
 	default:
 		return Tags{}, nil
 	}
@@ -149,22 +174,32 @@ func parseVorbisTags(b []byte, encoding string) (Tags, error) {
 }
 
 func readWAVTags(r io.ReaderAt, end int64, encoding string) (Tags, error) {
-	var tags Tags
+	var tags, embedded Tags
 	off := int64(12)
 	budget := int64(maxTagBytes)
 	for i := 0; off < end && i < maxTagBlocks; i++ {
 		var h [8]byte
 		if off > end-8 {
-			return tags, errInvalidTags
+			return preferTags(embedded, tags), errInvalidTags
 		}
 		if _, err := r.ReadAt(h[:], off); err != nil {
-			return tags, err
+			return preferTags(embedded, tags), err
 		}
 		off += 8
 		n := int64(binary.LittleEndian.Uint32(h[4:]))
 		padded := n + n%2
 		if padded > end-off {
-			return tags, errInvalidTags
+			return preferTags(embedded, tags), errInvalidTags
+		}
+		if string(h[:4]) == "id3 " || string(h[:4]) == "ID3 " {
+			if n > maxTagBytes {
+				return preferTags(embedded, tags), errInvalidTags
+			}
+			var err error
+			embedded, err = parseID3v2(r, off, n, encoding)
+			if err != nil {
+				return preferTags(embedded, tags), err
+			}
 		}
 		if string(h[:4]) == "LIST" && n >= 4 {
 			var kind [4]byte
@@ -173,26 +208,26 @@ func readWAVTags(r io.ReaderAt, end int64, encoding string) (Tags, error) {
 			}
 			if string(kind[:]) == "INFO" {
 				if n-4 > budget {
-					return tags, errInvalidTags
+					return preferTags(embedded, tags), errInvalidTags
 				}
 				budget -= n - 4
 				buf := make([]byte, int(n-4))
 				if len(buf) > 0 {
 					if _, err := r.ReadAt(buf, off+4); err != nil {
-						return tags, err
+						return preferTags(embedded, tags), err
 					}
 				}
 				if err := tags.parseWAVInfo(buf, encoding); err != nil {
-					return tags, err
+					return preferTags(embedded, tags), err
 				}
 			}
 		}
 		off += padded
 	}
 	if off != end {
-		return tags, errInvalidTags
+		return preferTags(embedded, tags), errInvalidTags
 	}
-	return tags, nil
+	return preferTags(embedded, tags), nil
 }
 
 func (tags *Tags) parseWAVInfo(b []byte, encoding string) error {

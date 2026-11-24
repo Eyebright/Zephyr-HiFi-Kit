@@ -106,6 +106,8 @@ func (s *Service) configuredMount(id string, req AddMountRequest) (Mount, error)
 // different location, rather than silently reassigning existing track identities.
 // For local sources Share is an optional display name; an omitted Path is kept.
 func (s *Service) UpdateMount(id string, req AddMountRequest) (Mount, error) {
+	s.metadataMu.Lock()
+	defer s.metadataMu.Unlock()
 	s.sourceMu.Lock()
 	defer s.sourceMu.Unlock()
 	old, err := s.GetMount(id)

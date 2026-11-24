@@ -67,7 +67,7 @@ test("click snapshots the original track even after playback changes", async () 
   const h = harness(), pending = deferred();
   h.override = (method) => method === "PUT" ? pending.promise : undefined;
   const work = h.run("ACT['favorite-current']({id:'original',saved:'false'})");
-  h.run("PB.id='other-terminal'; FV.current='next-track'");
+  h.run("PB.deviceKey='b::hw:1'; FV.current='next-track'");
   pending.resolve({ saved: true }); await work;
   assert.deepEqual(h.calls.filter(c => c.method === "PUT").map(c => c.body.track_id), ["original"]);
   assert.equal(h.run("FV.current"), "next-track");
@@ -171,4 +171,44 @@ test("late paginated response cannot repaint a different library tab", async () 
   h.run("S.libTab='albums'; LB.request++"); const before = h.elements.get("#lb-body").innerHTML;
   pending.resolve({ items: [item("old")], total: 1, page: 1, page_size: 24 }); await work;
   assert.equal(h.elements.get("#lb-body").innerHTML, before);
+});
+
+test("album cards keep the heart by the artist and drop playlist entry points", () => {
+  const h = harness();
+  const g = { artist: "艺术家", album: "专辑", tracks: [{ id: "t1", decodable: true }] };
+  const home = h.run(`ovAlbumCard(${JSON.stringify(g)})`);
+  const line = home.split('class="ov-album-artist-line"')[1].split("</div>")[0];
+  assert.match(line, /fav-heart/);
+  assert.doesNotMatch(home.split("ov-album-foot")[1], /fav-heart/);
+  const foot = home.split('class="ov-album-foot"')[1].split("</div>")[0];
+  assert.match(foot, /class="hint truncate"/);
+  assert.match(foot, /data-act="album-push"/);
+  assert.match(foot, /data-ak=/);
+  const hist = h.run(`ovAlbumCard(null, {history:true, album:"专辑", artist:"艺术家", track_count:2})`);
+  assert.match(hist, /fav-heart/);
+  const unknown = h.run(`ovAlbumCard(${JSON.stringify({ artist: "", album: "专辑", tracks: [{ id: "t1", decodable: true }] })})`);
+  assert.match(unknown, /fav-heart/);
+  const card = h.run(`lbAlbumCard({kind:"album", artist:"艺术家", album:"专辑", value:"专辑", year:2024, genre:"流行", track_count:2}, 0, "专辑")`);
+  assert.doesNotMatch(card, /data-mode="playlist"/);
+  assert.match(card, /fav-heart/);
+  const cover = card.slice(card.indexOf('class="lb-album-cover"'), card.indexOf('<strong class="truncate">'));
+  assert.match(cover, /class="al-cnt mono">2 首<\/span>/);
+  assert.match(cover, /class="cover lb-art"/);
+  const metaRow = card.split('class="lb-album-meta-row"')[1].split("</div></div>")[0];
+  assert.match(metaRow, /2024 · 流行/);
+  assert.match(metaRow, /data-mode="play"/);
+  assert.equal(card.split('class="lb-album-meta-row"').length, 2);
+  assert.doesNotMatch(card.split("</button></div></article>")[0].split('class="lb-album-meta-row"')[0], /data-mode="play"/);
+  const playBtn = card.match(/<button[^>]*data-mode="play"[^>]*>([\s\S]*?)<\/button>/)[1];
+  assert.match(playBtn, /^<svg/);
+  assert.doesNotMatch(playBtn, /推送/);
+  assert.equal(h.run(`["album-page-pl","album-sel-pl","track-pl"].every(k=>!ACT[k])`), true);
+});
+
+test("album browsing hides playlist entry points but tracks keep them", () => {
+  const h = harness();
+  h.run(`lbFrame().query.category='albums'; LB.sel.add('x')`);
+  assert.doesNotMatch(h.run("lbBulkBar()"), /lb-bulk-playlist/);
+  h.run(`lbFrame().query.category='tracks'`);
+  assert.match(h.run("lbBulkBar()"), /lb-bulk-playlist/);
 });

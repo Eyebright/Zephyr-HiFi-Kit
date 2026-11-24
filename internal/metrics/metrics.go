@@ -10,7 +10,7 @@ import (
 
 // Version is the server build version; overridable at link time via
 // -ldflags "-X hifihub/server/internal/metrics.Version=x.y.z".
-var Version = "0.67"
+var Version = "0.68"
 
 // Collector snapshots process and store metrics.
 type Collector struct {

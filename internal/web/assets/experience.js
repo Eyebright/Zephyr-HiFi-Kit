@@ -50,8 +50,7 @@ function renderSidebarNav(languageOnly = false) {
   const settings = NAV.find(n => n.id === "settings");
   const settingsActive = S.view === "settings";
   const settingsGroup = settingsHTML`<div class="nav-bottom"><button type="button" class="nav-item${settingsActive ? " active" : ""}" data-act="settings-open" data-section="profile"${settingsActive ? ' aria-current="page"' : ""}>${icon(settings.icon, 17)}<span>${esc(settings.name)}</span></button></div>`;
-  const nodes = NAV.find(n => n.id === "nodes");
-  nav.innerHTML = [item(NAV[0]), library, aux("favorites", appT("navFavorites"), "heart"), playlists, item(nodes), settingsGroup].join("");
+  nav.innerHTML = [item(NAV[0]), library, aux("favorites", appT("navFavorites"), "heart"), playlists, settingsGroup].join("");
   const audit = $("#top-audit");
   if (audit) {
     const auditOpen = S.view === "audit" || (typeof drawerCtx !== "undefined" && drawerCtx && drawerCtx.kind === "audit");
@@ -323,11 +322,11 @@ function experiencePaintOnboarding() {
     root.innerHTML = settingsHTML`<section class="xp-onboarding xp-intro card settings-page" aria-labelledby="onboarding-title"><span class="settings-eyebrow">Zephyr HiFi Kit</span><h2 tabindex="-1" id="onboarding-title">如沐和风，音乐随您而行！</h2><p class="xp-intro-lead">配置引导已走完，随时可以在设置中继续调整。</p>${experienceProgress(3, true)}<div id="onboarding-summary">${experienceSummaryContent()}</div><div id="onboarding-error" role="status" aria-live="polite">${experienceErrorContent()}</div><div class="xp-intro-actions">${experienceButton("xp-finish", "开始聆听", { primary: true, admin: true })}${experienceButton("xp-resume", "返回配置", { admin: true })}${experienceButton("xp-skip", "跳过，我自己配置")}</div><p class="settings-small">点击开始聆听后结束引导并进入主页，不会自动播放音乐。</p></section>`;
     experienceApplyAccess(); return;
   }
-  const inPlace = step === 2 ? S.view === "settings" && SETTINGS.section === "folders" : step === 3 ? S.view === "nodes" : true;
+  const inPlace = step === 2 ? S.view === "settings" && SETTINGS.section === "folders" : step === 3 ? S.view === "settings" && SETTINGS.section === "devices" : true;
   let content = "";
   if (step === 1) content = experienceBrowserLanguage("onboarding-language-preference") + experienceAuthContent();
   if (step === 2) content = settingsHTML`<p>在下方添加服务端本地目录或 NAS 共享，启用 / 挂载后检测连接并扫描。这里直接复用音乐文件夹管理，不上传原音频。</p><div class="xp-step-actions">${experienceButton("xp-folders", inPlace ? "刷新音乐源状态" : "打开音乐文件夹", { lock: false })}</div>${inPlace ? "" : settingsNote("音乐源控件位于设置 → 音乐文件夹。可随时返回引导，已保存的进度不会丢失。")}`;
-  if (step === 3) content = settingsHTML`<p>使用现有添加终端向导生成注册令牌，在你选择的目标设备上手动安装。注册、上线与授权是不同状态；此引导不会自动安装软件或执行终端命令。</p><div class="xp-step-actions">${experienceButton("xp-add-node", "添加播放终端…", { primary: true, admin: true })}${experienceButton("xp-nodes", "查看终端与真实状态", { lock: false })}${experienceButton("xp-authorization", "查看授权与席位", { lock: false })}</div><p class="settings-small">添加向导关闭后，可在终端中心查看详情、手动授权和配置 DAC。未配置的项目可稍后在侧栏补充，不影响完成设置。</p><div id="onboarding-summary">${experienceSummaryContent()}</div>${experienceButton("xp-summary-refresh", "刷新真实摘要", { lock: false })}`;
+  if (step === 3) content = settingsHTML`<p>使用现有添加终端向导生成注册令牌，在你选择的目标设备上手动安装。注册、上线与授权是不同状态；此引导不会自动安装软件或执行终端命令。</p><div class="xp-step-actions">${experienceButton("xp-add-node", "添加播放终端…", { primary: true, admin: true })}${experienceButton("xp-nodes", "查看终端与真实状态", { lock: false })}${experienceButton("xp-authorization", "查看授权与席位", { lock: false })}</div><p class="settings-small">添加向导关闭后，可在音频设备中查看详情、手动授权和配置 DAC。未配置的项目可稍后在设置中补充，不影响完成设置。</p><div id="onboarding-summary">${experienceSummaryContent()}</div>${experienceButton("xp-summary-refresh", "刷新真实摘要", { lock: false })}`;
   root.innerHTML = settingsHTML`<section class="xp-onboarding${step === 1 ? " xp-identity" : ""} card settings-page" aria-label="首次使用引导"><div class="xp-onboarding-head"><div><span class="settings-eyebrow">Zephyr HiFi Kit</span><h2 tabindex="-1" id="onboarding-title">${esc(settingsNumber(step))}. ${esc(EXPERIENCE_STEPS[step - 1])}</h2></div><span class="settings-small">进度保存在服务端</span></div>${experienceProgress(step)}<div class="xp-step-body">${content}</div><div id="onboarding-error" role="status" aria-live="polite">${experienceErrorContent()}</div><footer class="xp-onboarding-footer">${step > 1 ? experienceButton("xp-step", "上一步", { step: step - 1, admin: true }) : ""}${!inPlace ? experienceButton("xp-resume", "返回引导") : ""}${experienceButton("xp-skip", "跳过，我自己配置")}<span class="spacer"></span>${step === 2 ? experienceButton("xp-step", "稍后配置", { step: step + 1, admin: true }) + experienceButton("xp-step", "下一步", { step: step + 1, primary: true, admin: true }) : step === 3 ? experienceButton("xp-review", "完成配置", { primary: true, admin: true }) : ""}</footer></section>`;
   experienceApplyAccess();
 }
@@ -344,7 +343,7 @@ function experienceShowStep() {
   XP.active = true; XP.stage = "steps";
   const step = experienceStep();
   if (step === 2 && (S.view !== "settings" || SETTINGS.section !== "folders")) openSettings("folders");
-  if (step === 3 && S.view !== "nodes") setView("nodes");
+  if (step === 3 && (S.view !== "settings" || SETTINGS.section !== "devices")) openSettings("devices");
   experiencePaintOnboarding();
   $("#onboarding-title")?.focus();
   $("#onboarding-root")?.scrollIntoView({ block: "start", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
@@ -451,7 +450,7 @@ function experienceSummaryContent() {
   else if (!mounts.some(m => m.status === "mounted")) pending.push("音乐源待连接");
   if (!nodes.length) pending.push("播放终端待连接");
   else if (!nodes.some(n => n.status === "online" && n.authorized === true)) pending.push("暂无在线且已授权的播放终端");
-  return settingsHTML`<dl class="xp-summary"><div><dt>管理员</dt><dd>${esc(XP.profile.display_name)}</dd></div><div><dt>音乐源</dt><dd>${esc(settingsT("{count} 个 · 本地 {local} / NAS {nas}", { count: settingsNumber(mounts.length), local: settingsNumber(local), nas: settingsNumber(mounts.length - local) }))}</dd></div><div><dt>可用音乐源</dt><dd>${esc(settingsT("{count} 个 · 扫描中 {scanning}", { count: settingsNumber(mounts.filter(m => m.status === "mounted").length), scanning: settingsNumber(mounts.filter(m => m.status === "scanning").length) }))}</dd></div><div><dt>播放终端</dt><dd>${esc(settingsT("{count} 台 · 在线 {online} / 已授权 {authorized}", { count: settingsNumber(nodes.length), online: settingsNumber(nodes.filter(n => n.status === "online").length), authorized: settingsNumber(nodes.filter(n => n.authorized === true).length) }))}</dd></div><div><dt>授权席位</dt><dd>${typeof license.effective_seats === "number" ? esc(settingsNumber(license.effective_seats)) : esc(settingsT("未提供席位数"))}</dd></div></dl>${pending.length ? settingsNote(settingsT("{pending}。结束引导后可从音乐文件夹或终端中心继续配置。", { pending: pending.map(item => settingsT(item)).join(settingsT("；")) }), "warn") : ""}`;
+  return settingsHTML`<dl class="xp-summary"><div><dt>管理员</dt><dd>${esc(XP.profile.display_name)}</dd></div><div><dt>音乐源</dt><dd>${esc(settingsT("{count} 个 · 本地 {local} / NAS {nas}", { count: settingsNumber(mounts.length), local: settingsNumber(local), nas: settingsNumber(mounts.length - local) }))}</dd></div><div><dt>可用音乐源</dt><dd>${esc(settingsT("{count} 个 · 扫描中 {scanning}", { count: settingsNumber(mounts.filter(m => m.status === "mounted").length), scanning: settingsNumber(mounts.filter(m => m.status === "scanning").length) }))}</dd></div><div><dt>播放终端</dt><dd>${esc(settingsT("{count} 台 · 在线 {online} / 已授权 {authorized}", { count: settingsNumber(nodes.length), online: settingsNumber(nodes.filter(n => n.status === "online").length), authorized: settingsNumber(nodes.filter(n => n.authorized === true).length) }))}</dd></div><div><dt>授权席位</dt><dd>${typeof license.effective_seats === "number" ? esc(settingsNumber(license.effective_seats)) : esc(settingsT("未提供席位数"))}</dd></div></dl>${pending.length ? settingsNote(settingsT("{pending}。结束引导后可从音乐文件夹或音频设备继续配置。", { pending: pending.map(item => settingsT(item)).join(settingsT("；")) }), "warn") : ""}`;
 }
 async function experienceRefreshSummary() {
   if (!XP.active || experienceStep() !== 3 || XP.busy) return;
@@ -518,7 +517,6 @@ function experienceLanguageChanged() {
   experiencePreserveForms([$("#view"), $("#onboarding-root")], () => {
     if (settingsHere()) settingsLanguageChanged();
     else if (S.view === "library") libraryBrowserLanguageChanged();
-    else if (S.view === "nodes") terminalCenterLanguageChanged();
     else if (S.view === "audit") {
       const title = $("#view .sec-title"); if (title) title.innerHTML = icon("audit", 17) + " " + appH("m068");
       paintAudit();
@@ -566,9 +564,9 @@ Object.assign(ACT, {
   "xp-finish": () => XP.active && XP.stage === "complete" ? experiencePersistStep(3, true) : false,
   "xp-summary-refresh": () => experienceRefreshSummary(),
   "xp-folders": () => { if (settingsHere("folders")) return refreshSettings(); openSettings("folders"); },
-  "xp-nodes": () => setView("nodes"),
+  "xp-nodes": () => { if (settingsHere("devices")) return refreshSettings(); openSettings("devices"); },
   "xp-authorization": () => openSettings("authorization"),
-  "xp-add-node": () => { if (settingsRequireAdmin()) { if (S.view !== "nodes") setView("nodes"); openWizard(); } }
+  "xp-add-node": () => { if (settingsRequireAdmin()) { openSettings("devices"); openWizard(); } }
 });
 document.addEventListener("submit", event => {
   const form = event.target.closest("[data-experience-form]"); if (!form) return;

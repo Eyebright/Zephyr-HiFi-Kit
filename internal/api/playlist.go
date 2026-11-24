@@ -1,12 +1,10 @@
 package api
 
 import (
-	"errors"
 	"net/http"
 	"strconv"
 
 	"hifihub/server/internal/library"
-	"hifihub/server/internal/zatserver"
 )
 
 // --- play history ---
@@ -156,15 +154,16 @@ func (a *API) removePlaylistItem(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, d)
 }
 
-// pushPlaylist loads the playlist into the target terminal's queue and starts
-// playback at the first entry. Like a direct push, it replaces the queue.
+// pushPlaylist loads the playlist into the target playback device's queue and
+// starts playback at the first entry. Like a direct push, it replaces the queue.
 func (a *API) pushPlaylist(w http.ResponseWriter, r *http.Request) {
 	if a.lib == nil || a.zat == nil {
 		writeErrorCode(w, http.StatusServiceUnavailable, "playback_unavailable", "媒体库或 ZAT 服务未启用")
 		return
 	}
 	var body struct {
-		NodeID string `json:"node_id"`
+		NodeID    string `json:"node_id"`
+		DeviceKey string `json:"device_key"`
 	}
 	if err := decode(r, &body); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad_json", err.Error(), "")
@@ -191,17 +190,13 @@ func (a *API) pushPlaylist(w http.ResponseWriter, r *http.Request) {
 		}
 		ids = append(ids, it.TrackID)
 	}
-	sessionID, err := a.zat.StartPlay(r.Context(), body.NodeID, ids[0])
+	sessionID, err := a.zat.StartPlayDevice(r.Context(), body.NodeID, ids[0], body.DeviceKey)
 	if err != nil {
-		if errors.Is(err, zatserver.ErrNotConnected) {
-			writeServiceError(w, http.StatusConflict, err)
-			return
-		}
-		fail(w, err)
+		zatControlFail(w, err)
 		return
 	}
-	if err := a.zat.SetQueue(body.NodeID, ids, 0); err != nil {
-		fail(w, err)
+	if err := a.zat.SetQueueDevice(body.NodeID, body.DeviceKey, ids, 0); err != nil {
+		zatControlFail(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"session_id": sessionID, "count": len(ids)})

@@ -262,6 +262,53 @@ func TestSetDeviceFromSource(t *testing.T) {
 	}
 }
 
+func TestSetupDeviceLockOverridesLocalPreference(t *testing.T) {
+	fp := &testPlayer{}
+	src := newFakeSource(t)
+	defer src.close()
+	c := newTestClient(src.addr(), fp)
+	c.SetDevice("hw:1,0")
+	done := runClient(c)
+
+	src.accept()
+	if fr := src.read(); fr.Type != zat.TypeHello {
+		t.Fatalf("expected HELLO, got %s", fr.Type)
+	}
+	src.send(zat.TypeHelloAck, zat.HelloAck{ServerVersion: "zat/0.1", PrebufferMS: 200})
+	src.send(zat.TypeSetup, zat.Setup{SessionID: "s-locked", TrackID: "trk-1", Format: zat.S16LE,
+		Rate: 44100, Channels: 2, ALSADevice: "hw:0,0", LockDevice: true})
+
+	deadline := time.Now().Add(3 * time.Second)
+	var ack zat.SetupAck
+	for time.Now().Before(deadline) {
+		_ = src.conn.SetReadDeadline(time.Now().Add(1200 * time.Millisecond))
+		fr, err := zat.ReadFrame(src.conn)
+		if err != nil {
+			t.Fatalf("setup ack: %v", err)
+		}
+		if fr.Type == zat.TypeSetupAck {
+			_ = json.Unmarshal(fr.Payload, &ack)
+			break
+		}
+	}
+	if !ack.OK {
+		t.Fatalf("setup ack not ok: %+v", ack)
+	}
+	fp.mu.Lock()
+	dev := fp.device
+	fp.mu.Unlock()
+	if dev != "hw:0,0" {
+		t.Fatalf("locked setup opened %q, want server-selected hw:0,0", dev)
+	}
+	src.send(zat.TypeStop, zat.Stop{SessionID: "s-locked"})
+	src.close()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("client did not finish")
+	}
+}
+
 func TestHandshakePlaybackRoundTrip(t *testing.T) {
 	fp := &testPlayer{}
 	src := newFakeSource(t)
@@ -861,9 +908,19 @@ func TestDeviceReportTracksHotplug(t *testing.T) {
 	if len(hws) != 2 || hws[1] != "hw:3,0" || len(info) != 2 || info[1].Name != "AUDIO" {
 		t.Fatalf("hotplug not reported: %v %v", hws, info)
 	}
+	sig = "cards-v3"
+	devs = nil
+	hws, info = s.deviceReport(now.Add(3 * time.Second))
+	if hws == nil || len(hws) != 0 || info == nil || len(info) != 0 {
+		t.Fatalf("removing the last device must report explicit empty lists: %v %v", hws, info)
+	}
+	if hws, _ := s.deviceReport(now.Add(4 * time.Second)); hws != nil {
+		t.Fatalf("unchanged empty device list must not re-report: %v", hws)
+	}
 
 	// Without procfs the signature stays empty; fall back to periodic refresh.
 	sig = ""
+	devs = []zat.ALSADevice{{HW: "hw:0,0", Name: "b1"}, {HW: "hw:3,0", Name: "AUDIO"}}
 	s2 := newSession(c, nil, "n2")
 	if hws, _ := s2.deviceReport(now); len(hws) != 2 {
 		t.Fatalf("first report without procfs: %v", hws)

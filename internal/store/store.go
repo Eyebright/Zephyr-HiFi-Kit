@@ -113,6 +113,13 @@ func (s *Store) additiveMigrate() error {
 		{"app_versions", "apt_package", "TEXT NOT NULL DEFAULT ''"},
 		// apps: how the artifact is obtained (distro | vendor | self).
 		{"apps", "origin", "TEXT NOT NULL DEFAULT 'self'"},
+		{"sessions", "device_key", "TEXT NOT NULL DEFAULT ''"},
+		{"play_history", "device_key", "TEXT NOT NULL DEFAULT ''"},
+		{"node_devices", "reported_name", "TEXT NOT NULL DEFAULT ''"},
+		{"node_devices", "volume", "INTEGER NOT NULL DEFAULT 100"},
+		{"node_devices", "dsd_mode", "TEXT NOT NULL DEFAULT 'pcm'"},
+		{"playback_device_dsp", "mode", "TEXT NOT NULL DEFAULT 'graphic'"},
+		{"playback_device_dsp", "peq", "TEXT NOT NULL DEFAULT '[]'"},
 		// node_queue: per-terminal playback mode + frozen shuffle order.
 		{"node_queue", "mode", "TEXT NOT NULL DEFAULT 'sequence'"},
 		{"node_queue", "shuffle_order", "TEXT NOT NULL DEFAULT '[]'"},
@@ -122,7 +129,39 @@ func (s *Store) additiveMigrate() error {
 			return fmt.Errorf("add column %s.%s: %w", c.table, c.name, err)
 		}
 	}
-	return s.backfillListeningSnapshots()
+	if err := s.backfillListeningSnapshots(); err != nil {
+		return err
+	}
+	return s.migratePlaybackDeviceState()
+}
+
+func (s *Store) migratePlaybackDeviceState() error {
+	tx, err := s.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var done bool
+	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM server_state WHERE key='playback_device_state_v1')`).Scan(&done); err != nil {
+		return err
+	}
+	if done {
+		return nil
+	}
+	if _, err := tx.Exec(`INSERT OR IGNORE INTO playback_queue(device_key,track_ids,position,updated_at,mode,shuffle_order)
+		SELECT n.node_id || '::' || COALESCE(NULLIF(n.dac_device,''),'default'),q.track_ids,q.position,q.updated_at,q.mode,q.shuffle_order
+		FROM node_queue q JOIN nodes n ON n.node_id=q.node_id`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`INSERT OR IGNORE INTO playback_sleep_timer(device_key,stop_at)
+		SELECT n.node_id || '::' || COALESCE(NULLIF(n.dac_device,''),'default'),t.stop_at
+		FROM node_sleep_timer t JOIN nodes n ON n.node_id=t.node_id`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`INSERT INTO server_state(key,value) VALUES('playback_device_state_v1','1')`); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // Freeze legacy metadata once, so future catalog changes cannot rewrite history.
@@ -538,6 +577,29 @@ CREATE TABLE IF NOT EXISTS node_queue (
   shuffle_order TEXT NOT NULL DEFAULT '[]'
 );
 
+CREATE TABLE IF NOT EXISTS playback_queue (
+  device_key    TEXT PRIMARY KEY,
+  track_ids     TEXT NOT NULL DEFAULT '[]',
+  position      INTEGER NOT NULL DEFAULT 0,
+  updated_at    INTEGER NOT NULL DEFAULT 0,
+  mode          TEXT NOT NULL DEFAULT 'sequence',
+  shuffle_order TEXT NOT NULL DEFAULT '[]'
+);
+
+CREATE TABLE IF NOT EXISTS playback_sleep_timer (
+  device_key TEXT PRIMARY KEY,
+  stop_at    INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS playback_device_dsp (
+  device_key TEXT PRIMARY KEY,
+  enabled    INTEGER NOT NULL DEFAULT 0,
+  preset     TEXT NOT NULL DEFAULT 'flat',
+  preamp     REAL NOT NULL DEFAULT 0,
+  bands      TEXT NOT NULL DEFAULT '[0,0,0,0,0,0,0,0,0,0]',
+  updated_at INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS node_sleep_timer (
   node_id TEXT PRIMARY KEY,
   stop_at INTEGER NOT NULL
@@ -549,6 +611,7 @@ CREATE TABLE IF NOT EXISTS node_devices (
   name    TEXT NOT NULL DEFAULT '',
   enabled INTEGER NOT NULL DEFAULT 0,
   sort    INTEGER NOT NULL DEFAULT 0,
+  volume  INTEGER NOT NULL DEFAULT 100,
   PRIMARY KEY (node_id, hw)
 );
 

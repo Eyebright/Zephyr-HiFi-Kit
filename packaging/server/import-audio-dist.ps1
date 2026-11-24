@@ -1,7 +1,7 @@
 # Imports one audio terminal bundle into a Windows server's dist directory so
 # audio-build terminals upgrade with the ALSA-capable deb. Management filenames
 # stay unchanged; the audio copy gets a _audio suffix.
-#   .\import-audio-dist.ps1 -DistDir C:\path\dist -Bundle C:\path\Zephyr-HiFi-Kit-terminal-0.58-audio-arm64.tar.gz
+#   .\import-audio-dist.ps1 -DistDir C:\path\dist -Bundle C:\path\Zephyr-HiFi-Kit-terminal-0.68-audio-arm64.tar.gz
 param(
     [Parameter(Mandatory = $true)][string]$DistDir,
     [Parameter(Mandatory = $true)][string]$Bundle

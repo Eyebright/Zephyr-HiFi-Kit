@@ -11,10 +11,9 @@ import (
 	"time"
 )
 
-// Per-node playback queue. The queue lives server-side (one row per node); the
-// terminal's prev/next controls and the console both drive it through the API,
-// and natural end-of-track advances it automatically. Each node also persists a
-// playback mode so the console choice survives restarts.
+// Per-device playback queue. The queue lives server-side (one row per playback
+// target); the terminal's prev/next controls and the console both drive it, and
+// natural end-of-track advances it automatically.
 
 var (
 	// ErrQueueEmpty is returned when prev/next targets a node with no queue.
@@ -27,7 +26,7 @@ var (
 	ErrQueueMode = errors.New("队列播放模式无效")
 )
 
-// Persisted per-node playback modes.
+// Persisted per-device playback modes.
 const (
 	QueueModeSequence = "sequence" // stop at the end of the queue
 	QueueModeLoopAll  = "loop_all" // wrap to the first track after the last
@@ -57,6 +56,7 @@ type QueueTrack struct {
 	Album      string `json:"album"`
 	DurationMS int    `json:"duration_ms"`
 	Codec      string `json:"codec"`
+	CoverHash  string `json:"cover_hash,omitempty"`
 	Decodable  bool   `json:"decodable"`
 	MQA        bool   `json:"mqa"`
 	Missing    bool   `json:"missing"`
@@ -65,6 +65,8 @@ type QueueTrack struct {
 // QueueState is the persisted queue plus resolved track metadata.
 type QueueState struct {
 	NodeID       string       `json:"node_id"`
+	DeviceKey    string       `json:"device_key"`
+	HW           string       `json:"hw"`
 	Tracks       []QueueTrack `json:"tracks"`
 	Position     int          `json:"position"`
 	Mode         string       `json:"mode"`
@@ -81,11 +83,11 @@ type queueRow struct {
 	ShuffleOrder []string
 }
 
-func (s *Server) loadQueue(nodeID string) (queueRow, error) {
+func (s *Server) loadQueue(deviceKey string) (queueRow, error) {
 	var idsJSON, mode, orderJSON string
 	var pos int
 	var updatedAt int64
-	err := s.db.QueryRow(`SELECT track_ids,position,updated_at,mode,shuffle_order FROM node_queue WHERE node_id=?`, nodeID).
+	err := s.db.QueryRow(`SELECT track_ids,position,updated_at,mode,shuffle_order FROM playback_queue WHERE device_key=?`, deviceKey).
 		Scan(&idsJSON, &pos, &updatedAt, &mode, &orderJSON)
 	if errors.Is(err, sql.ErrNoRows) {
 		return queueRow{IDs: []string{}, Mode: QueueModeSequence, ShuffleOrder: []string{}}, nil
@@ -117,11 +119,11 @@ func (s *Server) loadQueue(nodeID string) (queueRow, error) {
 	return queueRow{IDs: ids, Position: pos, UpdatedAt: updatedAt, Mode: mode, ShuffleOrder: order}, nil
 }
 
-// saveQueue persists track order and cursor, preserving the node's playback
+// saveQueue persists track order and cursor, preserving the device's playback
 // mode. The shuffle order survives only while it still describes the new track
 // set, so queue edits drop stale orders and the next shuffle step regenerates.
-func (s *Server) saveQueue(nodeID string, ids []string, pos int) error {
-	cur, err := s.loadQueue(nodeID)
+func (s *Server) saveQueue(deviceKey string, ids []string, pos int) error {
+	cur, err := s.loadQueue(deviceKey)
 	if err != nil {
 		return err
 	}
@@ -129,11 +131,11 @@ func (s *Server) saveQueue(nodeID string, ids []string, pos int) error {
 	if !shuffleOrderValid(order, ids) {
 		order = []string{}
 	}
-	return s.saveQueueFull(nodeID, ids, pos, cur.Mode, order)
+	return s.saveQueueFull(deviceKey, ids, pos, cur.Mode, order)
 }
 
 // saveQueueFull writes every queue field at once (used by edits and mode changes).
-func (s *Server) saveQueueFull(nodeID string, ids []string, pos int, mode string, order []string) error {
+func (s *Server) saveQueueFull(deviceKey string, ids []string, pos int, mode string, order []string) error {
 	if ids == nil {
 		ids = []string{}
 	}
@@ -151,10 +153,10 @@ func (s *Server) saveQueueFull(nodeID string, ids []string, pos int, mode string
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec(`INSERT INTO node_queue(node_id,track_ids,position,updated_at,mode,shuffle_order) VALUES(?,?,?,?,?,?)
-		ON CONFLICT(node_id) DO UPDATE SET track_ids=excluded.track_ids,position=excluded.position,
+	_, err = s.db.Exec(`INSERT INTO playback_queue(device_key,track_ids,position,updated_at,mode,shuffle_order) VALUES(?,?,?,?,?,?)
+		ON CONFLICT(device_key) DO UPDATE SET track_ids=excluded.track_ids,position=excluded.position,
 		updated_at=excluded.updated_at,mode=excluded.mode,shuffle_order=excluded.shuffle_order`,
-		nodeID, string(b), pos, time.Now().Unix(), mode, string(ob))
+		deviceKey, string(b), pos, time.Now().Unix(), mode, string(ob))
 	return err
 }
 
@@ -218,25 +220,39 @@ func shuffleStep(order []string, cur string, delta int) string {
 	return order[((idx+delta)%n+n)%n]
 }
 
-// Queue reports the node's queue with resolved track metadata.
+// Queue reports the node's active queue with resolved track metadata.
 func (s *Server) Queue(nodeID string) (QueueState, error) {
-	s.qmu.Lock()
-	defer s.qmu.Unlock()
-	return s.queueLocked(nodeID)
+	return s.queueDevice(s.activeTarget(nodeID))
 }
 
-func (s *Server) queueLocked(nodeID string) (QueueState, error) {
-	row, err := s.loadQueue(nodeID)
+func (s *Server) QueueDevice(nodeID, deviceKey string) (QueueState, error) {
+	target, err := s.resolveTarget(nodeID, deviceKey)
 	if err != nil {
 		return QueueState{}, err
 	}
-	q := QueueState{NodeID: nodeID, Tracks: []QueueTrack{}, Position: row.Position,
-		Mode: row.Mode, ShuffleOrder: row.ShuffleOrder, UpdatedAt: row.UpdatedAt}
+	return s.queueDevice(target)
+}
+
+func (s *Server) queueDevice(target playbackTarget) (QueueState, error) {
+	s.qmu.Lock()
+	defer s.qmu.Unlock()
+	return s.queueLocked(target)
+}
+
+func (s *Server) queueLocked(target playbackTarget) (QueueState, error) {
+	row, err := s.loadQueue(target.DeviceKey)
+	if err != nil {
+		return QueueState{}, err
+	}
+	q := QueueState{NodeID: target.NodeID, DeviceKey: target.DeviceKey, HW: target.HW,
+		Tracks: []QueueTrack{}, Position: row.Position, Mode: row.Mode,
+		ShuffleOrder: row.ShuffleOrder, UpdatedAt: row.UpdatedAt}
 	for _, id := range row.IDs {
 		qt := QueueTrack{TrackID: id}
 		if t, err := s.lib.GetTrack(id); err == nil {
 			qt.Title, qt.Artist, qt.Album = t.Title, t.Artist, t.Album
 			qt.DurationMS, qt.Codec, qt.Decodable, qt.MQA = t.DurationMS, t.Codec, t.Decodable, t.MQA
+			qt.CoverHash = t.CoverHash
 		} else {
 			qt.Missing = true
 		}
@@ -249,6 +265,18 @@ func (s *Server) queueLocked(nodeID string) (QueueState, error) {
 // not start playback; position is clamped into range. The playback mode is
 // preserved; a shuffle order is dropped because the track set changed.
 func (s *Server) SetQueue(nodeID string, ids []string, pos int) error {
+	return s.setQueueDevice(s.activeTarget(nodeID), ids, pos)
+}
+
+func (s *Server) SetQueueDevice(nodeID, deviceKey string, ids []string, pos int) error {
+	target, err := s.resolveTarget(nodeID, deviceKey)
+	if err != nil {
+		return err
+	}
+	return s.setQueueDevice(target, ids, pos)
+}
+
+func (s *Server) setQueueDevice(target playbackTarget, ids []string, pos int) error {
 	for _, id := range ids {
 		if _, err := s.lib.GetTrack(id); err != nil {
 			return fmt.Errorf("曲目不存在：%s", id)
@@ -265,19 +293,31 @@ func (s *Server) SetQueue(nodeID string, ids []string, pos int) error {
 	}
 	s.qmu.Lock()
 	defer s.qmu.Unlock()
-	return s.saveQueue(nodeID, ids, pos)
+	return s.saveQueue(target.DeviceKey, ids, pos)
 }
 
-// SetQueueMode persists the node's playback mode and returns the new state.
+// SetQueueMode persists the device's playback mode and returns the new state.
 // Enabling shuffle freezes a Fisher-Yates permutation of the current queue (a
 // previously frozen order for the same tracks is reused); other modes clear it.
 func (s *Server) SetQueueMode(nodeID, mode string) (QueueState, error) {
+	return s.setQueueModeDevice(s.activeTarget(nodeID), mode)
+}
+
+func (s *Server) SetQueueModeDevice(nodeID, deviceKey, mode string) (QueueState, error) {
+	target, err := s.resolveTarget(nodeID, deviceKey)
+	if err != nil {
+		return QueueState{}, err
+	}
+	return s.setQueueModeDevice(target, mode)
+}
+
+func (s *Server) setQueueModeDevice(target playbackTarget, mode string) (QueueState, error) {
 	if !ValidQueueMode(mode) {
 		return QueueState{}, ErrQueueMode
 	}
 	s.qmu.Lock()
 	defer s.qmu.Unlock()
-	row, err := s.loadQueue(nodeID)
+	row, err := s.loadQueue(target.DeviceKey)
 	if err != nil {
 		return QueueState{}, err
 	}
@@ -289,32 +329,43 @@ func (s *Server) SetQueueMode(nodeID, mode string) (QueueState, error) {
 			order = newShuffleOrder(row.IDs)
 		}
 	}
-	if err := s.saveQueueFull(nodeID, row.IDs, row.Position, mode, order); err != nil {
+	if err := s.saveQueueFull(target.DeviceKey, row.IDs, row.Position, mode, order); err != nil {
 		return QueueState{}, err
 	}
-	return s.queueLocked(nodeID)
+	return s.queueLocked(target)
 }
 
-// startsIdle reports whether queue edits on this node should start playback:
-// the terminal is connected and neither playing nor paused. A paused session
-// keeps its own position and is never displaced by an enqueue.
-func (s *Server) startsIdle(nodeID string) bool {
+// startsIdle reports whether queue edits on this device should start playback:
+// the terminal is connected and this device is neither playing nor paused.
+func (s *Server) startsIdle(nodeID, deviceKey string) bool {
 	if !s.Connected(nodeID) {
 		return false
 	}
-	st, err := s.Status(nodeID)
-	return err == nil && !st.Playing && st.State != "paused"
+	st, err := s.StatusDevice(nodeID, deviceKey)
+	return err == nil && st.Connected && !st.Playing && st.State != "paused"
 }
 
-// Enqueue appends a track and starts it when the terminal is idle, even if the
+// Enqueue appends a track and starts it when the device is idle, even if the
 // queue already holds entries, so library actions always produce sound.
 func (s *Server) Enqueue(ctx context.Context, nodeID, trackID string) (QueueState, string, error) {
+	return s.enqueueDevice(ctx, s.activeTarget(nodeID), trackID)
+}
+
+func (s *Server) EnqueueDevice(ctx context.Context, nodeID, trackID, deviceKey string) (QueueState, string, error) {
+	target, err := s.resolveTarget(nodeID, deviceKey)
+	if err != nil {
+		return QueueState{}, "", err
+	}
+	return s.enqueueDevice(ctx, target, trackID)
+}
+
+func (s *Server) enqueueDevice(ctx context.Context, target playbackTarget, trackID string) (QueueState, string, error) {
 	if _, err := s.lib.GetTrack(trackID); err != nil {
 		return QueueState{}, "", fmt.Errorf("曲目不存在：%s", trackID)
 	}
-	autoPlay := s.startsIdle(nodeID)
+	autoPlay := s.startsIdle(target.NodeID, target.DeviceKey)
 	s.qmu.Lock()
-	row, err := s.loadQueue(nodeID)
+	row, err := s.loadQueue(target.DeviceKey)
 	if err != nil {
 		s.qmu.Unlock()
 		return QueueState{}, "", err
@@ -324,18 +375,18 @@ func (s *Server) Enqueue(ctx context.Context, nodeID, trackID string) (QueueStat
 	if autoPlay {
 		pos = len(ids) - 1
 	}
-	if err := s.saveQueue(nodeID, ids, pos); err != nil {
+	if err := s.saveQueue(target.DeviceKey, ids, pos); err != nil {
 		s.qmu.Unlock()
 		return QueueState{}, "", err
 	}
-	q, err := s.queueLocked(nodeID)
+	q, err := s.queueLocked(target)
 	s.qmu.Unlock()
 	if err != nil {
 		return QueueState{}, "", err
 	}
 	sessionID := ""
 	if autoPlay {
-		sessionID, err = s.StartPlay(ctx, nodeID, trackID)
+		sessionID, err = s.StartPlayDevice(ctx, target.NodeID, trackID, target.DeviceKey)
 		if err != nil {
 			return q, "", err
 		}
@@ -343,10 +394,22 @@ func (s *Server) Enqueue(ctx context.Context, nodeID, trackID string) (QueueStat
 	return q, sessionID, nil
 }
 
-// EnqueueMany appends or inserts tracks. When the terminal is idle the first
+// EnqueueMany appends or inserts tracks. When the device is idle the first
 // added track becomes current and plays immediately, regardless of queue
 // content; while playing, queue edits never interrupt the stream.
 func (s *Server) EnqueueMany(ctx context.Context, nodeID string, trackIDs []string, next bool) (QueueState, string, error) {
+	return s.enqueueManyDevice(ctx, s.activeTarget(nodeID), trackIDs, next)
+}
+
+func (s *Server) EnqueueManyDevice(ctx context.Context, nodeID string, trackIDs []string, next bool, deviceKey string) (QueueState, string, error) {
+	target, err := s.resolveTarget(nodeID, deviceKey)
+	if err != nil {
+		return QueueState{}, "", err
+	}
+	return s.enqueueManyDevice(ctx, target, trackIDs, next)
+}
+
+func (s *Server) enqueueManyDevice(ctx context.Context, target playbackTarget, trackIDs []string, next bool) (QueueState, string, error) {
 	if len(trackIDs) == 0 || len(trackIDs) > 10000 {
 		return QueueState{}, "", fmt.Errorf("批量曲目数量需在 1..10000")
 	}
@@ -356,9 +419,9 @@ func (s *Server) EnqueueMany(ctx context.Context, nodeID string, trackIDs []stri
 			return QueueState{}, "", fmt.Errorf("曲目不存在或无法解码：%s", id)
 		}
 	}
-	autoPlay := s.startsIdle(nodeID)
+	autoPlay := s.startsIdle(target.NodeID, target.DeviceKey)
 	s.qmu.Lock()
-	row, err := s.loadQueue(nodeID)
+	row, err := s.loadQueue(target.DeviceKey)
 	if err != nil {
 		s.qmu.Unlock()
 		return QueueState{}, "", err
@@ -383,28 +446,39 @@ func (s *Server) EnqueueMany(ctx context.Context, nodeID string, trackIDs []stri
 	if autoPlay {
 		pos = at
 	}
-	if err = s.saveQueue(nodeID, merged, pos); err != nil {
+	if err = s.saveQueue(target.DeviceKey, merged, pos); err != nil {
 		s.qmu.Unlock()
 		return QueueState{}, "", err
 	}
-	q, err := s.queueLocked(nodeID)
+	q, err := s.queueLocked(target)
 	s.qmu.Unlock()
 	if err != nil {
 		return QueueState{}, "", err
 	}
 	sessionID := ""
 	if autoPlay {
-		sessionID, err = s.StartPlay(ctx, nodeID, trackIDs[0])
+		sessionID, err = s.StartPlayDevice(ctx, target.NodeID, trackIDs[0], target.DeviceKey)
 	}
 	return q, sessionID, err
 }
 
-// ReplaceQueue swaps the queue and, unlike SetQueue, starts the first entry
-// when the terminal is idle. Library "replace queue" relies on this; console
-// reorders keep using SetQueue so they never start playback.
+// ReplaceQueue swaps the queue and, unlike SetQueue, starts the selected entry
+// when the device is idle. Console reorders keep using SetQueue.
 func (s *Server) ReplaceQueue(ctx context.Context, nodeID string, ids []string, pos int) (string, error) {
-	autoPlay := s.startsIdle(nodeID)
-	if err := s.SetQueue(nodeID, ids, pos); err != nil {
+	return s.replaceQueueDevice(ctx, s.activeTarget(nodeID), ids, pos)
+}
+
+func (s *Server) ReplaceQueueDevice(ctx context.Context, nodeID string, ids []string, pos int, deviceKey string) (string, error) {
+	target, err := s.resolveTarget(nodeID, deviceKey)
+	if err != nil {
+		return "", err
+	}
+	return s.replaceQueueDevice(ctx, target, ids, pos)
+}
+
+func (s *Server) replaceQueueDevice(ctx context.Context, target playbackTarget, ids []string, pos int) (string, error) {
+	autoPlay := s.startsIdle(target.NodeID, target.DeviceKey)
+	if err := s.setQueueDevice(target, ids, pos); err != nil {
 		return "", err
 	}
 	if !autoPlay || len(ids) == 0 {
@@ -413,13 +487,25 @@ func (s *Server) ReplaceQueue(ctx context.Context, nodeID string, ids []string, 
 	if pos < 0 || pos >= len(ids) {
 		pos = 0
 	}
-	return s.StartPlay(ctx, nodeID, ids[pos])
+	return s.StartPlayDevice(ctx, target.NodeID, ids[pos], target.DeviceKey)
 }
 
 // QueueJump plays the entry at index and persists the new position.
 func (s *Server) QueueJump(ctx context.Context, nodeID string, index int) (string, error) {
+	return s.queueJumpDevice(ctx, s.activeTarget(nodeID), index)
+}
+
+func (s *Server) QueueJumpDevice(ctx context.Context, nodeID string, index int, deviceKey string) (string, error) {
+	target, err := s.resolveTarget(nodeID, deviceKey)
+	if err != nil {
+		return "", err
+	}
+	return s.queueJumpDevice(ctx, target, index)
+}
+
+func (s *Server) queueJumpDevice(ctx context.Context, target playbackTarget, index int) (string, error) {
 	s.qmu.Lock()
-	row, err := s.loadQueue(nodeID)
+	row, err := s.loadQueue(target.DeviceKey)
 	if err != nil {
 		s.qmu.Unlock()
 		return "", err
@@ -432,29 +518,45 @@ func (s *Server) QueueJump(ctx context.Context, nodeID string, index int) (strin
 		s.qmu.Unlock()
 		return "", ErrQueueIndex
 	}
-	if err := s.saveQueue(nodeID, row.IDs, index); err != nil {
+	if err := s.saveQueue(target.DeviceKey, row.IDs, index); err != nil {
 		s.qmu.Unlock()
 		return "", err
 	}
 	s.qmu.Unlock()
-	return s.StartPlay(ctx, nodeID, row.IDs[index])
+	return s.StartPlayDevice(ctx, target.NodeID, row.IDs[index], target.DeviceKey)
 }
 
 // QueueNext advances to the next entry and plays it. sequence/loop_one stop at
 // the last entry; loop_all and shuffle wrap around.
 func (s *Server) QueueNext(ctx context.Context, nodeID string) (string, error) {
-	return s.queueStep(ctx, nodeID, 1)
+	return s.queueStep(ctx, s.activeTarget(nodeID), 1)
+}
+
+func (s *Server) QueueNextDevice(ctx context.Context, nodeID, deviceKey string) (string, error) {
+	target, err := s.resolveTarget(nodeID, deviceKey)
+	if err != nil {
+		return "", err
+	}
+	return s.queueStep(ctx, target, 1)
 }
 
 // QueuePrev goes back one entry and plays it; at the first entry sequence and
 // loop_one restart the current track while loop_all and shuffle wrap to the last.
 func (s *Server) QueuePrev(ctx context.Context, nodeID string) (string, error) {
-	return s.queueStep(ctx, nodeID, -1)
+	return s.queueStep(ctx, s.activeTarget(nodeID), -1)
 }
 
-func (s *Server) queueStep(ctx context.Context, nodeID string, delta int) (string, error) {
+func (s *Server) QueuePrevDevice(ctx context.Context, nodeID, deviceKey string) (string, error) {
+	target, err := s.resolveTarget(nodeID, deviceKey)
+	if err != nil {
+		return "", err
+	}
+	return s.queueStep(ctx, target, -1)
+}
+
+func (s *Server) queueStep(ctx context.Context, target playbackTarget, delta int) (string, error) {
 	s.qmu.Lock()
-	row, err := s.loadQueue(nodeID)
+	row, err := s.loadQueue(target.DeviceKey)
 	if err != nil {
 		s.qmu.Unlock()
 		return "", err
@@ -476,7 +578,7 @@ func (s *Server) queueStep(ctx context.Context, nodeID string, delta int) (strin
 		if next < 0 {
 			next = 0
 		}
-		if err := s.saveQueueFull(nodeID, ids, next, row.Mode, order); err != nil {
+		if err := s.saveQueueFull(target.DeviceKey, ids, next, row.Mode, order); err != nil {
 			s.qmu.Unlock()
 			return "", err
 		}
@@ -488,7 +590,7 @@ func (s *Server) queueStep(ctx context.Context, nodeID string, delta int) (strin
 		if next < 0 {
 			next = len(ids) - 1
 		}
-		if err := s.saveQueue(nodeID, ids, next); err != nil {
+		if err := s.saveQueue(target.DeviceKey, ids, next); err != nil {
 			s.qmu.Unlock()
 			return "", err
 		}
@@ -501,22 +603,27 @@ func (s *Server) queueStep(ctx context.Context, nodeID string, delta int) (strin
 		if next < 0 {
 			next = 0
 		}
-		if err := s.saveQueue(nodeID, ids, next); err != nil {
+		if err := s.saveQueue(target.DeviceKey, ids, next); err != nil {
 			s.qmu.Unlock()
 			return "", err
 		}
 	}
 	s.qmu.Unlock()
-	return s.StartPlay(ctx, nodeID, ids[next])
+	return s.StartPlayDevice(ctx, target.NodeID, ids[next], target.DeviceKey)
 }
 
 // autoAdvance runs after a stream ends naturally (EOF): if the finished track
-// is still the queued current entry, apply the node's playback mode. User stops
-// and queue edits made in the meantime both suppress the advance because the
-// current entry no longer matches the finished track.
-func (s *Server) autoAdvance(nodeID, finishedTrackID string) {
+// is still the queued current entry, apply that device's playback mode.
+func (s *Server) autoAdvance(deviceKey, finishedTrackID string) {
+	nodeID, err := s.targetNodeID(deviceKey)
+	if err != nil {
+		return
+	}
+	if _, err := parseDeviceKey(nodeID, deviceKey); err != nil {
+		return
+	}
 	s.qmu.Lock()
-	row, err := s.loadQueue(nodeID)
+	row, err := s.loadQueue(deviceKey)
 	ids, pos := row.IDs, row.Position
 	if err != nil || len(ids) == 0 || pos < 0 || pos >= len(ids) || ids[pos] != finishedTrackID {
 		s.qmu.Unlock()
@@ -543,14 +650,14 @@ func (s *Server) autoAdvance(nodeID, finishedTrackID string) {
 		next = pos + 1
 	}
 	if next != pos || row.Mode == QueueModeShuffle {
-		if err := s.saveQueueFull(nodeID, ids, next, row.Mode, order); err != nil {
+		if err := s.saveQueueFull(deviceKey, ids, next, row.Mode, order); err != nil {
 			s.qmu.Unlock()
 			return
 		}
 	}
 	trackID := ids[next]
 	s.qmu.Unlock()
-	if _, err := s.StartPlay(context.Background(), nodeID, trackID); err != nil {
-		slog.Warn("zat queue auto-advance", "node", nodeID, "track", trackID, "err", err)
+	if _, err := s.StartPlayDevice(context.Background(), nodeID, trackID, deviceKey); err != nil {
+		slog.Warn("zat queue auto-advance", "node", nodeID, "device_key", deviceKey, "track", trackID, "err", err)
 	}
 }

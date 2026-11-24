@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -29,8 +30,10 @@ type ctrlEvent struct {
 }
 
 type ctrlOpts struct {
-	caps       zat.Caps
-	bitPerfect bool
+	caps          zat.Caps
+	bitPerfect    bool
+	persistent    bool
+	deviceUpdates <-chan []zat.ALSADevice
 }
 
 // runCtrlEndpoint authenticates and stays connected across sessions, auto-ACKing
@@ -66,6 +69,8 @@ func runCtrlEndpointOpts(t *testing.T, addr, nodeID, secret string, opts ctrlOpt
 	var wmu sync.Mutex // serializes frame writes (STATUS ticker vs SETUP_ACK)
 	var sid string
 	paused := false
+	devices := slices.Clone(opts.caps.ALSADevices)
+	deviceInfo := slices.Clone(opts.caps.ALSADeviceInfo)
 	// Periodic STATUS like the real agent's statusLoop, so the server sees
 	// pause/state convergence even when no audio is flowing.
 	stopStatus := make(chan struct{})
@@ -77,13 +82,25 @@ func runCtrlEndpointOpts(t *testing.T, addr, nodeID, secret string, opts ctrlOpt
 			select {
 			case <-stopStatus:
 				return
+			case update, ok := <-opts.deviceUpdates:
+				if !ok {
+					return
+				}
+				mu.Lock()
+				devices = devices[:0]
+				deviceInfo = append(deviceInfo[:0], update...)
+				for _, d := range update {
+					devices = append(devices, d.HW)
+				}
+				mu.Unlock()
 			case <-tk.C:
 				mu.Lock()
 				state := "playing"
 				if paused {
 					state = "paused"
 				}
-				st := zat.Status{SessionID: sid, State: state, PTS: 0, BufferMS: 100}
+				st := zat.Status{SessionID: sid, State: state, PTS: 0, BufferMS: 100,
+					ALSADevices: slices.Clone(devices), ALSADeviceInfo: slices.Clone(deviceInfo)}
 				mu.Unlock()
 				stf, _ := zat.ControlFrame(zat.TypeStatus, 3, st)
 				wmu.Lock()
@@ -143,7 +160,13 @@ func runCtrlEndpointOpts(t *testing.T, addr, nodeID, secret string, opts ctrlOpt
 			events <- ctrlEvent{typ: zat.TypeAudio, audioPTS: ap.PTS, audioLen: len(ap.PCM)}
 		case zat.TypeStop:
 			events <- ctrlEvent{typ: zat.TypeStop}
-			return
+			mu.Lock()
+			sid = ""
+			paused = false
+			mu.Unlock()
+			if !opts.persistent {
+				return
+			}
 		case zat.TypeTeardown:
 			return
 		}
@@ -458,9 +481,15 @@ func TestMQAPlaybackStrictPath(t *testing.T) {
 	if _, err := h.st.DB.Exec(`UPDATE nodes SET dac_device='hw:0,0' WHERE node_id=?`, nodeID); err != nil {
 		t.Fatal(err)
 	}
+	if err := h.nodes.SetDeviceEnabled(nodeID, "hw:0,0", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.nodes.SetDeviceDSDMode(nodeID, "hw:0,0", "dop"); err != nil {
+		t.Fatal(err)
+	}
 	ready := make(chan struct{}, 1)
 	events := make(chan ctrlEvent, 512)
-	go runCtrlEndpointOpts(t, h.srv.Addr(), nodeID, secret, ctrlOpts{caps: zat.Caps{MaxChannels: 2, MQA: true}, bitPerfect: true}, ready, events)
+	go runCtrlEndpointOpts(t, h.srv.Addr(), nodeID, secret, ctrlOpts{caps: zat.Caps{MaxChannels: 2, MQA: true, ALSADevices: []string{"hw:0,0"}, ALSADeviceInfo: []zat.ALSADevice{{HW: "hw:0,0", Name: "Test DAC"}}}, bitPerfect: true}, ready, events)
 	<-ready
 
 	if _, err := h.srv.StartPlay(context.Background(), nodeID, trackID); err != nil {
@@ -511,7 +540,7 @@ func TestMQADeviceRequiresHW(t *testing.T) {
 	}
 	ready := make(chan struct{}, 1)
 	events := make(chan ctrlEvent, 64)
-	go runCtrlEndpointOpts(t, h.srv.Addr(), nodeID, secret, ctrlOpts{caps: zat.Caps{MaxChannels: 2, MQA: true}, bitPerfect: true}, ready, events)
+	go runCtrlEndpointOpts(t, h.srv.Addr(), nodeID, secret, ctrlOpts{caps: zat.Caps{MaxChannels: 2, MQA: true, ALSADevices: []string{"hw:0,0"}, ALSADeviceInfo: []zat.ALSADevice{{HW: "hw:0,0", Name: "Test DAC"}}}, bitPerfect: true}, ready, events)
 	<-ready
 	if _, err := h.srv.StartPlay(context.Background(), nodeID, trackID); !errors.Is(err, ErrMQADevice) {
 		t.Fatalf("StartPlay on default device = %v want ErrMQADevice", err)
@@ -522,6 +551,12 @@ func TestDSDDoPStrictPath(t *testing.T) {
 	h := setup(t)
 	nodeID, secret := h.register(t, "ep-dop", true)
 	if _, err := h.st.DB.Exec(`UPDATE nodes SET dac_device='hw:0,0' WHERE node_id=?`, nodeID); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.nodes.SetDeviceEnabled(nodeID, "hw:0,0", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.nodes.SetDeviceDSDMode(nodeID, "hw:0,0", "dop"); err != nil {
 		t.Fatal(err)
 	}
 	m, err := h.lib.AddMount(library.AddMountRequest{Host: "nas", Share: "music"})
@@ -549,7 +584,7 @@ func TestDSDDoPStrictPath(t *testing.T) {
 	}
 	ready := make(chan struct{}, 1)
 	events := make(chan ctrlEvent, 512)
-	go runCtrlEndpointOpts(t, h.srv.Addr(), nodeID, secret, ctrlOpts{caps: zat.Caps{MaxChannels: 2, DoP: true}, bitPerfect: true}, ready, events)
+	go runCtrlEndpointOpts(t, h.srv.Addr(), nodeID, secret, ctrlOpts{caps: zat.Caps{MaxChannels: 2, DoP: true, ALSADevices: []string{"hw:0,0"}, ALSADeviceInfo: []zat.ALSADevice{{HW: "hw:0,0", Name: "Test DAC"}}}, bitPerfect: true}, ready, events)
 	<-ready
 	if _, err := h.srv.StartPlay(context.Background(), nodeID, tracks[0].ID); err != nil {
 		t.Fatalf("StartPlay: %v", err)
@@ -574,6 +609,12 @@ func TestDSDRequiresDoPCapability(t *testing.T) {
 	if _, err := h.st.DB.Exec(`UPDATE nodes SET dac_device='hw:0,0' WHERE node_id=?`, nodeID); err != nil {
 		t.Fatal(err)
 	}
+	if err := h.nodes.SetDeviceEnabled(nodeID, "hw:0,0", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.nodes.SetDeviceDSDMode(nodeID, "hw:0,0", "dop"); err != nil {
+		t.Fatal(err)
+	}
 	m, err := h.lib.AddMount(library.AddMountRequest{Host: "nas", Share: "music"})
 	if err != nil {
 		t.Fatal(err)
@@ -592,7 +633,7 @@ func TestDSDRequiresDoPCapability(t *testing.T) {
 	tracks, _ := h.lib.ListTracks(m.ID)
 	ready := make(chan struct{}, 1)
 	events := make(chan ctrlEvent, 64)
-	go runCtrlEndpoint(t, h.srv.Addr(), nodeID, secret, ready, events)
+	go runCtrlEndpointOpts(t, h.srv.Addr(), nodeID, secret, ctrlOpts{caps: zat.Caps{MaxChannels: 2, ALSADevices: []string{"hw:0,0"}}}, ready, events)
 	<-ready
 	if _, err := h.srv.StartPlay(context.Background(), nodeID, tracks[0].ID); !errors.Is(err, ErrDoPCapability) {
 		t.Fatalf("StartPlay without DoP cap = %v want ErrDoPCapability", err)
@@ -609,10 +650,437 @@ func (f *fakePCMDecoder) Close() error             { return nil }
 func (f *fakePCMDecoder) Format() decode.PCMFormat { return f.format }
 func (f *fakePCMDecoder) TotalSamples() uint64     { return f.total }
 
+func TestPlaybackDeviceTargetValidation(t *testing.T) {
+	h := setup(t)
+	nodeID, secret := h.register(t, "ep-targets", true)
+	otherID, _ := h.register(t, "ep-other", true)
+	defaultKey := makeDeviceKey(nodeID, "default")
+	dacKey := makeDeviceKey(nodeID, "hw:1,0")
+	for _, key := range []string{"missing", "::hw:1,0", makeDeviceKey(otherID, "hw:1,0"), makeDeviceKey(nodeID, ""), nodeID + "::hw:1,0\n"} {
+		if _, err := parseDeviceKey(nodeID, key); !errors.Is(err, ErrInvalidDeviceKey) {
+			t.Fatalf("parseDeviceKey(%q) = %v", key, err)
+		}
+	}
+	if _, err := h.srv.resolveTarget(nodeID, defaultKey); !errors.Is(err, ErrNotConnected) {
+		t.Fatalf("offline explicit target = %v", err)
+	}
+	if err := h.nodes.SetDeviceEnabled(nodeID, "hw:9,9", true); err != nil {
+		t.Fatal(err)
+	}
+
+	ready := make(chan struct{}, 1)
+	events := make(chan ctrlEvent, 32)
+	updates := make(chan []zat.ALSADevice, 1)
+	go runCtrlEndpointOpts(t, h.srv.Addr(), nodeID, secret, ctrlOpts{
+		caps: zat.Caps{MaxChannels: 2, ALSADevices: []string{"hw:0,0", "hw:1,0"},
+			ALSADeviceInfo: []zat.ALSADevice{{HW: "hw:0,0", Name: "板载"}, {HW: "hw:1,0", Name: "AUDIO"}}},
+		persistent: true, deviceUpdates: updates,
+	}, ready, events)
+	<-ready
+	n, err := h.nodes.Get(nodeID)
+	if err != nil || n.Status != "online" {
+		t.Fatalf("HELLO did not mark node online: %+v %v", n, err)
+	}
+	if _, err := h.st.DB.Exec(`UPDATE nodes SET dac_device=? WHERE node_id=?`, "hw:1,0", nodeID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.srv.resolveTarget(nodeID, ""); !errors.Is(err, ErrDeviceNotActivated) {
+		t.Fatalf("legacy target bypassed activation: %v", err)
+	}
+	if _, err := h.st.DB.Exec(`UPDATE nodes SET dac_device='default' WHERE node_id=?`, nodeID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.srv.resolveTarget(nodeID, dacKey); !errors.Is(err, ErrDeviceNotActivated) {
+		t.Fatalf("inactive DAC = %v", err)
+	}
+	if _, err := h.srv.resolveTarget(nodeID, makeDeviceKey(nodeID, "hw:9,9")); !errors.Is(err, ErrUnknownDevice) {
+		t.Fatalf("absent DAC = %v", err)
+	}
+	if _, err := h.srv.resolveTarget(nodeID, defaultKey); err != nil {
+		t.Fatalf("default target: %v", err)
+	}
+	if err := h.nodes.RenameDevice(nodeID, "hw:1,0", "客厅 DAC"); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.nodes.SetDeviceEnabled(nodeID, "hw:1,0", true); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := h.srv.resolveTarget(nodeID, dacKey); err != nil || got.HW != "hw:1,0" {
+		t.Fatalf("active DAC = %+v %v", got, err)
+	}
+	devs := h.srv.ActiveDevices()
+	if len(devs) != 2 {
+		t.Fatalf("active devices = %+v", devs)
+	}
+	var dac *PlayDevice
+	for i := range devs {
+		if devs[i].DeviceKey == dacKey {
+			dac = &devs[i]
+		}
+	}
+	if dac == nil || dac.Name != "客厅 DAC" || !dac.Present || !dac.Online || dac.NodeID != nodeID {
+		t.Fatalf("active DAC metadata = %+v", dac)
+	}
+	updates <- []zat.ALSADevice{{HW: "hw:0,0", Name: "板载"}}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		devs = h.srv.ActiveDevices()
+		if len(devs) == 1 && devs[0].HW == "default" {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if len(devs) != 1 || devs[0].HW != "default" {
+		t.Fatalf("unplugged DAC remained selectable: %+v", devs)
+	}
+	if _, err := h.srv.resolveTarget(nodeID, dacKey); !errors.Is(err, ErrUnknownDevice) {
+		t.Fatalf("unplugged DAC target = %v", err)
+	}
+	if _, err := h.st.DB.Exec(`UPDATE nodes SET dac_device=? WHERE node_id=?`, "hw:9,9", nodeID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.srv.resolveTarget(nodeID, ""); !errors.Is(err, ErrUnknownDevice) {
+		t.Fatalf("legacy target bypassed presence: %v", err)
+	}
+}
+
+func TestPlaybackDeviceSwitchVolumeQueueAndSleepIsolation(t *testing.T) {
+	h := setup(t)
+	nodeID, secret := h.register(t, "ep-isolation", true)
+	trackID, _ := h.addWAVTrack(t, 200000)
+	key0 := makeDeviceKey(nodeID, "hw:0,0")
+	key1 := makeDeviceKey(nodeID, "hw:1,0")
+	for _, hw := range []string{"hw:0,0", "hw:1,0"} {
+		if err := h.nodes.SetDeviceEnabled(nodeID, hw, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := h.nodes.SetDeviceVolume(nodeID, "hw:0,0", 25); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.nodes.SetDeviceVolume(nodeID, "hw:1,0", 70); err != nil {
+		t.Fatal(err)
+	}
+
+	ready := make(chan struct{}, 1)
+	events := make(chan ctrlEvent, 512)
+	go runCtrlEndpointOpts(t, h.srv.Addr(), nodeID, secret, ctrlOpts{
+		caps:       zat.Caps{MaxChannels: 2, ALSADevices: []string{"hw:0,0", "hw:1,0"}},
+		persistent: true,
+	}, ready, events)
+	<-ready
+	if err := h.srv.SetQueueDevice(nodeID, key0, []string{trackID}, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.srv.SetQueueDevice(nodeID, key1, []string{trackID}, 0); err != nil {
+		t.Fatal(err)
+	}
+	stop0, err := h.srv.SetSleepTimerDevice(nodeID, key0, 15)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stop1, err := h.srv.SetSleepTimerDevice(nodeID, key1, 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stop0 == 0 || stop1 == 0 || h.srv.SleepStopAtDevice(nodeID, key0) != stop0 || h.srv.SleepStopAtDevice(nodeID, key1) != stop1 {
+		t.Fatalf("sleep timers not isolated: %d %d", stop0, stop1)
+	}
+	if err := h.srv.CancelSleepTimerDevice(nodeID, key0); err != nil {
+		t.Fatal(err)
+	}
+	if h.srv.SleepStopAtDevice(nodeID, key0) != 0 || h.srv.SleepStopAtDevice(nodeID, key1) != stop1 {
+		t.Fatal("canceling one device timer affected the other")
+	}
+
+	sid, err := h.srv.StartPlayDevice(context.Background(), nodeID, trackID, key0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setup := waitEvent(t, events, zat.TypeSetup, 3*time.Second)
+	if setup.setup.ALSADevice != "hw:0,0" || !setup.setup.LockDevice || setup.setup.SessionID != sid {
+		t.Fatalf("first device SETUP = %+v", setup.setup)
+	}
+	waitEvent(t, events, zat.TypePlay, 3*time.Second)
+	vol := waitEvent(t, events, zat.TypeVolume, 3*time.Second)
+	if vol.volume.Volume != 25 || vol.volume.SessionID != sid {
+		t.Fatalf("persisted volume not applied: %+v", vol.volume)
+	}
+	waitPlaying(t, h.nodes, nodeID, true)
+	idle, err := h.srv.StatusDevice(nodeID, key1)
+	if err != nil || idle.State != string(zat.StateIdle) || idle.Playing || idle.Volume != 70 || idle.TrackID != "" || idle.DeviceKey != key1 {
+		t.Fatalf("other device inherited active state: %+v %v", idle, err)
+	}
+	drainEvents(events, 150*time.Millisecond)
+	if err := h.srv.SetVolumeDevice(nodeID, key1, 80); err != nil {
+		t.Fatal(err)
+	}
+	expectNoEvent(t, events, zat.TypeVolume, 250*time.Millisecond)
+	active, err := h.srv.StatusDevice(nodeID, key0)
+	if err != nil || active.Volume != 25 || !active.Playing {
+		t.Fatalf("idle volume change affected active device: %+v %v", active, err)
+	}
+	if idle, err = h.srv.StatusDevice(nodeID, key1); err != nil || idle.Volume != 80 {
+		t.Fatalf("idle volume not persisted: %+v %v", idle, err)
+	}
+	if err := h.srv.SetVolumeDevice(nodeID, key0, 30); err != nil {
+		t.Fatal(err)
+	}
+	vol = waitEvent(t, events, zat.TypeVolume, 3*time.Second)
+	if vol.volume.Volume != 30 || vol.volume.SessionID != sid {
+		t.Fatalf("active volume frame = %+v", vol.volume)
+	}
+	if err := h.srv.PauseDevice(nodeID, key1); !errors.Is(err, ErrNoSession) {
+		t.Fatalf("pause other device = %v", err)
+	}
+	if err := h.srv.SeekDevice(nodeID, key1, 1000); !errors.Is(err, ErrNoSession) {
+		t.Fatalf("seek other device = %v", err)
+	}
+	if err := h.srv.StopDevice(nodeID, key1); err != nil {
+		t.Fatalf("stop other device: %v", err)
+	}
+	expectNoEvent(t, events, zat.TypeStop, 250*time.Millisecond)
+	waitPlaying(t, h.nodes, nodeID, true)
+	if err := h.srv.StopDevice(nodeID, key0); err != nil {
+		t.Fatal(err)
+	}
+	waitEvent(t, events, zat.TypeStop, 5*time.Second)
+	waitPlaying(t, h.nodes, nodeID, false)
+
+	if _, err := h.srv.StartPlayDevice(context.Background(), nodeID, trackID, key1); err != nil {
+		t.Fatal(err)
+	}
+	setup = waitEvent(t, events, zat.TypeSetup, 3*time.Second)
+	if setup.setup.ALSADevice != "hw:1,0" || !setup.setup.LockDevice {
+		t.Fatalf("switched device SETUP = %+v", setup.setup)
+	}
+	waitEvent(t, events, zat.TypePlay, 3*time.Second)
+	vol = waitEvent(t, events, zat.TypeVolume, 3*time.Second)
+	if vol.volume.Volume != 80 {
+		t.Fatalf("switched device volume = %+v", vol.volume)
+	}
+	waitPlaying(t, h.nodes, nodeID, true)
+	if err := h.srv.StopDevice(nodeID, key1); err != nil {
+		t.Fatal(err)
+	}
+	waitEvent(t, events, zat.TypeStop, 5*time.Second)
+	waitPlaying(t, h.nodes, nodeID, false)
+}
+
+func TestPlaybackDeviceSeekLockAndHotplugStop(t *testing.T) {
+	h := setup(t)
+	nodeID, secret := h.register(t, "ep-hotplug-stop", true)
+	trackID, _ := h.addWAVTrack(t, 200000)
+	key := makeDeviceKey(nodeID, "hw:0,0")
+	if err := h.nodes.SetDeviceEnabled(nodeID, "hw:0,0", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.nodes.SetDeviceDSDMode(nodeID, "hw:0,0", "dop"); err != nil {
+		t.Fatal(err)
+	}
+	ready := make(chan struct{}, 1)
+	events := make(chan ctrlEvent, 512)
+	updates := make(chan []zat.ALSADevice, 1)
+	go runCtrlEndpointOpts(t, h.srv.Addr(), nodeID, secret, ctrlOpts{
+		caps: zat.Caps{MaxChannels: 2, ALSADevices: []string{"hw:0,0"}}, persistent: true, deviceUpdates: updates,
+	}, ready, events)
+	<-ready
+	if _, err := h.srv.StartPlayDevice(context.Background(), nodeID, trackID, key); err != nil {
+		t.Fatal(err)
+	}
+	setup := waitEvent(t, events, zat.TypeSetup, 3*time.Second)
+	if !setup.setup.LockDevice || setup.setup.ALSADevice != "hw:0,0" {
+		t.Fatalf("initial SETUP = %+v", setup.setup)
+	}
+	waitEvent(t, events, zat.TypePlay, 3*time.Second)
+	if err := h.srv.PauseDevice(nodeID, key); err != nil {
+		t.Fatal(err)
+	}
+	waitEvent(t, events, zat.TypePause, 3*time.Second)
+	drainEvents(events, 150*time.Millisecond)
+	if err := h.srv.SeekDevice(nodeID, key, 100000); err != nil {
+		t.Fatal(err)
+	}
+	evs := collectEvents(events, 600*time.Millisecond)
+	seekSetup, i := findEvent(evs, zat.TypeSetup)
+	if i < 0 || !seekSetup.setup.LockDevice || seekSetup.setup.ALSADevice != "hw:0,0" || seekSetup.setup.TotalSamples != 200000 {
+		t.Fatalf("seek SETUP lost lock or device: %+v", evs)
+	}
+	updates <- []zat.ALSADevice{}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		st, _ := h.srv.Status(nodeID)
+		if len(st.Devices) == 0 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if st, _ := h.srv.Status(nodeID); len(st.Devices) != 0 {
+		t.Fatalf("unplugged devices still reported: %v", st.Devices)
+	}
+	if _, err := h.srv.resolveTarget(nodeID, key); !errors.Is(err, ErrUnknownDevice) {
+		t.Fatalf("unplugged target still resolves: %v", err)
+	}
+	if err := h.srv.StopDevice(nodeID, key); err != nil {
+		t.Fatalf("stop after unplug: %v", err)
+	}
+	waitEvent(t, events, zat.TypeStop, 5*time.Second)
+	waitPlaying(t, h.nodes, nodeID, false)
+	if _, err := h.srv.StartPlayDevice(context.Background(), nodeID, trackID, key); !errors.Is(err, ErrUnknownDevice) {
+		t.Fatalf("play on unplugged device = %v", err)
+	}
+}
+
+func TestPlaybackDeviceStopAfterDeactivation(t *testing.T) {
+	h := setup(t)
+	nodeID, secret := h.register(t, "ep-deactivated-stop", true)
+	trackID, _ := h.addWAVTrack(t, 200000)
+	key := makeDeviceKey(nodeID, "hw:0,0")
+	if err := h.nodes.SetDeviceEnabled(nodeID, "hw:0,0", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.nodes.SetDeviceDSDMode(nodeID, "hw:0,0", "dop"); err != nil {
+		t.Fatal(err)
+	}
+	ready := make(chan struct{}, 1)
+	events := make(chan ctrlEvent, 128)
+	go runCtrlEndpointOpts(t, h.srv.Addr(), nodeID, secret, ctrlOpts{
+		caps: zat.Caps{MaxChannels: 2, ALSADevices: []string{"hw:0,0"}}, persistent: true,
+	}, ready, events)
+	<-ready
+	if _, err := h.srv.StartPlayDevice(context.Background(), nodeID, trackID, key); err != nil {
+		t.Fatal(err)
+	}
+	waitEvent(t, events, zat.TypePlay, 3*time.Second)
+	if err := h.nodes.SetDeviceEnabled(nodeID, "hw:0,0", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.srv.resolveTarget(nodeID, key); !errors.Is(err, ErrDeviceNotActivated) {
+		t.Fatalf("deactivated target still resolves: %v", err)
+	}
+	if err := h.srv.StopDevice(nodeID, key); err != nil {
+		t.Fatalf("stop after deactivation: %v", err)
+	}
+	waitEvent(t, events, zat.TypeStop, 5*time.Second)
+	waitPlaying(t, h.nodes, nodeID, false)
+}
+
+func TestPlaybackDeviceAutoAdvanceAndLegacyWrapper(t *testing.T) {
+	h := setup(t)
+	nodeID, secret := h.register(t, "ep-auto-device", true)
+	track1, _ := h.addWAVTrack(t, 1000)
+	track2 := track1
+	key0 := makeDeviceKey(nodeID, "hw:0,0")
+	key1 := makeDeviceKey(nodeID, "hw:1,0")
+	for _, hw := range []string{"hw:0,0", "hw:1,0"} {
+		if err := h.nodes.SetDeviceEnabled(nodeID, hw, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ready := make(chan struct{}, 1)
+	events := make(chan ctrlEvent, 512)
+	go runCtrlEndpointOpts(t, h.srv.Addr(), nodeID, secret, ctrlOpts{
+		caps: zat.Caps{MaxChannels: 2, ALSADevices: []string{"hw:0,0", "hw:1,0"}}, persistent: true,
+	}, ready, events)
+	<-ready
+	for _, key := range []string{key0, key1} {
+		if err := h.srv.SetQueueDevice(nodeID, key, []string{track1, track2}, 0); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := h.srv.SetQueueModeDevice(nodeID, key, QueueModeLoopAll); err != nil {
+			t.Fatal(err)
+		}
+	}
+	go h.srv.autoAdvance(key1, track1)
+	setup := waitEvent(t, events, zat.TypeSetup, 3*time.Second)
+	if setup.setup.ALSADevice != "hw:1,0" || !setup.setup.LockDevice || setup.setup.TrackID != track2 {
+		t.Fatalf("auto-advance changed device: %+v", setup.setup)
+	}
+	waitEvent(t, events, zat.TypePlay, 3*time.Second)
+	q0, err := h.srv.QueueDevice(nodeID, key0)
+	if err != nil || q0.Position != 0 {
+		t.Fatalf("other queue advanced: %+v %v", q0, err)
+	}
+	q1, err := h.srv.QueueDevice(nodeID, key1)
+	if err != nil || q1.Position != 1 {
+		t.Fatalf("device queue did not advance: %+v %v", q1, err)
+	}
+	if err := h.srv.StopDevice(nodeID, key1); err != nil {
+		t.Fatal(err)
+	}
+	waitEvent(t, events, zat.TypeStop, 5*time.Second)
+	if err := h.srv.SetDevice(nodeID, "hw:1,0"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.srv.StartPlay(context.Background(), nodeID, track1); err != nil {
+		t.Fatal(err)
+	}
+	setup = waitEvent(t, events, zat.TypeSetup, 3*time.Second)
+	if setup.setup.ALSADevice != "hw:1,0" || setup.setup.LockDevice {
+		t.Fatalf("legacy wrapper SETUP = %+v", setup.setup)
+	}
+	if err := h.srv.Stop(nodeID); err != nil {
+		t.Fatal(err)
+	}
+	waitEvent(t, events, zat.TypeStop, 5*time.Second)
+}
+
+func TestDSDDefaultsToPCMConversion(t *testing.T) {
+	h := setup(t)
+	nodeID, secret := h.register(t, "ep-dsd-pcm", true)
+	if _, err := h.st.DB.Exec(`UPDATE nodes SET dac_device='hw:0,0' WHERE node_id=?`, nodeID); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.nodes.SetDeviceEnabled(nodeID, "hw:0,0", true); err != nil {
+		t.Fatal(err)
+	}
+	m, err := h.lib.AddMount(library.AddMountRequest{Host: "nas", Share: "music"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := t.TempDir()
+	if _, err := h.st.DB.Exec(`UPDATE mounts SET target=?,status='mounted' WHERE id=?`, target, m.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(target, "DSD"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeTestDSF(t, filepath.Join(target, "DSD", "song.dsf"))
+	if _, err := h.lib.Scan(context.Background(), m.ID); err != nil {
+		t.Fatal(err)
+	}
+	tracks, _ := h.lib.ListTracks(m.ID)
+	ready := make(chan struct{}, 1)
+	events := make(chan ctrlEvent, 64)
+	go runCtrlEndpointOpts(t, h.srv.Addr(), nodeID, secret, ctrlOpts{caps: zat.Caps{MaxChannels: 2, DoP: true, ALSADevices: []string{"hw:0,0"}}}, ready, events)
+	<-ready
+	if _, err := h.srv.StartPlay(context.Background(), nodeID, tracks[0].ID); err != nil {
+		t.Fatalf("StartPlay default pcm: %v", err)
+	}
+	su := waitEvent(t, events, zat.TypeSetup, 5*time.Second)
+	if su.setup.DoP {
+		t.Fatalf("default DSD must not use DoP: %+v", su.setup)
+	}
+	if su.setup.Rate != 176400 && su.setup.Rate != 88200 {
+		t.Fatalf("converted PCM rate = %d", su.setup.Rate)
+	}
+	st, err := h.srv.Status(nodeID)
+	if err != nil || st.DoP || !st.Converted {
+		t.Fatalf("default pcm status = %+v err=%v", st, err)
+	}
+	_ = h.srv.Stop(nodeID)
+}
+
 func TestDSDFallbackToPCM(t *testing.T) {
 	h := setup(t)
 	nodeID, secret := h.register(t, "ep-dop-pcm", true)
 	if _, err := h.st.DB.Exec(`UPDATE nodes SET dac_device='hw:0,0' WHERE node_id=?`, nodeID); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.nodes.SetDeviceEnabled(nodeID, "hw:0,0", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.nodes.SetDeviceDSDMode(nodeID, "hw:0,0", "dop"); err != nil {
 		t.Fatal(err)
 	}
 	m, err := h.lib.AddMount(library.AddMountRequest{Host: "nas", Share: "music"})
@@ -642,9 +1110,10 @@ func TestDSDFallbackToPCM(t *testing.T) {
 	events := make(chan ctrlEvent, 512)
 	// DoP capability present, but the ACK never confirms bit-perfect, which is
 	// exactly the case that must fall back to ffmpeg PCM.
-	go runCtrlEndpointOpts(t, h.srv.Addr(), nodeID, secret, ctrlOpts{caps: zat.Caps{MaxChannels: 2, DoP: true}, bitPerfect: false}, ready, events)
+	go runCtrlEndpointOpts(t, h.srv.Addr(), nodeID, secret, ctrlOpts{caps: zat.Caps{MaxChannels: 2, DoP: true, ALSADevices: []string{"hw:0,0"}, ALSADeviceInfo: []zat.ALSADevice{{HW: "hw:0,0", Name: "Test DAC"}}}, bitPerfect: false}, ready, events)
 	<-ready
-	if _, err := h.srv.StartPlay(context.Background(), nodeID, tracks[0].ID); err != nil {
+	deviceKey := makeDeviceKey(nodeID, "hw:0,0")
+	if _, err := h.srv.StartPlayDevice(context.Background(), nodeID, tracks[0].ID, deviceKey); err != nil {
 		t.Fatalf("StartPlay fallback: %v", err)
 	}
 	evs := collectEvents(events, 500*time.Millisecond)
@@ -657,12 +1126,19 @@ func TestDSDFallbackToPCM(t *testing.T) {
 	if len(setups) != 2 || !setups[0].DoP || setups[1].DoP || setups[1].Rate != 176400 || setups[1].Format != zat.S24LE {
 		t.Fatalf("setups = %+v", setups)
 	}
+	for _, su := range setups {
+		if !su.LockDevice || su.ALSADevice != "hw:0,0" {
+			t.Fatalf("fallback SETUP lost device lock: %+v", su)
+		}
+	}
 	st, err := h.srv.Status(nodeID)
 	if err != nil || !st.Converted || st.DoP || st.DSDRate != 2822400 {
 		t.Fatalf("fallback status = %+v err=%v", st, err)
 	}
-	if err := h.srv.SetVolume(nodeID, 40); err != nil {
+	if err := h.srv.SetVolumeDevice(nodeID, deviceKey, 40); err != nil {
 		t.Fatalf("volume after PCM fallback should work: %v", err)
 	}
-	_ = h.srv.Stop(nodeID)
+	if err := h.srv.StopDevice(nodeID, deviceKey); err != nil {
+		t.Fatal(err)
+	}
 }

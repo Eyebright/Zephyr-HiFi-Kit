@@ -116,6 +116,7 @@ func (a *API) route(pattern string, h http.HandlerFunc) {
 		"POST /api/v1/nodes/{id}/commands", "POST /api/v1/nodes/{id}/apt-sources/apply",
 		"POST /api/v1/nodes/{id}/upgrade", "POST /api/v1/nodes/{id}/server-endpoint",
 		"POST /api/v1/nodes/{id}/devices/{hw}/activate", "PATCH /api/v1/nodes/{id}/devices/{hw}",
+		"PATCH /api/v1/nodes/{id}/devices/{hw}/dsd", "PUT /api/v1/nodes/{id}/devices/{hw}/dsp",
 		"/api/v1/nodes/{id}/console/{rest...}", "/api/v1/nodes/{id}/local/api/{rest...}",
 		"POST /api/v1/boms", "POST /api/v1/boms/import", "POST /api/v1/boms/{id}/versions/{ver}/publish", "POST /api/v1/boms/{id}/rollback",
 		"POST /api/v1/jobs", "POST /api/v1/jobs/{id}/advance",
@@ -142,6 +143,8 @@ func (a *API) routes() {
 	a.route("GET /api/v1/settings/maintenance", a.settingsMaintenance)
 	a.route("GET /api/v1/settings/maintenance/text-preview", a.settingsTextRepairPreview)
 	a.route("POST /api/v1/settings/maintenance/text-repair", a.settingsTextRepairApply)
+	a.route("GET /api/v1/settings/maintenance/metadata-preview", a.settingsMetadataOrganizationPreview)
+	a.route("POST /api/v1/settings/maintenance/metadata-organize", a.withLibraryMaintenance(a.settingsMetadataOrganizationApply))
 	a.route("POST /api/v1/settings/backup", a.exportSettingsBackup)
 	a.route("POST /api/v1/settings/restore", a.withLibraryMaintenance(a.restoreSettingsBackup))
 	a.route("POST /api/v1/settings/cleanup", a.withLibraryMaintenance(a.cleanupSettingsLibrary))
@@ -200,6 +203,10 @@ func (a *API) routes() {
 	a.route("POST /api/v1/nodes/{id}/upgrade", a.nodeUpgrade)
 	a.route("POST /api/v1/nodes/{id}/devices/{hw}/activate", a.nodeDeviceActivate)
 	a.route("PATCH /api/v1/nodes/{id}/devices/{hw}", a.nodeDeviceRename)
+	a.route("GET /api/v1/nodes/{id}/devices/{hw}/dsp", a.nodeDeviceDSP)
+	a.route("PUT /api/v1/nodes/{id}/devices/{hw}/dsp", a.setNodeDeviceDSP)
+	a.route("PATCH /api/v1/nodes/{id}/devices/{hw}/dsd", a.setNodeDeviceDSDMode)
+	a.route("GET /api/v1/dsp/presets", a.dspPresets)
 	a.route("POST /api/v1/nodes/{id}/apt-sources/apply", a.applyAptSources)
 	// GET node sub-resources are dispatched through one single-segment wildcard
 	// instead of separate literal routes: a literal "/nodes/token/{token}" would
@@ -266,7 +273,7 @@ func (a *API) routes() {
 	a.route("GET /api/v1/mounts/{id}", a.getMount)
 	a.route("PATCH /api/v1/mounts/{id}", a.patchMount)
 	a.route("POST /api/v1/mounts/{id}/test", a.testMount)
-	a.route("DELETE /api/v1/mounts/{id}", a.deleteMount)
+	a.route("DELETE /api/v1/mounts/{id}", a.withLibraryMaintenance(a.deleteMount))
 	a.route("POST /api/v1/mounts/{id}/mount", a.mountShare)
 	a.route("POST /api/v1/mounts/{id}/unmount", a.unmountShare)
 	a.route("POST /api/v1/mounts/{id}/scan", a.scanMount)
@@ -283,6 +290,8 @@ func (a *API) routes() {
 	// ZAT push playback to terminals. GET play status is dispatched through the
 	// {sub} wildcard below: a literal "/nodes/{id}/play" would ambiguity-conflict
 	// with "/nodes/token/{token}" (neither is a subset of the other).
+	// ZAT push playback and per-device queues.
+	a.route("GET /api/v1/playback/devices", a.listPlaybackDevices)
 	a.route("POST /api/v1/nodes/{id}/play", a.playTrack)
 	a.route("POST /api/v1/nodes/{id}/stop", a.stopPlay)
 	a.route("POST /api/v1/nodes/{id}/pause", a.pausePlay)
@@ -496,6 +505,8 @@ func serviceErrorCode(err error, fallback string) string {
 		return "rollout_ring_busy"
 	case errors.Is(err, zatserver.ErrNotConnected):
 		return "zat_not_connected"
+	case errors.Is(err, zatserver.ErrInvalidDeviceKey):
+		return "invalid_playback_device"
 	case errors.Is(err, zatserver.ErrUnknownDevice):
 		return "unknown_audio_device"
 	case errors.Is(err, zatserver.ErrDeviceNotActivated):

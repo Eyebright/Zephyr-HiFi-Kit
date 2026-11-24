@@ -406,23 +406,10 @@ func TestNodeDeleteRestore(t *testing.T) {
 }
 
 func TestAlertMutationsRequireAdmin(t *testing.T) {
-	base := setup(t, "dev")
-	origin := strings.TrimSuffix(base, "/api/v1")
+	_, _, _, a := setupFullAPI(t, "dev")
 	for _, path := range []string{"/alerts/scan", "/alerts/ack-all", "/alerts/any-id/ack", "/alerts/any-id/resolve"} {
-		req, err := http.NewRequest("POST", base+path, strings.NewReader("{}"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Origin", origin)
-		resp, err := (&http.Client{}).Do(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if resp.StatusCode != http.StatusUnauthorized {
-			t.Fatalf("%s without admin session: %d %s", path, resp.StatusCode, body)
+		if code := remoteGateCall(t, a, "POST", path, "{}"); code != http.StatusUnauthorized {
+			t.Fatalf("%s without admin session: %d", path, code)
 		}
 	}
 }

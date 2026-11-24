@@ -8,14 +8,16 @@ const vm = require("node:vm");
 const assets = path.join(__dirname, "assets");
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
 const response = data => ({ ok: true, status: 200, json: async () => data, text: async () => JSON.stringify(data) });
+const errorResponse = (status, code) => ({ ok: false, status, json: async () => ({ code, error: { code, message: code } }), text: async () => JSON.stringify({ code, error: { code, message: code } }) });
 
 // Isolated DOM and fetch doubles: never starts a browser or contacts a server.
 function harness() {
   const elements = new Map();
   const element = (textContent = "") => ({ textContent, innerHTML: "", dataset: {}, querySelectorAll: () => [], setAttribute() {}, removeAttribute() {} });
-  const h = { elements, calls: [], metrics: { version: "9.8.7-test+build.42" } };
+  const h = { elements, calls: [], frames: [], scrolls: [], metrics: { version: "9.8.7-test+build.42" } };
   const context = {
     console, URL, URLSearchParams, AbortController,
+    requestAnimationFrame: fn => { h.frames.push(fn); return h.frames.length; },
     setTimeout: () => 1, clearTimeout() {}, setInterval: () => 1, clearInterval() {},
     MutationObserver: class { observe() {} disconnect() {} },
     document: { hidden: false, addEventListener() {}, querySelector: s => elements.get(s) || null, querySelectorAll: () => [] },
@@ -60,10 +62,142 @@ test("settings render translated labels without changing section identifiers", (
   }
 });
 
+test("settings section jump is repeated after async layout and explicit anchors cancel it", async () => {
+  const h = harness(); h.open("devices");
+  assert.equal(h.run("SETTINGS.pendingJump"), "devices");
+  h.elements.get("#settings-block-devices").scrollIntoView = options => h.scrolls.push({ id: "devices", options });
+  h.run(`settingsRefreshSession=async()=>{SETTINGS.session={authenticated:false}};
+    refreshKeys=async()=>{}; refreshCatalog=async()=>{}; settingsRefreshAbout=async()=>{};
+    settingsRefreshFolders=async()=>{}; settingsRefreshMaintenance=async()=>{};
+    refreshUpdate=async()=>{}; refreshTerminalCenter=async()=>{};`);
+  await h.run("refreshSettings()");
+  assert.equal(h.run("SETTINGS.pendingJump"), "");
+  assert.equal(h.scrolls.length, 1);
+  assert.equal(h.scrolls[0].id, "devices");
+  assert.equal(h.scrolls[0].options.behavior, "auto");
+  assert.equal(h.scrolls[0].options.block, "start");
+  h.frames.shift()();
+  assert.equal(h.scrolls.length, 1, "the earlier smooth jump must not run after the completed jump");
+
+  h.open("folders");
+  h.elements.get("#settings-block-folders").scrollIntoView = options => h.scrolls.push({ id: "folders", options });
+  h.elements.get("#settings-block-about").scrollIntoView = options => h.scrolls.push({ id: "about", options });
+  h.run("ACT['settings-anchor']({anchor:'about'})");
+  h.frames.shift()();
+  assert.equal(h.run("SETTINGS.pendingJump"), "");
+  assert.equal(h.scrolls.at(-1).id, "about");
+  assert.equal(h.scrolls.at(-1).options.behavior, "smooth");
+  assert.equal(h.scrolls.at(-1).options.block, "start");
+  assert.equal(h.scrolls.some(x => x.id === "folders"), false);
+});
+
+test("metadata organization preview is read-only and allows an explicit unavailable-source skip", async () => {
+  const h = harness(); h.open("maintenance");
+  h.run("SETTINGS.session={authenticated:true}");
+  const preview = { count: 2, estimated_albums: 1, unidentified: 1, unavailable: 1, tag_errors: 1, preview_token: "unavailable-token", formats: { wav: 2 }, favorite_risks: [{ action: "keep" }], samples: [{ rel_path: "<script>bad</script>.wav", new_artist: "Artist", new_album: "Album" }] };
+  h.fetchHandler = route => { assert.equal(route, "/api/v1/settings/maintenance/metadata-preview"); return response(preview); };
+  h.run("toast=()=>{}");
+  await h.run("ACT['metadata-preview']()");
+  assert.deepEqual(h.calls, [{ method: "GET", route: "/api/v1/settings/maintenance/metadata-preview" }]);
+  assert.equal(h.run("SETTINGS.metadataPreview.count"), 2);
+  const note = h.elements.get("#metadata-organization-note").innerHTML;
+  assert.match(note, /待整理 2 首/);
+  assert.match(note, /&lt;script&gt;bad&lt;\/script&gt;/);
+  assert.doesNotMatch(note, /<script>bad/);
+  assert.match(note, /1 首音乐源不可用/);
+  assert.equal(h.elements.get("#metadata-apply").dataset.settingsBlocked, "false");
+});
+
+test("metadata organization apply requires a usable preview, confirmation and idle endpoints", async () => {
+  const h = harness(); h.open("maintenance");
+  h.run("SETTINGS.session={authenticated:true};toast=()=>{};refreshSettings=async()=>{}");
+  await h.run("ACT['metadata-apply']()");
+  assert.equal(h.calls.length, 0);
+  h.run("SETTINGS.metadataPreview={count:2,estimated_albums:1,unavailable:1};var confirmed=false;confirmDlg=async()=>confirmed");
+  await h.run("ACT['metadata-apply']()");
+  assert.equal(h.calls.length, 0);
+  h.run("SETTINGS.metadataPreview.preview_token='preview-token';confirmed=true");
+  const posted = [];
+  h.fetchHandler = (route, opts) => {
+    if (route === "/api/v1/nodes") return response([]);
+    assert.equal(route, "/api/v1/settings/maintenance/metadata-organize");
+    posted.push(JSON.parse(opts.body));
+    return response({ updated: 2, skipped: 1, favorite_kept: 1 });
+  };
+  await h.run("ACT['metadata-apply']()");
+  assert.deepEqual(posted, [{ confirm: "ORGANIZE", preview_token: "preview-token", skip_unavailable: true }]);
+  assert.equal(h.run("SETTINGS.metadataPreview"), null);
+  assert.equal(h.run("SETTINGS.busy.has('maintenance')"), false);
+  assert.match(h.elements.get("#metadata-organization-note").innerHTML, /先运行只读预览/);
+
+  h.run("SETTINGS.metadataPreview={count:2,estimated_albums:1,unavailable:0,preview_token:'clean-token'}");
+  h.fetchHandler = (route, opts) => {
+    if (route === "/api/v1/nodes") return response([]);
+    assert.equal(route, "/api/v1/settings/maintenance/metadata-organize");
+    posted.push(JSON.parse(opts.body));
+    return response({ updated: 2, skipped: 0, favorite_kept: 1 });
+  };
+  await h.run("ACT['metadata-apply']()");
+  assert.deepEqual(posted[1], { confirm: "ORGANIZE", preview_token: "clean-token", skip_unavailable: false });
+});
+
+test("metadata organization does not write while an endpoint is playing", async () => {
+  const h = harness(); h.open("maintenance");
+  h.run("SETTINGS.session={authenticated:true};SETTINGS.metadataPreview={count:2,estimated_albums:1,unavailable:0,preview_token:'preview-token'};toast=()=>{};confirmDlg=async()=>true;refreshSettings=async()=>{}");
+  h.fetchHandler = route => { assert.equal(route, "/api/v1/nodes"); return response([{ playing: true }]); };
+  await h.run("ACT['metadata-apply']()");
+  assert.deepEqual(h.calls, [{ method: "GET", route: "/api/v1/nodes" }]);
+  assert.equal(h.run("SETTINGS.metadataPreview.count"), 2);
+  assert.match(h.elements.get("#settings-maintenance-error").innerHTML, /正在播放/);
+});
+
+test("metadata organization rejects an incomplete preview token", async () => {
+  const h = harness(); h.open("maintenance");
+  h.run("SETTINGS.session={authenticated:true};toast=()=>{}");
+  h.fetchHandler = () => response({ count: 2, estimated_albums: 1, unavailable: 0 });
+  await h.run("ACT['metadata-preview']()");
+  assert.equal(h.run("SETTINGS.metadataPreview"), null);
+  assert.equal(h.elements.get("#metadata-apply").dataset.settingsBlocked, "true");
+  assert.match(h.elements.get("#settings-maintenance-error").innerHTML, /分类预览结果无效/);
+});
+
+test("late metadata preview cannot restore data after logout, session loss or view changes", async () => {
+  for (const change of ["logout", "session", "view"]) {
+    const h = harness(); h.open("maintenance");
+    h.run("SETTINGS.session={authenticated:true};toast=()=>{}");
+    const started = deferred(), pending = deferred();
+    h.fetchHandler = route => {
+      if (route === "/api/v1/settings/maintenance/metadata-preview") { started.resolve(); return pending.promise; }
+      if (route === "/api/v1/settings/logout") return response({});
+      if (route === "/api/v1/settings/session") return response({ configured: true, authenticated: false, can_setup: false, secure_context: true });
+      throw new Error("Unexpected mock request: " + route);
+    };
+    const old = h.run("ACT['metadata-preview']()");
+    await started.promise;
+    if (change === "logout") await h.run("settingsLogout()");
+    else if (change === "session") await h.run("settingsRefreshSession()");
+    else { h.run("setView('overview')"); h.open("maintenance"); }
+    pending.resolve(response({ count: 2, estimated_albums: 1, unavailable: 0, preview_token: "stale-token" }));
+    await old;
+    assert.equal(h.run("SETTINGS.metadataPreview"), null, change);
+    assert.equal(h.run("SETTINGS.busy.has('maintenance')"), false, change);
+  }
+});
+
+test("metadata preview mismatch clears the apply token and requires a new preview", async () => {
+  const h = harness(); h.open("maintenance");
+  h.run("SETTINGS.session={authenticated:true};SETTINGS.metadataPreview={count:2,estimated_albums:1,unavailable:0,preview_token:'old-token'};toast=()=>{};confirmDlg=async()=>true;refreshSettings=async()=>{}");
+  h.fetchHandler = route => route === "/api/v1/nodes" ? response([]) : errorResponse(409, "metadata_preview_mismatch");
+  await h.run("ACT['metadata-apply']()");
+  assert.equal(h.run("SETTINGS.metadataPreview"), null);
+  assert.equal(h.elements.get("#metadata-apply").dataset.settingsBlocked, "true");
+  assert.match(h.elements.get("#settings-maintenance-error").innerHTML, /请重新预览/);
+});
+
 test("about is last and removed account/protocol sections fall back safely", () => {
   const h = harness();
   const sections = JSON.parse(h.run("JSON.stringify(SETTINGS_SECTIONS.map(s => s[0]))"));
-  assert.deepEqual(sections, ["profile", "authorization", "folders", "packages", "maintenance", "about"]);
+  assert.deepEqual(sections, ["profile", "authorization", "folders", "devices", "packages", "maintenance", "about"]);
   assert.equal(h.run("typeof settingsAccountsShell"), "undefined");
   assert.equal(h.run("typeof settingsProtocolsShell"), "undefined");
   for (const section of ["accounts", "protocols"]) {

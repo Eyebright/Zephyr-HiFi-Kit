@@ -159,6 +159,56 @@ func (a *API) settingsTextRepairPreview(w http.ResponseWriter, r *http.Request) 
 	})(w, r)
 }
 
+func (a *API) settingsMetadataOrganizationPreview(w http.ResponseWriter, r *http.Request) {
+	a.requireSettingsAdmin(func(w http.ResponseWriter, r *http.Request) {
+		if a.lib == nil {
+			writeErrorCode(w, http.StatusServiceUnavailable, "library_unavailable", "曲库不可用")
+			return
+		}
+		preview, err := a.lib.PreviewMetadataOrganization(r.Context(), 20)
+		if err != nil {
+			writeErrorCode(w, http.StatusInternalServerError, "maintenance_status_failed", "读取音乐分类预览失败")
+			return
+		}
+		writeJSON(w, http.StatusOK, preview)
+	})(w, r)
+}
+
+func (a *API) settingsMetadataOrganizationApply(w http.ResponseWriter, r *http.Request) {
+	a.requireSettingsAdmin(func(w http.ResponseWriter, r *http.Request) {
+		if a.lib == nil {
+			writeErrorCode(w, http.StatusServiceUnavailable, "library_unavailable", "曲库不可用")
+			return
+		}
+		var req struct {
+			Confirm         string `json:"confirm"`
+			PreviewToken    string `json:"preview_token"`
+			SkipUnavailable bool   `json:"skip_unavailable"`
+		}
+		if err := decodeSettingsJSON(http.MaxBytesReader(w, r.Body, 4096), &req); err != nil || req.Confirm != "ORGANIZE" || req.PreviewToken == "" {
+			writeErrorCode(w, http.StatusBadRequest, "metadata_confirmation_required", "需要有效预览和 ORGANIZE 确认才能整理音乐分类")
+			return
+		}
+		if !a.settingsLibraryIdle(w) {
+			return
+		}
+		result, err := a.lib.ApplyMetadataOrganization(r.Context(), req.PreviewToken, req.SkipUnavailable)
+		if err != nil {
+			if errors.Is(err, library.ErrMetadataPreviewMismatch) {
+				writeErrorCode(w, http.StatusConflict, "metadata_preview_mismatch", "预览后曲库或收藏已变化，未修改曲库；请重新预览")
+				return
+			}
+			if errors.Is(err, library.ErrMetadataSourceUnavailable) {
+				writeErrorCode(w, http.StatusConflict, "metadata_source_unavailable", "部分音乐源不可用，未修改曲库；请恢复连接后重新预览")
+				return
+			}
+			writeErrorCode(w, http.StatusInternalServerError, "maintenance_failed", "整理音乐分类失败，请刷新状态核实")
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	})(w, r)
+}
+
 // settingsTextRepairApply rewrites damaged tags from stored paths.
 func (a *API) settingsTextRepairApply(w http.ResponseWriter, r *http.Request) {
 	a.requireSettingsAdmin(func(w http.ResponseWriter, r *http.Request) {

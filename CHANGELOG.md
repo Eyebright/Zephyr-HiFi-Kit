@@ -3,6 +3,24 @@
 和风HiFi音乐播放套件。最新版本在前，版本号与 Git 标签、GitHub Releases 一致。
 Newest first; version numbers match Git tags and GitHub Releases.
 
+## 0.68 — 2026-11-24
+
+**中文**
+- 每播放设备独立 DSP：16 段图形 EQ、11 组常用参考曲线（含流行、爵士、乡村、古典）、最多 8 组 PEQ、前置增益和软限幅；配置持久化并支持运行中热更新，MQA/DoP 位完美路径自动绕过。
+- 播放状态按设备隔离：队列、随机顺序、播放模式、音量和定时关闭使用稳定的 `node_id::hw` 标识，升级时迁移旧终端状态。
+- DSD 安全默认值：新设备默认 PCM 转换，仅对明确选择 DoP 的输出启用 DoP；避免 DAC 把 DoP 标记帧当作 PCM 输出噪音。
+- 音频设备中心：终端列表与播放设备表格整合到设置，支持多 DAC 激活、命名、DSD 模式、EQ 状态与删除终端；播放栏和控制台只显示播放设备名。
+- 管理安全与接入：本机 localhost 自动签发管理员会话，远程敏感操作仍要求登录；DSP 修改纳入管理员门禁。安卓安装令牌改为 6–8 位数字验证码，Linux 令牌保持兼容。
+- 曲库整理与音频修复：补强 ID3v2/ID3v1、DSF、DFF、AIFF、Ogg、MP4 标签解析与目录兜底；整理支持预览、计划校验、事务回填且不修改音频文件。修复高位深/高采样率投送噪音与无年份专辑推送按钮。
+
+**English**
+- Per-device DSP: 16-band graphic EQ, eleven reference curves including pop, jazz, country and classical, up to eight PEQ filters, preamp and soft limiting; settings persist and update live, while MQA/DoP bit-perfect paths bypass DSP automatically.
+- Device-isolated playback state: queues, shuffle order, playback mode, volume and sleep timers use stable `node_id::hw` identities, with legacy terminal state migrated on upgrade.
+- Safe DSD defaults: new devices convert DSD to PCM unless DoP is explicitly selected, preventing unsupported DACs from playing DoP marker frames as noisy PCM.
+- Audio Devices hub: terminals and playback-device tables now live in Settings with multi-DAC activation, naming, DSD mode, EQ status and terminal deletion; the player bar and console show playback-device names only.
+- Administration and enrollment: localhost receives a trusted admin session automatically while remote sensitive operations still require login; DSP writes are admin-gated. Android enrollment uses 6–8 digit numeric codes, with Linux token compatibility retained.
+- Library and audio fixes: stronger ID3v2/ID3v1, DSF, DFF, AIFF, Ogg and MP4 tag parsing plus directory fallbacks; organization supports previews, plan validation and transactional backfill without modifying audio files. Fixed high-bit-depth/high-rate streaming noise and push buttons for albums without year metadata.
+
 ## 0.67 — 2026-11-23
 
 **中文**

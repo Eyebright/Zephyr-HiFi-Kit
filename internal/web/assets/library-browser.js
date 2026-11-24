@@ -49,7 +49,7 @@ function paintLibraryBrowserHeader() {
     ${q.category === "artists" && lbState().frames.length === 1 ? lbArtistInitials(q) : ""}
     ${q.category === "years" ? `<div class="f-hint lb-note">${esc(lbT("libYearsNote"))}</div>` : ""}
     ${q.category === "tracks" && Object.hasOwn(q, "album") && q.artist_mode === "album" && typeof favoriteAlbumButton === "function" ? `<div class="lb-note">${favoriteAlbumButton(q.artist, q.album)}</div>` : ""}
-    <div class="lb-summary"><span id="lb-total" class="txt-faint"></span><div class="spacer"></div><button class="btn sm" data-act="lb-all" data-mode="playlist" ${LB.busy ? "disabled" : ""}>${esc(lbT("libAllToPlaylist"))}</button><button class="btn primary sm" data-act="lb-all" data-mode="play" ${LB.busy ? "disabled" : ""}>${esc(lbT("libAllPush"))}</button></div>`}`;
+    <div class="lb-summary"><span id="lb-total" class="txt-faint"></span><div class="spacer"></div>${lbFrame().query.category === "albums" ? "" : `<button class="btn sm" data-act="lb-all" data-mode="playlist" ${LB.busy ? "disabled" : ""}>${esc(lbT("libAllToPlaylist"))}</button>`}<button class="btn primary sm" data-act="lb-all" data-mode="play" ${LB.busy ? "disabled" : ""}>${esc(lbT("libAllPush"))}</button></div>`}`;
 }
 function lbArtistInitials(q) {
   const counts = new Map(((LB.artist && LB.artist.initials) || []).map(x => [x.key, x.count]));
@@ -221,19 +221,25 @@ function lbTrackRow(item, index) {
 }
 
 function lbBulkBar() {
-  const n = LB.sel.size, target = PB && PB.id ? (S.nodes.find(x => x.node_id === PB.id)?.alias || shortId(PB.id)) : "";
-  return `<div class="lb-bulk"><span class="b-cnt">${esc(lbT("libSelectedCount", { count: I18n.number(n) }))}</span>${target ? `<span class="hint">${esc(lbT("libQueueTarget", { target }))}</span>` : `<span class="hint warn">${esc(lbT("libQueuePickTerminal"))}</span>`}<span class="spacer"></span><button class="btn ghost xs" data-act="lb-bulk-page">${esc(lbT("libSelectPage"))}</button><button class="btn ghost xs" data-act="lb-bulk-filtered">${esc(lbT("libSelectFiltered"))}</button>${n ? `<button class="btn xs" data-act="lb-bulk-enqueue">${esc(lbT("libEnqueue"))}</button><button class="btn xs" data-act="lb-bulk-next">${esc(lbT("libPlayNext"))}</button><button class="btn ghost xs" data-act="lb-bulk-replace">${esc(lbT("libReplaceQueue"))}</button><button class="btn ghost xs" data-act="lb-bulk-playlist">${esc(lbT("libAddPlaylistShort"))}</button><button class="btn ghost xs" data-act="lb-bulk-clear">${esc(lbT("tcClearSelection"))}</button>` : ""}</div>`;
+  const n = LB.sel.size, deviceKey = PB && PB.deviceKey || "", available = !!availablePlaybackDevice(deviceKey),
+    target = available ? playbackDeviceLabel(deviceKey) : "", hint = target ? lbT("libQueueTarget", { target }) : lbT(deviceKey ? "libQueueTargetUnavailable" : "libQueuePickDevice"), disabled = available ? "" : " disabled";
+  return `<div class="lb-bulk"><span class="b-cnt">${esc(lbT("libSelectedCount", { count: I18n.number(n) }))}</span><span class="hint${target ? "" : " warn"}">${esc(hint)}</span><span class="spacer"></span><button class="btn ghost xs" data-act="lb-bulk-page">${esc(lbT("libSelectPage"))}</button><button class="btn ghost xs" data-act="lb-bulk-filtered">${esc(lbT("libSelectFiltered"))}</button>${n ? `<button class="btn xs" data-act="lb-bulk-enqueue"${disabled}>${esc(lbT("libEnqueue"))}</button><button class="btn xs" data-act="lb-bulk-next"${disabled}>${esc(lbT("libPlayNext"))}</button><button class="btn ghost xs" data-act="lb-bulk-replace"${disabled}>${esc(lbT("libReplaceQueue"))}</button>${lbFrame().query.category === "albums" ? "" : `<button class="btn ghost xs" data-act="lb-bulk-playlist">${esc(lbT("libAddPlaylistShort"))}</button>`}<button class="btn ghost xs" data-act="lb-bulk-clear">${esc(lbT("tcClearSelection"))}</button>` : ""}</div>`;
 }
 function lbBulkTarget() {
-  if (!PB || !PB.id) { toast(lbT("libQueuePickTerminal"), "warn"); return ""; }
-  return PB.id;
+  const deviceKey = PB && PB.deviceKey || "";
+  if (!availablePlaybackDevice(deviceKey)) {
+    toast(lbT(deviceKey ? "libQueueTargetUnavailable" : "libQueuePickDevice"), "warn");
+    if (typeof refreshPlayerBar === "function") refreshPlayerBar();
+    return "";
+  }
+  return deviceKey;
 }
 async function lbBulkQueue(next, replace) {
-  const id = lbBulkTarget(); if (!id || !LB.sel.size) return;
-  const ids = Array.from(LB.sel);
+  const deviceKey = lbBulkTarget(); if (!deviceKey || !LB.sel.size) return;
+  const id = playbackNodeID(deviceKey), ids = Array.from(LB.sel);
   try {
-    if (replace) await api("PUT", `/nodes/${enc(id)}/queue`, { track_ids: ids, position: 0, play_if_idle: true });
-    else await api("POST", `/nodes/${enc(id)}/queue/batch`, { track_ids: ids, next: !!next });
+    if (replace) await api("PUT", `/nodes/${enc(id)}/queue`, { track_ids: ids, position: 0, play_if_idle: true, device_key: deviceKey });
+    else await api("POST", `/nodes/${enc(id)}/queue/batch`, { track_ids: ids, next: !!next, device_key: deviceKey });
     toast(lbT(replace ? "libQueueReplaced" : next ? "libQueuedNext" : "libQueued", { count: I18n.number(ids.length) }), "ok");
     await refreshPlayerBar();
   } catch (e) { toast(e.message, "err"); }
@@ -261,7 +267,7 @@ function lbItemName(item) {
 function lbItem(item, index) {
   const t = item.track, name = lbItemName(item);
   const detail = t ? [t.artist || lbT("unknownArtist"), t.album || lbT("unknownAlbum"), t.year || lbT("unknownYear"), t.genre, t.composer, t.codec, fmtDur(t.duration_ms)].filter(Boolean).join(" · ") : [item.artist, lbT("trackCount", { count: I18n.number(item.track_count) }), item.album_count ? lbT("albumCount", { count: I18n.number(item.album_count) }) : "", item.kind === "year" ? "" : item.year || ""].filter(Boolean).join(" · ");
-  const actions = `<div class="lb-item-acts">${item.kind === "album" && lbFrame().query.artist_mode === "album" && typeof favoriteAlbumButton === "function" ? favoriteAlbumButton(item.artist, item.album ?? item.value) : ""}<button class="btn xs ghost" data-act="lb-pick" data-index="${index}" data-mode="playlist" title="${esc(lbT("libAddPlaylist"))}">${esc(lbT("libAddPlaylistShort"))}</button><button class="btn xs primary" data-act="lb-pick" data-index="${index}" data-mode="play" ${t && !t.decodable ? "disabled" : ""}>${esc(lbT("libPush"))}</button></div>`;
+  const actions = `<div class="lb-item-acts"><button class="btn xs ghost" data-act="lb-pick" data-index="${index}" data-mode="playlist" title="${esc(lbT("libAddPlaylist"))}">${esc(lbT("libAddPlaylistShort"))}</button><button class="btn xs primary" data-act="lb-pick" data-index="${index}" data-mode="play" ${t && !t.decodable ? "disabled" : ""}>${esc(lbT("libPush"))}</button></div>`;
   const check = t && t.decodable ? `<label class="check lb-check" title="${esc(lbT("libSelectTrack"))}"><input type="checkbox" data-change="lb-select" data-id="${esc(t.id)}" aria-label="${esc(lbT("libSelectTrack"))}" ${LB.sel.has(t.id) ? "checked" : ""}><span class="box"></span></label>` : `<span class="lb-check-space"></span>`;
   if (item.kind === "album") return lbAlbumCard(item, index, name);
   return `<article class="lb-item ${LB.sel.has(t && t.id) ? "selected" : ""}">${check}${t ? coverArt(t.album, t.artist, "thumb", 20, t.cover_hash) : `<span class="lb-item-icon">${esc(item.initial || "") || icon(item.kind === "folder" || item.kind === "source" ? "folder" : "music", 19)}</span>`}<div class="lb-item-info">${t ? `<strong>${esc(t.title || name)}</strong>` : `<button class="lb-name" data-act="lb-open" data-index="${index}">${esc(name)}</button>`}<span class="txt-faint">${t && (t.mqa || t.codec === "dsd") ? `<span class="badge gold">${t.mqa ? "MQA" : "DSD"}</span> ` : ""}${esc(detail)}</span>${t ? `<span class="txt-faint mono" title="${esc(t.rel_path)}">${esc(t.rel_path)}</span>` : ""}</div>${actions}</article>`;
@@ -273,11 +279,12 @@ function lbGenreText(genre) {
 function lbAlbumCard(item, index, name) {
   const album = item.album ?? item.value ?? "";
   const meta = [item.year > 0 ? String(item.year) : "", lbGenreText(item.genre)].filter(Boolean).join(" · ");
+  const count = lbT("trackCount", { count: I18n.number(item.track_count) });
   const heart = typeof favoriteAlbumHeart === "function" ? favoriteAlbumHeart(item.artist, album, "lb-heart") : "";
   const artist = item.artist
     ? `<button class="lb-artist-link truncate" data-act="lb-artist-albums" data-name="${esc(item.artist)}" title="${esc(item.artist)}">${esc(item.artist)}</button>`
     : `<span class="hint truncate">${esc(lbT("unknownArtist"))}</span>`;
-  return `<article class="lb-album"><button class="lb-album-open" data-act="lb-open" data-index="${index}" data-album="${esc(name)}">${coverArt(name, item.artist, "lb-art", 30, item.cover_hash)}<strong class="truncate">${esc(name)}</strong></button><div class="lb-album-line">${artist}${heart}</div><div class="lb-album-meta hint truncate">${esc(meta)}</div><div class="lb-item-acts"><button class="btn xs ghost" data-act="lb-pick" data-index="${index}" data-mode="playlist" title="${esc(lbT("libAddPlaylist"))}">${esc(lbT("libAddPlaylistShort"))}</button><button class="btn xs primary" data-act="lb-pick" data-index="${index}" data-mode="play">${esc(lbT("libPush"))}</button></div></article>`;
+  return `<article class="lb-album"><button class="lb-album-open" data-act="lb-open" data-index="${index}" data-album="${esc(name)}"><span class="lb-album-cover">${coverArt(name, item.artist, "lb-art", 30, item.cover_hash)}<span class="al-cnt mono">${esc(count)}</span></span><strong class="truncate">${esc(name)}</strong></button><div class="lb-album-line">${artist}${heart}</div><div class="lb-album-meta-row"><div class="lb-album-meta hint truncate">${esc(meta)}</div><div class="lb-item-acts"><button class="btn xs ghost" data-act="lb-pick" data-index="${index}" data-mode="play" title="${esc(lbT("libPush"))}" aria-label="${esc(lbT("libPush"))}">${icon("send", 12)}</button></div></div></article>`;
 }
 function lbItemQuery(item) {
   const q = { ...lbFrame().query, category: "tracks", page: 1, offset: 0, q: "", initial: "", field: "all" };

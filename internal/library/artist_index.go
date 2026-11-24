@@ -2,6 +2,7 @@ package library
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 	"time"
@@ -73,6 +74,13 @@ func (s *Service) RebuildArtistIndex(ctx context.Context) error {
 		return err
 	}
 	defer tx.Rollback()
+	if err := rebuildArtistIndex(ctx, tx); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func rebuildArtistIndex(ctx context.Context, tx *sql.Tx) error {
 	if _, err := tx.ExecContext(ctx, `DELETE FROM artist_index`); err != nil {
 		return err
 	}
@@ -122,7 +130,7 @@ func (s *Service) RebuildArtistIndex(ctx context.Context) error {
 			return err
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
 // ArtistIndex returns the compact, client-cacheable artist index for one mode.

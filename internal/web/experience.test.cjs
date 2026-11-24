@@ -239,17 +239,17 @@ test("refresh offers resume to saved step and step 2 embeds actual folders shell
   const html = h.elements.get("#view").innerHTML;
   assert.match(html, /settings-local-add/); assert.match(html, /settings-nas-add/); assert.match(html, /settings-sources/);
   assert.equal(await h.run("experiencePersistStep(3)"), true);
-  assert.equal(h.profile.onboarding_step, 3); assert.equal(h.run("S.view"), "nodes");
+  assert.equal(h.profile.onboarding_step, 3); assert.equal(h.run("S.view"), "settings");
   const restored = harness(h.profile); restored.admin(); await restored.run("bootstrapExperience()");
   assert.equal(restored.run("XP.stage"), "welcome");
   assert.match(restored.elements.get("#onboarding-root").innerHTML, /继续配置/);
   assert.ok(!restored.actions.some(a => a[0] === "view"));
   await restored.run("ACT['xp-resume']()");
-  assert.equal(restored.run("S.view"), "nodes");
+  assert.equal(restored.run("S.view"), "settings");
   restored.run("ACT['xp-add-node']()"); assert.ok(restored.actions.some(a => a[0] === "wizard"));
   assert.ok(!restored.calls.some(c => c.method !== "GET"));
   restored.run("ACT['xp-authorization']()"); assert.equal(restored.run("SETTINGS.section"), "authorization");
-  await restored.run("ACT['xp-resume']()"); assert.equal(restored.run("S.view"), "nodes");
+  await restored.run("ACT['xp-resume']()"); assert.equal(restored.run("S.view"), "settings");
 });
 
 test("configured incomplete instance logs in and resumes without forced password setup", async () => {
@@ -257,7 +257,7 @@ test("configured incomplete instance logs in and resumes without forced password
   assert.equal(h.run("experienceStep()"), 1);
   assert.match(h.elements.get("#onboarding-root").innerHTML, /已有管理员密码/);
   h.input("onboarding-password", "test-password-only"); await h.run("ACT['xp-auth']()");
-  assert.equal(h.run("experienceStep()"), 3); assert.equal(h.run("S.view"), "nodes");
+  assert.equal(h.run("experienceStep()"), 3); assert.equal(h.run("S.view"), "settings");
   assert.ok(!h.calls.some(c => c.route === "/settings/setup"));
 });
 
@@ -538,7 +538,7 @@ test("saved progress remains on welcome without route or summary fetch until res
     await h.run("ACT['xp-resume']()");
     assert.equal(h.run("XP.stage"), "steps");
     assert.equal(h.run("experienceStep()"), step);
-    assert.equal(h.run("S.view"), step === 2 ? "settings" : "nodes");
+    assert.equal(h.run("S.view"), "settings");
     if (step === 2) assert.equal(h.run("SETTINGS.section"), "folders");
     assert.deepEqual(h.state(), profile(step));
     assert.equal(writes(h).length, 0);
@@ -767,7 +767,7 @@ test("review is presentation only with exactly three done progress items and com
   assert.equal(h.events.length, events);
   assert.deepEqual(h.state(), saved);
   assert.deepEqual(h.profile, saved);
-  assert.equal(h.run("S.view"), "nodes");
+  assert.equal(h.run("S.view"), "settings");
   const html = onboarding(h).innerHTML;
   assertThreeSteps(html, true);
   assert.match(html, /如沐和风，音乐随您而行！/);
@@ -835,7 +835,7 @@ test("finish waits for PATCH and confirmed profile read, serializes clicks and o
   assert.equal(await h.run("ACT['xp-resume']()"), false);
   assert.equal(writes(h).length, 1);
   assert.deepEqual(writes(h)[0], { method: "PATCH", route: "/settings/onboarding", body: { step: 3, complete: true } });
-  assert.equal(h.run("S.view"), "nodes");
+  assert.equal(h.run("S.view"), "settings");
   assert.equal(h.state().onboarding_complete, false);
   patch.resolve({}); await readStarted.promise;
   assert.equal(h.run("XP.stage"), "complete");
@@ -874,7 +874,7 @@ test("finish failures and unconfirmed reads retain completion card and saved cli
     assert.equal(h.run("XP.stage"), "complete");
     assert.equal(h.run("XP.active"), true);
     assert.deepEqual(h.state(), profile(3));
-    assert.equal(h.run("S.view"), "nodes");
+    assert.equal(h.run("S.view"), "settings");
     assert.equal(onboarding(h).hidden, false);
     assert.match(onboarding(h).innerHTML, /如沐和风，音乐随您而行！/);
     assert.match(h.elements.get("#onboarding-error").innerHTML, /test completion|未确认进度保存/);
@@ -930,7 +930,7 @@ test("locking or losing authentication exits completion to step 1 and blocks fin
     assert.equal(await h.run("ACT['xp-finish']()"), false);
     assert.equal(h.run("ACT['xp-review']()"), false);
     assert.equal(h.calls.length, count);
-    assert.equal(h.run("S.view"), "nodes");
+    assert.equal(h.run("S.view"), "settings");
   });
 });
 
@@ -948,7 +948,7 @@ test("logout invalidates a pending completion response without falsely completin
   assert.equal(h.calls.length, count, "invalidated completion must not perform its readback");
   assert.equal(h.run("XP.busy"), null);
   assert.deepEqual(h.state(), profile(3));
-  assert.equal(h.run("S.view"), "nodes");
+  assert.equal(h.run("S.view"), "settings");
   assert.equal(onboardingButton(h, "xp-finish"), undefined);
   assert.ok(!h.actions.some(a => a[0] === "toast" && /设置完成/.test(a[1])));
 });
@@ -975,7 +975,7 @@ test("completion summary excludes archived sources and explicitly describes miss
     if (example.available) assert.ok(html.includes(`<dt>可用音乐源</dt><dd>${example.available}</dd>`));
     if (example.terminals) assert.ok(html.includes(`<dt>播放终端</dt><dd>${example.terminals}</dd>`));
     for (const warning of allWarnings) assert.equal(html.includes(warning), example.warnings.includes(warning), warning);
-    if (example.warnings.length) assert.match(html, /结束引导后可从音乐文件夹或终端中心继续配置/);
+    if (example.warnings.length) assert.match(html, /结束引导后可从音乐文件夹或音频设备继续配置/);
     assert.doesNotMatch(html, /全部就绪|所有.*已配置|自动播放|自动安装/);
     assert.equal(onboardingButton(h, "xp-finish").disabled, false, "missing resources must remain non-blocking");
     assert.equal(writes(h).length, 0);
@@ -1318,23 +1318,27 @@ test("language changes repaint cached library and audit views without remounting
   });
 });
 
-test("experience delegates terminal translation inside the existing view/onboarding preservation boundary", () => {
+test("experience delegates settings translation inside the existing view/onboarding preservation boundary", () => {
   const h = harness(), view = h.elements.get("#view"), root = onboarding(h);
-  h.run(`S.view='nodes'; S.search='unsaved filter'; S.sel.add('keep');
+  h.run(`setView('settings'); SETTINGS.section='devices'; S.search='unsaved filter'; S.sel.add('keep');
     window.languagePaints=[];
     const preserveForLanguageTest=experiencePreserveForms;
     experiencePreserveForms=(roots,paint)=>{ window.languageRoots=roots; languagePaints.push('preserve'); preserveForLanguageTest(roots,paint); languagePaints.push('restored'); };
+    const settingsForLanguageTest=settingsLanguageChanged;
+    settingsLanguageChanged=()=>{ languagePaints.push('settings'); if (SETTINGS.section==='devices') terminalCenterLanguageChanged(); };
     function terminalCenterLanguageChanged() { languagePaints.push('terminal'); }
     const onboardingForLanguageTest=experiencePaintOnboarding;
     experiencePaintOnboarding=()=>{ languagePaints.push('onboarding'); onboardingForLanguageTest(); };`);
-  Object.defineProperty(view, "innerHTML", { set() { assert.fail("terminal translation must retain #view"); } });
+  h.actions.length = 0;
+  Object.defineProperty(view, "innerHTML", { set() { assert.fail("settings translation must retain #view"); } });
   h.run("I18n.setPreference('en')");
   assert.deepEqual(Array.from(h.run("languageRoots")), [view, root]);
-  assert.deepEqual(Array.from(h.run("languagePaints")), ["preserve", "terminal", "onboarding", "restored"]);
-  assert.equal(h.run("S.view"), "nodes"); assert.equal(h.run("S.search"), "unsaved filter");
+  assert.deepEqual(Array.from(h.run("languagePaints")), ["preserve", "settings", "terminal", "onboarding", "restored"]);
+  assert.equal(h.run("S.view"), "settings"); assert.equal(h.run("SETTINGS.section"), "devices");
+  assert.equal(h.run("S.search"), "unsaved filter");
   assert.equal(h.run("S.sel.has('keep')"), true);
   assert.equal(h.elements.get("#sidebar").getAttribute("aria-label"), h.run("settingsT('主导航')"));
-  assert.match(h.elements.get("#nav").innerHTML, /Terminal center/);
+  assert.match(h.elements.get("#nav").innerHTML, /Settings/);
   assert.deepEqual(h.calls, []); assert.deepEqual(h.actions, []);
 });
 

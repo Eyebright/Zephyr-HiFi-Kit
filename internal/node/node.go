@@ -111,6 +111,50 @@ func (s *Service) IssueToken(ttl time.Duration) (string, int64, error) {
 	return token, exp, err
 }
 
+// IssueNumericToken creates a one-time 6-8 digit registration code for Android
+// installs, where a short numeric code is easier to enter than a hex token.
+func (s *Service) IssueNumericToken(ttl time.Duration, digits int) (string, int64, error) {
+	if digits < 6 {
+		digits = 6
+	}
+	if digits > 8 {
+		digits = 8
+	}
+	now := time.Now().Unix()
+	exp := now + int64(ttl.Seconds())
+	var lastErr error
+	for attempt := 0; attempt < 8; attempt++ {
+		buf := make([]byte, digits)
+		if _, err := rand.Read(buf); err != nil {
+			return "", 0, err
+		}
+		for i, v := range buf {
+			buf[i] = '0' + v%10
+		}
+		token := string(buf)
+		_, err := s.db.Exec(`INSERT INTO registration_tokens(token,created_at,expires_at,used) VALUES(?,?,?,0)`,
+			token, now, exp)
+		if err == nil {
+			return token, exp, nil
+		}
+		lastErr = err
+	}
+	return "", 0, fmt.Errorf("issue numeric token: %w", lastErr)
+}
+
+// IsNumericCode reports whether s is a 6-8 digit Android registration code.
+func IsNumericCode(s string) bool {
+	if len(s) < 6 || len(s) > 8 {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 // TokenStatus reports consumption state of a registration token for wizard polling.
 func (s *Service) TokenStatus(token string) (used bool, expiresAt int64, nodeID string, err error) {
 	var u int
@@ -130,6 +174,9 @@ func (s *Service) TokenStatus(token string) (used bool, expiresAt int64, nodeID 
 // one-time console secret. ip is captured from the request remote address.
 func (s *Service) Register(req RegisterRequest, ip string) (domain.Node, string, error) {
 	var n domain.Node
+	if req.Arch == "android" && !IsNumericCode(req.Token) {
+		return n, "", fmt.Errorf("invalid token: android requires a 6-8 digit code")
+	}
 	var used int
 	var exp int64
 	err := s.db.QueryRow(`SELECT used,expires_at FROM registration_tokens WHERE token=?`, req.Token).

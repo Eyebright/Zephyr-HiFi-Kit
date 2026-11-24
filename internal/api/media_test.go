@@ -3,7 +3,6 @@ package api
 import (
 	"encoding/binary"
 	"encoding/json"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -84,7 +83,7 @@ func TestMountCRUDAndRedaction(t *testing.T) {
 }
 
 func TestLocalMountScanModesAndArchiveAdminBoundary(t *testing.T) {
-	base := setup(t, "dev")
+	base, _, _, a := setupFullAPI(t, "dev")
 	root := t.TempDir()
 	file := filepath.Join(root, "song.wav")
 	// A real, tiny stereo PCM WAV avoids any decoder or network dependency.
@@ -174,22 +173,12 @@ func TestLocalMountScanModesAndArchiveAdminBoundary(t *testing.T) {
 			t.Fatalf("invalid mode %q: %d %s", mode, status, body)
 		}
 	}
-	// Exercise actual route registration without setup's authenticated client.
+	// Exercise actual route registration as a remote (non-loopback) client so the
+	// admin gate still applies; loopback is trusted and would bypass it.
+	rel := strings.TrimPrefix(mountURL, base)
 	for _, action := range []string{"/archive", "/scan?mode=full", "/scan?mode=update"} {
-		r, err := http.NewRequest("POST", mountURL+action, strings.NewReader("{}"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		r.Header.Set("Content-Type", "application/json")
-		r.Header.Set("Origin", r.URL.Scheme+"://"+r.URL.Host)
-		resp, err := http.DefaultClient.Do(r)
-		if err != nil {
-			t.Fatal(err)
-		}
-		body, readErr := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if readErr != nil || resp.StatusCode != http.StatusUnauthorized {
-			t.Fatalf("unguarded %s: %d %s %v", action, resp.StatusCode, body, readErr)
+		if code := remoteGateCall(t, a, "POST", rel+action, "{}"); code != http.StatusUnauthorized {
+			t.Fatalf("unguarded %s: %d", action, code)
 		}
 	}
 	if readMount() != beforeMount || !reflect.DeepEqual(readTracks(), beforeTracks) {

@@ -10,6 +10,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"log"
 	"net"
 	"net/url"
@@ -27,7 +28,7 @@ import (
 )
 
 // Version is the Android terminal agent version (kept in step with the release).
-var Version = "0.67"
+var Version = "0.68"
 
 // Config is the JSON configuration handed over by the Kotlin shell at startup.
 type Config struct {
@@ -150,11 +151,27 @@ func (c *Core) cachedPolicy() serverclient.Policy {
 	return c.policy
 }
 
+// numericCode reports whether s is a 6-8 digit Android registration code.
+func numericCode(s string) bool {
+	if len(s) < 6 || len(s) > 8 {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 // Register consumes the one-time token on first launch.
 func (c *Core) Register(ctx context.Context) error {
 	s := c.st.Snapshot()
 	if s.Registered || c.cfg.Token == "" {
 		return nil
+	}
+	if !numericCode(c.cfg.Token) {
+		return fmt.Errorf("registration code must be 6-8 digits")
 	}
 	m := c.sys.Sample()
 	alias := c.cfg.Alias
@@ -275,6 +292,42 @@ func (c *Core) Seek(pts uint64) error { return c.zat.Seek(pts) }
 
 // Volume sets soft volume 0..100.
 func (c *Core) Volume(v int) error { return c.zat.SetVolume(v) }
+
+// PlaybackQueue returns the server-side playlist.
+func (c *Core) PlaybackQueue(ctx context.Context) (serverclient.QueueState, error) {
+	s := c.st.Snapshot()
+	if !s.Registered {
+		return serverclient.QueueState{}, fmt.Errorf("终端未注册，无服务端播放列表")
+	}
+	return c.client.Queue(ctx, s.NodeID)
+}
+
+// PlaybackNext advances the server queue and starts the next track.
+func (c *Core) PlaybackNext(ctx context.Context) error {
+	s := c.st.Snapshot()
+	if !s.Registered {
+		return fmt.Errorf("终端未注册，无服务端播放列表")
+	}
+	return c.client.QueueNext(ctx, s.NodeID)
+}
+
+// PlaybackPrev goes back one queue entry, restarting the current track at the head.
+func (c *Core) PlaybackPrev(ctx context.Context) error {
+	s := c.st.Snapshot()
+	if !s.Registered {
+		return fmt.Errorf("终端未注册，无服务端播放列表")
+	}
+	return c.client.QueuePrev(ctx, s.NodeID)
+}
+
+// PlaybackJump starts the selected server queue entry.
+func (c *Core) PlaybackJump(ctx context.Context, index int) error {
+	s := c.st.Snapshot()
+	if !s.Registered {
+		return fmt.Errorf("终端未注册，无服务端播放列表")
+	}
+	return c.client.QueueJump(ctx, s.NodeID, index)
+}
 
 // Device sets a local preferred output (Android uses the AAudio default).
 func (c *Core) Device(dev string) { c.zat.SetDevice(dev) }

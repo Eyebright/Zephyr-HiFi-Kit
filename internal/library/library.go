@@ -122,11 +122,12 @@ type Track struct {
 
 // Service manages mounts and the scanned track catalog.
 type Service struct {
-	sourceMu  sync.Mutex // serialize source lifecycle changes and scans
-	artistMu  sync.Mutex // serialize artist-index rebuilds
-	db        *sql.DB
-	mounts    mount.Backend
-	mountRoot string
+	sourceMu   sync.Mutex // serialize source lifecycle changes and scans
+	metadataMu sync.Mutex // serialize scans with metadata organization apply
+	artistMu   sync.Mutex // serialize artist-index rebuilds
+	db         *sql.DB
+	mounts     mount.Backend
+	mountRoot  string
 }
 
 // New builds a library service. mountRoot is the parent directory under which
@@ -150,6 +151,8 @@ func (m Mount) spec() mount.Spec {
 // host. On Windows there is no kernel mount: the target is the UNC share itself,
 // read directly through the system SMB client.
 func (s *Service) AddMount(req AddMountRequest) (Mount, error) {
+	s.metadataMu.Lock()
+	defer s.metadataMu.Unlock()
 	s.sourceMu.Lock()
 	defer s.sourceMu.Unlock()
 	id := "mnt-" + uuid.NewString()
@@ -236,6 +239,8 @@ func (s *Service) ListMounts() ([]Mount, error) {
 }
 
 func (s *Service) ArchiveMount(ctx context.Context, id string) (Mount, error) {
+	s.metadataMu.Lock()
+	defer s.metadataMu.Unlock()
 	s.sourceMu.Lock()
 	defer s.sourceMu.Unlock()
 	m, err := s.GetMount(id)
@@ -255,6 +260,8 @@ func (s *Service) ArchiveMount(ctx context.Context, id string) (Mount, error) {
 }
 
 func (s *Service) DeleteMount(ctx context.Context, id string) error {
+	s.metadataMu.Lock()
+	defer s.metadataMu.Unlock()
 	s.sourceMu.Lock()
 	defer s.sourceMu.Unlock()
 	m, err := s.GetMount(id)
@@ -313,6 +320,8 @@ func (s *Service) Reconnect(ctx context.Context) (attempted, restored int, failu
 
 // Mount performs the kernel CIFS mount and records the outcome.
 func (s *Service) Mount(ctx context.Context, id string) (Mount, error) {
+	s.metadataMu.Lock()
+	defer s.metadataMu.Unlock()
 	s.sourceMu.Lock()
 	defer s.sourceMu.Unlock()
 	if err := ctx.Err(); err != nil {
@@ -346,6 +355,8 @@ func (s *Service) Mount(ctx context.Context, id string) (Mount, error) {
 
 // Unmount releases the share and records the outcome.
 func (s *Service) Unmount(ctx context.Context, id string) (Mount, error) {
+	s.metadataMu.Lock()
+	defer s.metadataMu.Unlock()
 	s.sourceMu.Lock()
 	defer s.sourceMu.Unlock()
 	if err := ctx.Err(); err != nil {
@@ -386,6 +397,8 @@ func (s *Service) Scan(ctx context.Context, id string) (int, error) {
 }
 
 func (s *Service) ScanChanges(ctx context.Context, id string, full bool) (ScanResult, error) {
+	s.metadataMu.Lock()
+	defer s.metadataMu.Unlock()
 	s.sourceMu.Lock()
 	defer s.sourceMu.Unlock()
 	result := ScanResult{}
@@ -546,6 +559,10 @@ func (s *Service) ScanChanges(ctx context.Context, id string, full bool) (ScanRe
 	result.Updated = max(0, result.Updated+cueStats.updated-cueStats.droppedUpdated)
 	result.Unchanged += cueStats.unchanged
 	result.Removed = len(remaining)
+	resolver := metadataScanResolver(previous, changed, remaining)
+	for i := range changed {
+		resolver.apply(&changed[i])
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return ScanResult{}, err
@@ -905,6 +922,10 @@ func mqaRate(rate int) bool {
 func (s *Service) PlaybackPath(trackID string) (string, error) {
 	s.sourceMu.Lock()
 	defer s.sourceMu.Unlock()
+	return s.playbackPath(trackID)
+}
+
+func (s *Service) playbackPath(trackID string) (string, error) {
 	t, err := s.GetTrack(trackID)
 	if err != nil {
 		return "", err

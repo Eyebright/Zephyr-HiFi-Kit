@@ -13,14 +13,27 @@ import (
 
 func (a *API) issueToken(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		TTLSeconds int `json:"ttl_seconds"`
+		TTLSeconds int    `json:"ttl_seconds"`
+		Digits     int    `json:"digits"`
+		Arch       string `json:"arch"`
 	}
 	_ = decode(r, &body)
 	ttl := 30 * time.Minute
 	if body.TTLSeconds > 0 {
 		ttl = time.Duration(body.TTLSeconds) * time.Second
 	}
-	token, exp, err := a.nodes.IssueToken(ttl)
+	var token string
+	var exp int64
+	var err error
+	if body.Digits > 0 || body.Arch == "android" {
+		digits := body.Digits
+		if digits == 0 {
+			digits = 8
+		}
+		token, exp, err = a.nodes.IssueNumericToken(ttl, digits)
+	} else {
+		token, exp, err = a.nodes.IssueToken(ttl)
+	}
 	if err != nil {
 		fail(w, err)
 		return

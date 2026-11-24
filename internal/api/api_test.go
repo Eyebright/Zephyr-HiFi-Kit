@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -15,6 +16,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -42,7 +44,7 @@ import (
 
 // setupFull builds a full API over a temporary SQLite store and returns the
 // /api/v1 base URL, the server root URL (for /dl and /metrics) and the temp dir.
-func setupFull(t *testing.T, sigMode string) (base, root, dir string) {
+func setupFullAPI(t *testing.T, sigMode string) (base, root, dir string, api *API) {
 	t.Helper()
 	dir = t.TempDir()
 	cfg := config.Config{
@@ -92,7 +94,13 @@ func setupFull(t *testing.T, sigMode string) (base, root, dir string) {
 	srv := httptest.NewServer(a.Handler())
 	t.Cleanup(srv.Close)
 	setupTestAdmin(t, srv.URL)
-	return srv.URL + "/api/v1", srv.URL, dir
+	return srv.URL + "/api/v1", srv.URL, dir, a
+}
+
+func setupFull(t *testing.T, sigMode string) (base, root, dir string) {
+	t.Helper()
+	b, r, d, _ := setupFullAPI(t, sigMode)
+	return b, r, d
 }
 
 // setup builds a full API and returns its /api/v1 base URL.
@@ -100,6 +108,21 @@ func setup(t *testing.T, sigMode string) string {
 	t.Helper()
 	base, _, _ := setupFull(t, sigMode)
 	return base
+}
+
+// remoteGateCall exercises a route as a NON-loopback (remote) client without a
+// session, so admin-gated mutations must still return 401 even though loopback
+// access is trusted. httptest.NewRequest defaults RemoteAddr to 192.0.2.1.
+func remoteGateCall(t *testing.T, a *API, method, path, body string) int {
+	t.Helper()
+	req := httptest.NewRequest(method, "https://example.com/api/v1"+path, strings.NewReader(body))
+	req.RemoteAddr = "192.0.2.1:1234"
+	req.TLS = &tls.ConnectionState{}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "https://example.com")
+	w := httptest.NewRecorder()
+	a.mux.ServeHTTP(w, req)
+	return w.Code
 }
 
 // activateDevLicense activates a license in dev mode (signature verification is

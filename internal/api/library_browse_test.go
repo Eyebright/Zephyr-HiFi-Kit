@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"hifihub/server/internal/store"
@@ -148,7 +147,7 @@ func TestLocalSourceSettingsContract(t *testing.T) {
 }
 
 func TestLibraryBrowseRoutesAndManagementBoundary(t *testing.T) {
-	base := setup(t, "dev")
+	base, _, _, a := setupFullAPI(t, "dev")
 	for _, category := range []string{"artists", "albums", "tracks", "genres", "years", "composers", "folders"} {
 		status, body := doJSON(t, "GET", base+"/library/browse?category="+category+"&page_size=24", nil)
 		if status != 200 {
@@ -160,16 +159,8 @@ func TestLibraryBrowseRoutesAndManagementBoundary(t *testing.T) {
 		}
 	}
 	for _, path := range []string{"/mounts", "/mounts/test/scan", "/settings/backup", "/settings/restore", "/settings/cleanup", "/license/activate", "/apps", "/nodes/test/commands", "/nodes/restore"} {
-		req, _ := http.NewRequest("POST", base+path, strings.NewReader("{}"))
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Origin", req.URL.Scheme+"://"+req.URL.Host)
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		resp.Body.Close()
-		if resp.StatusCode != http.StatusUnauthorized {
-			t.Fatalf("unguarded %s: %d", path, resp.StatusCode)
+		if code := remoteGateCall(t, a, "POST", path, "{}"); code != http.StatusUnauthorized {
+			t.Fatalf("unguarded %s: %d", path, code)
 		}
 	}
 	status, body := doJSON(t, "GET", base+"/library/select?category=tracks", nil)

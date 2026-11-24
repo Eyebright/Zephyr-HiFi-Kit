@@ -1,10 +1,59 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 )
+
+func TestPlaybackDeviceAPIValidation(t *testing.T) {
+	base := setup(t, "dev")
+	nid := registerNode(t, base, "dev-api-target")
+	otherID := registerNode(t, base, "dev-api-other")
+	deviceKey := nid + "::default"
+
+	s, b := doJSON(t, "GET", base+"/playback/devices", nil)
+	if s != 200 {
+		t.Fatalf("list playback devices: %d %s", s, b)
+	}
+	var devs []map[string]any
+	if err := json.Unmarshal(b, &devs); err != nil || len(devs) != 0 {
+		t.Fatalf("offline registry must be an empty array: %s (%v)", b, err)
+	}
+
+	invalid := "not-a-device-key"
+	crossNode := otherID + "::default"
+	cases := []struct {
+		method, path string
+		body         any
+		wantStatus   int
+		wantCode     string
+	}{
+		{"GET", "/nodes/" + nid + "/queue?device_key=" + url.QueryEscape(invalid), nil, 400, "invalid_playback_device"},
+		{"GET", "/nodes/" + nid + "/queue?device_key=" + url.QueryEscape(crossNode), nil, 400, "invalid_playback_device"},
+		{"GET", "/nodes/" + nid + "/queue?device_key=" + url.QueryEscape(deviceKey), nil, 409, "zat_not_connected"},
+		{"POST", "/nodes/" + nid + "/play", map[string]any{"track_id": "missing", "device_key": invalid}, 400, "invalid_playback_device"},
+		{"POST", "/nodes/" + nid + "/play", map[string]any{"track_id": "missing", "device_key": deviceKey}, 409, "zat_not_connected"},
+		{"POST", "/nodes/" + nid + "/stop?device_key=" + url.QueryEscape(invalid), nil, 400, "invalid_playback_device"},
+		{"POST", "/nodes/" + nid + "/pause?device_key=" + url.QueryEscape(invalid), nil, 400, "invalid_playback_device"},
+		{"POST", "/nodes/" + nid + "/volume", map[string]any{"volume": 40, "device_key": invalid}, 400, "invalid_playback_device"},
+		{"PUT", "/nodes/" + nid + "/queue", map[string]any{"track_ids": []string{}, "device_key": invalid}, 400, "invalid_playback_device"},
+		{"PUT", "/nodes/" + nid + "/sleep", map[string]any{"minutes": 15, "device_key": invalid}, 400, "invalid_playback_device"},
+		{"DELETE", "/nodes/" + nid + "/sleep?device_key=" + url.QueryEscape(invalid), nil, 400, "invalid_playback_device"},
+		{"POST", "/nodes/" + nid + "/device", map[string]any{"device": "default", "device_key": invalid}, 400, "invalid_playback_device"},
+	}
+	for _, tc := range cases {
+		s, b := doJSON(t, tc.method, base+tc.path, tc.body)
+		if s != tc.wantStatus {
+			t.Fatalf("%s %s: %d %s", tc.method, tc.path, s, b)
+		}
+		if got := mustJSON(t, b)["code"]; got != tc.wantCode {
+			t.Fatalf("%s %s code=%v want %s: %s", tc.method, tc.path, got, tc.wantCode, b)
+		}
+	}
+}
 
 // TestNodeDeviceRegistry covers seeding, admin gating and rename validation.
 func TestNodeDeviceRegistry(t *testing.T) {

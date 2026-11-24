@@ -364,8 +364,10 @@ func (s *session) handleSetup(ctx context.Context, fr zat.Frame) error {
 		return nil
 	}
 	device := su.ALSADevice
-	if pref := s.c.PreferredDevice(); pref != "" {
-		device = pref
+	if !su.LockDevice {
+		if pref := s.c.PreferredDevice(); pref != "" {
+			device = pref
+		}
 	}
 	if device == "" {
 		device = "default"
@@ -474,9 +476,10 @@ func (s *session) deviceReport(now time.Time) ([]string, []zat.ALSADevice) {
 		return nil, nil
 	}
 	s.cardsSig, s.devRefresh = sig, now
-	var hws []string
-	var info []zat.ALSADevice
-	for _, d := range s.c.devices() {
+	devs := s.c.devices()
+	hws := make([]string, 0, len(devs))
+	info := make([]zat.ALSADevice, 0, len(devs))
+	for _, d := range devs {
 		hws = append(hws, d.HW)
 		info = append(info, d)
 	}
@@ -497,7 +500,7 @@ func (s *session) statusLoop(ctx context.Context) {
 			st := zat.Status{
 				SessionID: sid, State: string(s.state), PTS: s.pts,
 				BufferMS: s.bufferMSLocked(), ALSADevice: s.device,
-				PrefDevice: s.c.PreferredDevice(),
+				PrefDevice:  s.c.PreferredDevice(),
 				ALSADevices: hws, ALSADeviceInfo: info,
 			}
 			s.mu.Unlock()

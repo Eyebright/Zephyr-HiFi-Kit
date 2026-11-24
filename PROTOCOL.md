@@ -70,7 +70,7 @@ NAT 友好）。服务端不主动拨号终端；服务端对终端本地 UI 的
 | --- | --- | --- |
 | 节点注册 + 每节点 secret | `internal/node/node.go` `Register` | ZAT HELLO 用 `node_id` + secret 鉴权；secret 永不落日志 |
 | 心跳播放状态 | `Heartbeat.Playing/ActiveProto/DacHolderPID` | ZAT 播放中 `Playing=true`、`ActiveProto="zat"`、`DacHolderPID=`ALSA 持有进程 |
-| 服务端下发策略 | `HeartbeatResult.DacDevice/DacArbitration/PlayProtect` | ZAT 用 `DacDevice` 选 ALSA 设备；遵守 `DacArbitration`；`PlayProtect` 影响门控 |
+| 服务端下发策略 | `HeartbeatResult.DacDevice/DacArbitration/PlayProtect` | 播放目标为已激活播放设备 `node_id::hw`；显式目标通过 `SETUP.lock_device` 锁定，兼容调用才使用终端偏好；`PlayProtect` 影响门控 |
 | 播放门控 FR-3.10 | 服务端 + 终端双侧 | ZAT 播放即「正在播放」，系统升级/停服务/关机被既有门控拦截（409） |
 | 本地控制门禁 | `ALLOW_LOCAL` + `X-Node-Secret` | 终端本地播放 UI 的变更路由沿用同一门禁 |
 | 审计 | 现有审计 + CSV/JSON 导出 | ZAT 会话建立/播放/停止/错误写审计事件 |
@@ -86,7 +86,7 @@ NAT 友好）。服务端不主动拨号终端；服务端对终端本地 UI 的
 2. 终端拨号服务端 ZAT 端口，发送 `HELLO`（携带 `node_id`、secret 摘要、能力）。
 3. 服务端校验 secret 与节点状态（在线、已授权、席位充足），回 `HELLO_ACK`
    （携带会话 ID、服务端能力、 negotiated 默认参数）。
-4. 服务端发 `SETUP`（曲目、PCM 格式、采样率、声道、预缓冲毫秒、ALSA 设备建议）。
+4. 服务端发 `SETUP`（曲目、PCM 格式、采样率、声道、预缓冲毫秒、目标 ALSA 设备及锁定标志）。
 5. 终端回 `SETUP_ACK`（确认 ALSA hw params 可开），进入 `READY`。
 6. 服务端发 `PLAY` 并开始推送 `AUDIO` 帧；终端预缓冲达标后开始 ALSA 写入。
 
@@ -137,7 +137,7 @@ TCP 保证有序可靠，简化垂直切片）。v0.2 再拆分控制/音频通�
 | 0x0E | PONG | 双向 | JSON | 保活响应 |
 | 0x10 | AUDIO | source→sink | 二进制 | PCM 帧（见 5.3） |
 | 0x11 | TRACK_META | source→sink | JSON | 正在播放元数据（标题/艺术家/专辑/时长/封面 URL） |
-| 0x12 | SET_DEVICE | source→sink | JSON | 首选 ALSA 输出设备（下次 SETUP 生效，覆盖 SETUP 建议） |
+| 0x12 | SET_DEVICE | source→sink | JSON | 兼容用首选 ALSA 输出（仅未锁定的 SETUP 生效） |
 
 ### 5.3 音频帧 payload（二进制，大端）
 
@@ -171,7 +171,7 @@ TCP 保证有序可靠，简化垂直切片）。v0.2 再拆分控制/音频通�
 // SETUP (source→sink)
 { "session_id": "s-123", "track_id": "t-1", "format": "S24_LE",
   "rate": 96000, "channels": 2, "prebuffer_ms": 250,
-  "alsa_device": "hw:1,0", "total_samples": 12345678, "gain_db": 0, "mqa": true,
+  "alsa_device": "hw:1,0", "lock_device": true, "total_samples": 12345678, "gain_db": 0, "mqa": true,
   "dop": false, "dsd_rate": 0 }
 
 // SETUP_ACK (sink→source)
@@ -191,8 +191,9 @@ TCP 保证有序可靠，简化垂直切片）。v0.2 再拆分控制/音频通�
 // 热插拔刷新（可选，仅声卡列表变化时携带；旧源忽略未知字段）：
 // { …, "alsa_devices": ["hw:0,0","hw:3,0"],
 //   "alsa_device_info": [{"hw":"hw:0,0","name":"b1"},{"hw":"hw:3,0","name":"AUDIO"}] }
+// 非 nil 空数组表示设备已全部移除；字段省略表示本次不更新设备列表。
 
-// SET_DEVICE (source→sink；与终端本地控制台设备选择同语义，下次 SETUP 生效)
+// SET_DEVICE (source→sink；兼容用终端偏好，仅 lock_device=false 时生效)
 { "device": "hw:1,0" }
 
 // TRACK_META (source→sink)
@@ -233,6 +234,14 @@ IDLE ──HELLO──> AUTHENTICATED ──SETUP──> READY ──PLAY──>
 - 终端在 `PLAYING` 时把 `Playing=true`、`ActiveProto="zat"` 写入心跳。
 - `PAUSED`/`STOPPED` 时 `Playing=false`；ALSA 句柄在 `PAUSED` 保持，`STOPPED` drain 后关闭。
 - 会话超时（无 PING/PONG 且无 STATUS > 15s）视为断连，服务端停流并写审计。
+
+### 7.1 播放设备控制面
+
+- 服务端按 `(node_id, hw)` 登记播放设备；控制面稳定标识为 `device_key = node_id + "::" + hw`。`default` 是始终存在的特殊输出，但仍需激活。
+- 一台终端可登记多个播放设备，但同一 ZAT 连接只有一个音频流。选择同一终端的另一个设备会替换当前流，不构成多路同步播放。
+- 全局播放器只接受已激活、终端在线且设备当前存在的目标。显式目标在首次 SETUP、seek 重开和 DSD 回退重开时均携带 `lock_device=true`；终端本地偏好不能覆盖它。
+- 队列、播放模式、音量和睡眠定时按 `device_key` 隔离；自动续播沿用当前设备。节点级 `Playing` 是所有设备播放态的聚合安全信号，用于删除、维护和升级门控。
+- STOP 只校验设备标识格式并停止匹配的当前流，不要求设备仍在线或仍存在，以便 DAC 拔除或停用后仍能清理会话。
 
 ---
 

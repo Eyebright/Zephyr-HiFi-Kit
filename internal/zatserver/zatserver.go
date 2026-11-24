@@ -27,6 +27,7 @@ import (
 	"github.com/google/uuid"
 
 	"hifihub/server/internal/decode"
+	"hifihub/server/internal/dsp"
 	"hifihub/server/internal/library"
 	"hifihub/server/internal/mqa"
 	"hifihub/server/internal/node"
@@ -46,35 +47,40 @@ var ErrDeviceNotActivated = errors.New("播放设备未激活，请先在终端�
 // PlayStatus is the live playback state of one terminal, for the console.
 // PlayDevice is one activated playback output offered to the player picker.
 type PlayDevice struct {
-	HW      string `json:"hw"`
-	Name    string `json:"name"`
-	Present bool   `json:"present"`
+	NodeID    string `json:"node_id"`
+	DeviceKey string `json:"device_key"`
+	HW        string `json:"hw"`
+	Name      string `json:"name"`
+	Present   bool   `json:"present"`
+	Online    bool   `json:"online"`
+	Volume    int    `json:"volume"`
 }
 
 type PlayStatus struct {
-	NodeID     string           `json:"node_id"`
-	Connected  bool             `json:"connected"`
-	SessionID  string           `json:"session_id"`
-	TrackID    string           `json:"track_id"`
-	Title      string           `json:"title"`
-	Artist     string           `json:"artist"`
-	Album      string           `json:"album"`
-	DurationMS int              `json:"duration_ms"`
-	Codec      string           `json:"codec"`
-	Rate       int              `json:"rate"`
-	Channels   int              `json:"channels"`
-	State      string           `json:"state"`
-	PTS        uint64           `json:"pts"`
-	BufferMS   int              `json:"buffer_ms"`
-	Underruns  int              `json:"underruns"`
-	Playing    bool             `json:"playing"`
-	Volume     int              `json:"volume"`
-	ALSADevice string           `json:"alsa_device"`
-	PrefDevice string           `json:"pref_device"`
-	// SleepStopAt is the unix deadline of the node's sleep timer, 0 when off.
+	NodeID     string `json:"node_id"`
+	DeviceKey  string `json:"device_key,omitempty"`
+	Connected  bool   `json:"connected"`
+	SessionID  string `json:"session_id"`
+	TrackID    string `json:"track_id"`
+	Title      string `json:"title"`
+	Artist     string `json:"artist"`
+	Album      string `json:"album"`
+	DurationMS int    `json:"duration_ms"`
+	Codec      string `json:"codec"`
+	Rate       int    `json:"rate"`
+	Channels   int    `json:"channels"`
+	State      string `json:"state"`
+	PTS        uint64 `json:"pts"`
+	BufferMS   int    `json:"buffer_ms"`
+	Underruns  int    `json:"underruns"`
+	Playing    bool   `json:"playing"`
+	Volume     int    `json:"volume"`
+	ALSADevice string `json:"alsa_device"`
+	PrefDevice string `json:"pref_device"`
+	// SleepStopAt is the unix deadline of the selected device's timer, 0 when off.
 	SleepStopAt int64            `json:"sleep_stop_at"`
-	Devices    []string         `json:"devices"`
-	DeviceInfo []zat.ALSADevice `json:"device_info,omitempty"`
+	Devices     []string         `json:"devices"`
+	DeviceInfo  []zat.ALSADevice `json:"device_info,omitempty"`
 	// PlayDevices is the curated activated output list for the player picker.
 	PlayDevices []PlayDevice `json:"play_devices,omitempty"`
 	// ConfiguredDevice is the server-side DAC suggestion (node.dac_device).
@@ -238,12 +244,14 @@ type endpoint struct {
 
 // playState is one active push-playback stream.
 type playState struct {
-	ctx       context.Context
-	cancel    context.CancelFunc
-	done      chan struct{}
-	sessionID string
-	trackID   string
-	listening listeningClock
+	ctx        context.Context
+	cancel     context.CancelFunc
+	done       chan struct{}
+	sessionID  string
+	trackID    string
+	deviceKey  string
+	lockDevice bool
+	listening  listeningClock
 
 	format       zat.Format
 	device       string
@@ -254,6 +262,7 @@ type playState struct {
 	dsdRate      int
 	converted    bool
 	bitPerfect   bool
+	dsp          *dsp.Engine
 
 	mu         sync.Mutex
 	paused     bool
@@ -419,8 +428,21 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 		old.conn.Close()
 	}
 	s.conns[hello.NodeID] = e
+	_ = s.nodes.SetPlaying(hello.NodeID, false, "", 0)
 	s.mu.Unlock()
 	defer s.unregister(e)
+	reported := make(map[string]string, len(hello.Caps.ALSADevices))
+	for _, d := range hello.Caps.ALSADeviceInfo {
+		reported[d.HW] = d.Name
+	}
+	for _, hw := range hello.Caps.ALSADevices {
+		if _, ok := reported[hw]; !ok {
+			reported[hw] = ""
+		}
+	}
+	if err := s.nodes.SyncDevices(hello.NodeID, reported); err != nil {
+		slog.Warn("zat register devices", "node", hello.NodeID, "err", err)
+	}
 
 	ack := zat.HelloAck{
 		SessionID:     "",
@@ -451,17 +473,17 @@ func secretHash(secret string) string {
 }
 
 func (s *Server) unregister(e *endpoint) {
-	s.mu.Lock()
-	if cur, ok := s.conns[e.nodeID]; ok && cur == e {
-		delete(s.conns, e.nodeID)
-	}
-	s.mu.Unlock()
 	e.mu.Lock()
 	if e.play != nil {
 		e.play.cancel()
 	}
+	s.mu.Lock()
+	if cur, ok := s.conns[e.nodeID]; ok && cur == e {
+		delete(s.conns, e.nodeID)
+		_ = s.nodes.SetPlaying(e.nodeID, false, "", 0)
+	}
+	s.mu.Unlock()
 	e.mu.Unlock()
-	_ = s.nodes.SetPlaying(e.nodeID, false, "", 0)
 	slog.Info("zat endpoint disconnected", "node", e.nodeID)
 }
 
@@ -553,11 +575,15 @@ const mqaDetectTimeout = 20 * time.Second
 // StartPlay pushes a library track to a connected terminal. It returns the
 // session id. The stream runs in the background until Stop or EOF.
 func (s *Server) StartPlay(ctx context.Context, nodeID, trackID string) (string, error) {
+	return s.StartPlayDevice(ctx, nodeID, trackID, "")
+}
+
+func (s *Server) StartPlayDevice(ctx context.Context, nodeID, trackID, deviceKey string) (string, error) {
 	s.libraryGate.RLock()
 	defer s.libraryGate.RUnlock()
-	e := s.endpoint(nodeID)
-	if e == nil {
-		return "", ErrNotConnected
+	e, target, err := s.resolveConnectedTarget(nodeID, deviceKey)
+	if err != nil {
+		return "", err
 	}
 	track, err := s.lib.GetTrack(trackID)
 	if err != nil {
@@ -594,10 +620,20 @@ func (s *Server) StartPlay(ctx context.Context, nodeID, trackID string) (string,
 	}); ok && info.DoP() {
 		dop, dsdRate = true, info.DSDRate()
 	}
-	n, err := s.nodes.Get(nodeID)
-	if err != nil {
+	// A DAC that does not decode DoP renders the carrier as white noise, and the
+	// SETUP ack cannot reveal that. Default DSD to safe server-side PCM; DoP is
+	// opt-in per device for confirmed DoP-capable DACs.
+	earlyConverted := false
+	if dop && s.deviceDSDMode(nodeID, target.HW) != "dop" {
 		dec.Close()
-		return "", err
+		nd, ferr := openFallbackPCM(playbackPath, 176400, 2, track.DurationMS)
+		if ferr != nil {
+			nd, ferr = openFallbackPCM(playbackPath, 88200, 2, track.DurationMS)
+		}
+		if ferr != nil {
+			return "", fmt.Errorf("DSD 默认 PCM 转换不可用：%w", ferr)
+		}
+		dec, dop, earlyConverted = nd, false, true
 	}
 
 	// Cancel any prior stream on this endpoint and wait for its teardown so
@@ -619,7 +655,7 @@ func (s *Server) StartPlay(ctx context.Context, nodeID, trackID string) (string,
 	sessionID := "zat-" + uuid.NewString()
 	playCtx, cancel := context.WithCancel(context.Background())
 	ps := &playState{ctx: playCtx, cancel: cancel, done: make(chan struct{}), sessionID: sessionID, trackID: trackID,
-		resumeCh: make(chan struct{}), seekWake: make(chan struct{})}
+		deviceKey: target.DeviceKey, lockDevice: deviceKey != "", resumeCh: make(chan struct{}), seekWake: make(chan struct{})}
 	format := dec.Format()
 	if dop {
 		total := dec.TotalSamples()
@@ -643,18 +679,19 @@ func (s *Server) StartPlay(ctx context.Context, nodeID, trackID string) (string,
 		DurationMS: track.DurationMS, Codec: track.Codec, Rate: metaRate, Channels: track.Channels,
 		MQA: track.MQA, DoP: dop, DSDRate: dsdRate,
 	}
-	device := n.DacDevice
-	if device == "" {
-		device = "default"
-	}
+	device := target.HW
+	volume := s.deviceVolume(nodeID, device)
+	e.mu.Lock()
+	mqaCapable, dopCapable := e.caps.MQA, e.caps.DoP
+	e.mu.Unlock()
 	// MQA and DoP need an untouched bit path: a capable agent, strict hw output,
 	// and no software volume. Refuse early instead of playing degraded audio.
 	if track.MQA || dop {
-		if track.MQA && !e.caps.MQA {
+		if track.MQA && !mqaCapable {
 			dec.Close()
 			return "", ErrMQACapability
 		}
-		if dop && !e.caps.DoP {
+		if dop && !dopCapable {
 			dec.Close()
 			return "", ErrDoPCapability
 		}
@@ -667,13 +704,14 @@ func (s *Server) StartPlay(ctx context.Context, nodeID, trackID string) (string,
 		}
 	}
 	ps.format, ps.device, ps.totalSamples, ps.rate, ps.mqa = format.Format, device, dec.TotalSamples(), format.Rate, track.MQA
-	ps.dop, ps.dsdRate = dop, dsdRate
+	ps.dop, ps.dsdRate, ps.converted = dop, dsdRate, earlyConverted
 	e.mu.Lock()
 	e.play = ps
 	e.trackID = trackID
 	e.title = track.Title
 	e.meta = meta
 	e.state = zat.StateReady
+	e.volume = volume
 	if track.MQA || dop {
 		e.volume = 100 // strict sessions force unity gain on the terminal
 	}
@@ -682,7 +720,7 @@ func (s *Server) StartPlay(ctx context.Context, nodeID, trackID string) (string,
 	e.resetPacing(format.Rate * format.Channels * format.Format.BytesPerSample() / 1000)
 	setup := zat.Setup{
 		SessionID: sessionID, TrackID: trackID, Format: format.Format, Rate: format.Rate,
-		Channels: format.Channels, PrebufferMS: 200, ALSADevice: device,
+		Channels: format.Channels, PrebufferMS: 200, ALSADevice: device, LockDevice: ps.lockDevice,
 		TotalSamples: dec.TotalSamples(), MQA: track.MQA, DoP: dop, DSDRate: dsdRate,
 	}
 	// abort tears down a play that never reached the stream goroutine; it must
@@ -731,7 +769,7 @@ func (s *Server) StartPlay(ctx context.Context, nodeID, trackID string) (string,
 		e.resetPacing(format.Rate * format.Channels * format.Format.BytesPerSample() / 1000)
 		setup = zat.Setup{
 			SessionID: sessionID, TrackID: trackID, Format: format.Format, Rate: format.Rate,
-			Channels: format.Channels, PrebufferMS: 200, ALSADevice: device,
+			Channels: format.Channels, PrebufferMS: 200, ALSADevice: device, LockDevice: ps.lockDevice,
 			TotalSamples: dec.TotalSamples(), MQA: false, DoP: false, DSDRate: dsdRate,
 		}
 		ack, ackErr = s.awaitSetup(e, ps, setup, ctx)
@@ -745,23 +783,25 @@ func (s *Server) StartPlay(ctx context.Context, nodeID, trackID string) (string,
 		return abort(err)
 	}
 	_ = e.control(zat.TypeTrackMeta, meta)
+	if !(track.MQA || dop) && volume != 100 {
+		if err := e.control(zat.TypeVolume, zat.Volume{SessionID: sessionID, Volume: volume}); err != nil {
+			return abort(err)
+		}
+	}
 
 	now := time.Now().Unix()
 	_, _ = s.db.Exec(`INSERT INTO sessions
-		(id,node_id,proto,source_client,state,format,volume,dac_device,started_at,ended_at)
-		VALUES(?,?,?,?,?,?,?,?,?,0)`,
-		sessionID, nodeID, "zat", "library", string(zat.StatePlaying), string(format.Format), 100, device, now)
+		(id,node_id,proto,source_client,state,format,volume,dac_device,device_key,started_at,ended_at)
+		VALUES(?,?,?,?,?,?,?,?,?,?,0)`,
+		sessionID, nodeID, "zat", "library", string(zat.StatePlaying), string(format.Format), 100, device, target.DeviceKey, now)
 	historyID := "h-" + uuid.NewString()
 	_, historyErr := s.db.Exec(`INSERT INTO play_history
-		(id,node_id,track_id,started_at,title,artist,album,genre,cover_hash,measured) VALUES(?,?,?,?,?,?,?,?,?,1)`,
-		historyID, nodeID, trackID, now, track.Title, track.Artist, track.Album, track.Genre, track.CoverHash)
+		(id,node_id,device_key,track_id,started_at,title,artist,album,genre,cover_hash,measured) VALUES(?,?,?,?,?,?,?,?,?,?,1)`,
+		historyID, nodeID, target.DeviceKey, trackID, now, track.Title, track.Artist, track.Album, track.Genre, track.CoverHash)
 	if historyErr != nil {
 		slog.Warn("zat record history", "node", nodeID, "err", historyErr)
 	} else {
 		ps.listening.start(historyID, format.Rate, time.Now())
-	}
-	if err := s.nodes.SetPlaying(nodeID, true, "zat", 0); err != nil {
-		slog.Warn("zat set playing", "node", nodeID, "err", err)
 	}
 	e.mu.Lock()
 	e.state = zat.StatePlaying
@@ -771,6 +811,7 @@ func (s *Server) StartPlay(ctx context.Context, nodeID, trackID string) (string,
 	e.dsdRate = dsdRate
 	e.converted = ps.converted
 	e.bitPerfect = ps.bitPerfect
+	s.syncNodePlayingLocked(e)
 	e.mu.Unlock()
 
 	go s.stream(e, ps, dec, track)
@@ -784,6 +825,7 @@ func (s *Server) StartPlay(ctx context.Context, nodeID, trackID string) (string,
 func (s *Server) stream(e *endpoint, ps *playState, dec decode.Decoder, track library.Track) {
 	startSample := uint64(0)
 	reason := "eof"
+	s.attachDSP(ps, track.Channels)
 	for {
 		pumpCtx, pumpCancel := context.WithCancel(ps.ctx)
 		ps.setPump(pumpCancel)
@@ -807,6 +849,7 @@ func (s *Server) stream(e *endpoint, ps *playState, dec decode.Decoder, track li
 				case <-time.After(40 * time.Millisecond):
 				}
 			}
+			processAudioFrame(ps, f)
 			if err := e.writeFrame(f); err != nil {
 				return err
 			}
@@ -834,6 +877,7 @@ func (s *Server) stream(e *endpoint, ps *playState, dec decode.Decoder, track li
 				slog.Warn("zat seek setup", "node", e.nodeID, "err", serr)
 				break
 			}
+			s.attachDSP(ps, track.Channels)
 			continue
 		}
 		if err != nil {
@@ -860,6 +904,7 @@ func (s *Server) stream(e *endpoint, ps *playState, dec decode.Decoder, track li
 				slog.Warn("zat seek setup", "node", e.nodeID, "err", serr)
 				break
 			}
+			s.attachDSP(ps, track.Channels)
 			continue
 		}
 		reason = ar
@@ -868,23 +913,23 @@ func (s *Server) stream(e *endpoint, ps *playState, dec decode.Decoder, track li
 	ps.listening.gate(false)
 	slog.Info("zat stream ended", "node", e.nodeID, "reason", reason)
 	_ = e.control(zat.TypeStop, zat.Stop{SessionID: ps.sessionID})
-	_ = s.nodes.SetPlaying(e.nodeID, false, "zat", 0)
+	e.mu.Lock()
+	if e.play == ps {
+		e.state = zat.StateStopped
+		e.play = nil
+		e.mqa = false
+		e.dop = false
+		e.dsdRate = 0
+		e.converted = false
+		e.bitPerfect = false
+		s.syncNodePlayingLocked(e)
+	}
+	e.mu.Unlock()
 	_, _ = s.db.Exec(`UPDATE sessions SET state=?,ended_at=? WHERE id=?`,
 		string(zat.StateStopped), time.Now().Unix(), ps.sessionID)
-	e.mu.Lock()
-	e.state = zat.StateStopped
-	if e.play == ps {
-		e.play = nil
-	}
-	e.mqa = false
-	e.dop = false
-	e.dsdRate = 0
-	e.converted = false
-	e.bitPerfect = false
-	e.mu.Unlock()
 	close(ps.done)
 	if reason == "eof" {
-		go s.autoAdvance(e.nodeID, ps.trackID)
+		go s.autoAdvance(ps.deviceKey, ps.trackID)
 	}
 }
 
@@ -952,7 +997,7 @@ func (s *Server) reSetup(e *endpoint, ps *playState, track library.Track, target
 	e.resetPacing(ps.rate * track.Channels * ps.format.BytesPerSample() / 1000)
 	setup := zat.Setup{
 		SessionID: ps.sessionID, TrackID: track.ID, Format: ps.format, Rate: ps.rate,
-		Channels: track.Channels, PrebufferMS: 200, ALSADevice: ps.device,
+		Channels: track.Channels, PrebufferMS: 200, ALSADevice: ps.device, LockDevice: ps.lockDevice,
 		TotalSamples: ps.totalSamples, MQA: ps.mqa, DoP: ps.dop, DSDRate: ps.dsdRate,
 	}
 	if err := e.control(zat.TypeSetup, setup); err != nil {
@@ -1050,12 +1095,32 @@ func (e *endpoint) clearPlay(ps *playState) {
 	if e.play == ps {
 		e.play = nil
 		e.setupAck = nil
+		e.srv.syncNodePlayingLocked(e)
 	}
 	e.mu.Unlock()
 }
 
+func (s *Server) syncNodePlayingLocked(e *endpoint) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.conns[e.nodeID] != e {
+		return
+	}
+	_ = s.nodes.SetPlaying(e.nodeID, e.play != nil, "zat", 0)
+}
+
 // Stop cancels the active stream and waits for teardown. It is idempotent.
-func (s *Server) Stop(nodeID string) error {
+func (s *Server) Stop(nodeID string) error { return s.StopDevice(nodeID, "") }
+
+func (s *Server) StopDevice(nodeID, deviceKey string) error {
+	var target playbackTarget
+	if deviceKey != "" {
+		var err error
+		target, err = parseDeviceKey(nodeID, deviceKey)
+		if err != nil {
+			return err
+		}
+	}
 	e := s.endpoint(nodeID)
 	if e == nil {
 		return ErrNotConnected
@@ -1063,9 +1128,7 @@ func (s *Server) Stop(nodeID string) error {
 	e.mu.Lock()
 	ps := e.play
 	e.mu.Unlock()
-	if ps == nil {
-		_ = e.control(zat.TypeStop, zat.Stop{})
-		_ = s.nodes.SetPlaying(nodeID, false, "zat", 0)
+	if ps == nil || (deviceKey != "" && ps.deviceKey != target.DeviceKey) {
 		return nil
 	}
 	ps.cancel()
@@ -1082,15 +1145,15 @@ func (s *Server) Stop(nodeID string) error {
 var ErrNoSession = errors.New("当前没有正在播放的会话")
 
 // activePlay returns the endpoint and its live play state, or an error.
-func (s *Server) activePlay(nodeID string) (*endpoint, *playState, error) {
-	e := s.endpoint(nodeID)
-	if e == nil {
-		return nil, nil, ErrNotConnected
+func (s *Server) activePlay(nodeID, deviceKey string) (*endpoint, *playState, error) {
+	e, target, err := s.resolveConnectedTarget(nodeID, deviceKey)
+	if err != nil {
+		return nil, nil, err
 	}
 	e.mu.Lock()
 	ps := e.play
 	e.mu.Unlock()
-	if ps == nil {
+	if ps == nil || ps.deviceKey != target.DeviceKey {
 		return nil, nil, ErrNoSession
 	}
 	return e, ps, nil
@@ -1098,8 +1161,10 @@ func (s *Server) activePlay(nodeID string) (*endpoint, *playState, error) {
 
 // Pause holds playback: the terminal keeps its ALSA handle but discards incoming
 // PCM, so the server gates its pump too. Idempotent.
-func (s *Server) Pause(nodeID string) error {
-	e, ps, err := s.activePlay(nodeID)
+func (s *Server) Pause(nodeID string) error { return s.PauseDevice(nodeID, "") }
+
+func (s *Server) PauseDevice(nodeID, deviceKey string) error {
+	e, ps, err := s.activePlay(nodeID, deviceKey)
 	if err != nil {
 		return err
 	}
@@ -1122,10 +1187,12 @@ func (s *Server) Pause(nodeID string) error {
 }
 
 // Resume releases the pause gate and continues streaming from the held position.
-func (s *Server) Resume(nodeID string) error {
+func (s *Server) Resume(nodeID string) error { return s.ResumeDevice(nodeID, "") }
+
+func (s *Server) ResumeDevice(nodeID, deviceKey string) error {
 	s.libraryGate.RLock()
 	defer s.libraryGate.RUnlock()
-	e, ps, err := s.activePlay(nodeID)
+	e, ps, err := s.activePlay(nodeID, deviceKey)
 	if err != nil {
 		return err
 	}
@@ -1156,8 +1223,10 @@ func (s *Server) Resume(nodeID string) error {
 // Seek jumps to an absolute sample position (forward or backward). The pump
 // restarts decoding from the target with a fresh SETUP so stale terminal
 // buffers are dropped; history and auto-advance are unaffected.
-func (s *Server) Seek(nodeID string, samples uint64) error {
-	e, ps, err := s.activePlay(nodeID)
+func (s *Server) Seek(nodeID string, samples uint64) error { return s.SeekDevice(nodeID, "", samples) }
+
+func (s *Server) SeekDevice(nodeID, deviceKey string, samples uint64) error {
+	e, ps, err := s.activePlay(nodeID, deviceKey)
 	if err != nil {
 		return err
 	}
@@ -1172,9 +1241,13 @@ func (s *Server) Seek(nodeID string, samples uint64) error {
 // SetVolume sets the terminal's soft volume (0..100). Works with or without an
 // active session; the value is tracked server-side for the console.
 func (s *Server) SetVolume(nodeID string, volume int) error {
-	e := s.endpoint(nodeID)
-	if e == nil {
-		return ErrNotConnected
+	return s.SetVolumeDevice(nodeID, "", volume)
+}
+
+func (s *Server) SetVolumeDevice(nodeID, deviceKey string, volume int) error {
+	e, target, err := s.resolveConnectedTarget(nodeID, deviceKey)
+	if err != nil {
+		return err
 	}
 	if volume < 0 {
 		volume = 0
@@ -1183,34 +1256,62 @@ func (s *Server) SetVolume(nodeID string, volume int) error {
 		volume = 100
 	}
 	e.mu.Lock()
-	if e.play != nil && e.play.mqa {
+	active := e.play != nil && e.play.deviceKey == target.DeviceKey
+	if active && e.play.mqa {
 		e.mu.Unlock()
 		return ErrMQALocked
 	}
-	if e.play != nil && e.play.dop {
+	if active && e.play.dop {
 		e.mu.Unlock()
 		return ErrDoPLocked
 	}
-	sid := ""
-	if e.play != nil {
-		sid = e.play.sessionID
+	if err := s.nodes.SetDeviceVolume(nodeID, target.HW, volume); err != nil {
+		e.mu.Unlock()
+		return err
 	}
-	e.volume = volume
+	sid := ""
+	if active {
+		sid = e.play.sessionID
+		e.volume = volume
+	} else if deviceKey == "" {
+		e.volume = volume
+	}
 	e.mu.Unlock()
+	if !active && deviceKey != "" {
+		return nil
+	}
 	return e.control(zat.TypeVolume, zat.Volume{SessionID: sid, Volume: volume})
 }
 
 // Status reports the live playback state of a terminal.
-func (s *Server) Status(nodeID string) (PlayStatus, error) {
+func (s *Server) Status(nodeID string) (PlayStatus, error) { return s.StatusDevice(nodeID, "") }
+
+func (s *Server) StatusDevice(nodeID, deviceKey string) (PlayStatus, error) {
+	if deviceKey != "" {
+		if _, err := parseDeviceKey(nodeID, deviceKey); err != nil {
+			return PlayStatus{}, err
+		}
+	}
 	st := PlayStatus{NodeID: nodeID, State: string(zat.StateIdle), Devices: []string{}, Volume: 100}
-	st.SleepStopAt = s.SleepStopAt(nodeID)
+	st.SleepStopAt = s.SleepStopAtDevice(nodeID, deviceKey)
 	if n, err := s.nodes.Get(nodeID); err == nil {
 		st.ConfiguredDevice = n.DacDevice
 	}
 	e := s.endpoint(nodeID)
 	if e == nil {
+		if deviceKey != "" {
+			return PlayStatus{}, ErrNotConnected
+		}
 		st.PlayDevices = s.playDevices(nodeID, nil, nil)
 		return st, nil
+	}
+	if deviceKey != "" {
+		target, err := s.resolveTargetEndpoint(nodeID, deviceKey, e)
+		if err != nil {
+			return PlayStatus{}, err
+		}
+		st.DeviceKey = target.DeviceKey
+		st.ALSADevice, st.PrefDevice, st.ConfiguredDevice = target.HW, target.HW, target.HW
 	}
 	e.mu.Lock()
 	st.Connected = true
@@ -1238,6 +1339,9 @@ func (s *Server) Status(nodeID string) (PlayStatus, error) {
 	st.Converted = e.converted
 	if e.play != nil {
 		st.SessionID = e.play.sessionID
+		if deviceKey == "" || e.play.deviceKey == deviceKey {
+			st.DeviceKey = e.play.deviceKey
+		}
 		st.Playing = e.state == zat.StatePlaying
 	}
 	if len(e.caps.ALSADevices) > 0 {
@@ -1247,6 +1351,19 @@ func (s *Server) Status(nodeID string) (PlayStatus, error) {
 		st.DeviceInfo = e.caps.ALSADeviceInfo
 	}
 	e.mu.Unlock()
+	if deviceKey != "" {
+		e.mu.Lock()
+		matches := e.play != nil && e.play.deviceKey == deviceKey
+		e.mu.Unlock()
+		if !matches {
+			st.SessionID, st.TrackID, st.Title, st.Artist, st.Album = "", "", "", "", ""
+			st.DurationMS, st.Codec, st.Rate, st.Channels = 0, "", 0, 0
+			st.State, st.PTS, st.BufferMS, st.Underruns = string(zat.StateIdle), 0, 0, 0
+			st.Playing, st.MQA, st.BitPerfect, st.DoP, st.DSDRate, st.Converted = false, false, false, false, 0, false
+			st.ALSADevice, st.PrefDevice = deviceKey[len(nodeID)+2:], deviceKey[len(nodeID)+2:]
+			st.Volume = s.deviceVolume(nodeID, st.ALSADevice)
+		}
+	}
 	st.PlayDevices = s.playDevices(nodeID, st.Devices, st.DeviceInfo)
 	return st, nil
 }
@@ -1273,12 +1390,15 @@ func (s *Server) playDevices(nodeID string, reported []string, info []zat.ALSADe
 		}
 		name := r.Name
 		if name == "" {
+			name = r.ReportedName
+		}
+		if name == "" {
 			name = names[r.HW]
 		}
 		if name == "" {
 			name = r.HW
 		}
-		out = append(out, PlayDevice{HW: r.HW, Name: name, Present: r.HW == "default" || present[r.HW]})
+		out = append(out, PlayDevice{NodeID: nodeID, DeviceKey: makeDeviceKey(nodeID, r.HW), HW: r.HW, Name: name, Present: r.HW == "default" || present[r.HW], Online: s.endpoint(nodeID) != nil, Volume: r.Volume})
 	}
 	return out
 }
@@ -1306,7 +1426,16 @@ func mqaCandidate(t library.Track) bool {
 // SetDevice selects the terminal's preferred ALSA output device. The choice is
 // persisted as the node's DAC device (the SETUP suggestion) and pushed over ZAT;
 // the terminal applies it at the next SETUP, like its local device picker.
-func (s *Server) SetDevice(nodeID, device string) error {
+func (s *Server) SetDevice(nodeID, device string) error { return s.SetDeviceKey(nodeID, "", device) }
+
+func (s *Server) SetDeviceKey(nodeID, deviceKey, device string) error {
+	if deviceKey != "" {
+		target, err := parseDeviceKey(nodeID, deviceKey)
+		if err != nil {
+			return err
+		}
+		device = target.HW
+	}
 	e := s.endpoint(nodeID)
 	if e == nil {
 		return ErrNotConnected
@@ -1315,6 +1444,7 @@ func (s *Server) SetDevice(nodeID, device string) error {
 		return ErrUnknownDevice
 	}
 	if device != "default" {
+		e.mu.Lock()
 		known := false
 		for _, d := range e.caps.ALSADevices {
 			if d == device {
@@ -1322,21 +1452,24 @@ func (s *Server) SetDevice(nodeID, device string) error {
 				break
 			}
 		}
+		e.mu.Unlock()
 		if !known {
 			return ErrUnknownDevice
 		}
 	}
-	if rows, err := s.nodes.Devices(nodeID); err == nil && len(rows) > 0 {
-		activated := false
-		for _, d := range rows {
-			if d.HW == device && d.Enabled {
-				activated = true
-				break
-			}
+	rows, err := s.nodes.Devices(nodeID)
+	if err != nil {
+		return err
+	}
+	activated := false
+	for _, d := range rows {
+		if d.HW == device && d.Enabled {
+			activated = true
+			break
 		}
-		if !activated {
-			return ErrDeviceNotActivated
-		}
+	}
+	if !activated {
+		return ErrDeviceNotActivated
 	}
 	if _, err := s.nodes.Patch(nodeID, node.Patch{DacDevice: &device}); err != nil {
 		return err

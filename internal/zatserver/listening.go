@@ -12,24 +12,53 @@ import (
 func (e *endpoint) acceptStatus(st zat.Status, now time.Time) {
 	e.mu.Lock()
 	e.alsaDevice, e.prefDevice, e.underruns = st.ALSADevice, st.PrefDevice, st.Underruns
-	if len(st.ALSADevices) > 0 {
-		e.caps.ALSADevices = st.ALSADevices
-	}
-	if len(st.ALSADeviceInfo) > 0 {
-		e.caps.ALSADeviceInfo = st.ALSADeviceInfo
-	}
 	ps := e.play
 	valid := ps != nil && st.SessionID == ps.sessionID && ps.ctx.Err() == nil
+	devicesChanged := st.ALSADevices != nil && !sameStrings(e.caps.ALSADevices, st.ALSADevices)
+	reportedHWs := append([]string(nil), st.ALSADevices...)
+	reportedInfo := append([]zat.ALSADevice(nil), st.ALSADeviceInfo...)
+	if st.ALSADevices != nil {
+		e.caps.ALSADevices = st.ALSADevices
+	}
+	if st.ALSADeviceInfo != nil {
+		e.caps.ALSADeviceInfo = st.ALSADeviceInfo
+	}
 	if valid {
 		e.pts, e.bufferMS, e.lastStatus, e.sentSince = st.PTS, st.BufferMS, now, 0
 		e.state = zat.State(st.State)
 	}
 	e.mu.Unlock()
+	if devicesChanged {
+		reported := make(map[string]string, len(reportedHWs))
+		for _, d := range reportedInfo {
+			reported[d.HW] = d.Name
+		}
+		for _, hw := range reportedHWs {
+			if _, ok := reported[hw]; !ok {
+				reported[hw] = ""
+			}
+		}
+		if err := e.srv.nodes.SyncDevices(e.nodeID, reported); err != nil {
+			slog.Warn("zat sync devices", "node", e.nodeID, "err", err)
+		}
+	}
 	if valid {
 		if err := ps.listening.observe(e.srv.db, st, now); err != nil {
 			slog.Warn("zat record listening", "node", e.nodeID, "err", err)
 		}
 	}
+}
+
+func sameStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 type listeningClock struct {

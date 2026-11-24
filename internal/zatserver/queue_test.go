@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -30,6 +31,26 @@ func (h *harness) tempMount(t *testing.T) (mountID, target string) {
 
 // addTwoTracks scans one mount holding two short WAVs and returns them in
 // album-order-independent fashion (looked up by title).
+func TestQueueIncludesCoverHash(t *testing.T) {
+	h := setup(t)
+	nodeID, _ := h.register(t, "queue-cover", true)
+	a, b, _, _ := h.addTwoTracks(t)
+	cover := strings.Repeat("a", 64)
+	if _, err := h.st.DB.Exec(`UPDATE tracks SET cover_hash=? WHERE id=?`, cover, a); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.srv.SetQueue(nodeID, []string{a, b}, 0); err != nil {
+		t.Fatal(err)
+	}
+	q, err := h.srv.Queue(nodeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(q.Tracks) != 2 || q.Tracks[0].CoverHash != cover {
+		t.Fatalf("queue cover hashes = %+v", q.Tracks)
+	}
+}
+
 func (h *harness) addTwoTracks(t *testing.T) (a, b string, pcmA, pcmB []byte) {
 	t.Helper()
 	mountID, target := h.tempMount(t)
@@ -369,6 +390,7 @@ func TestQueueEditsStartPlaybackWhenIdle(t *testing.T) {
 	case <-time.After(300 * time.Millisecond):
 	}
 }
+
 // --- playback queue modes ---
 
 // addTracks scans one mount holding the named WAVs and returns title->track ID.
@@ -402,10 +424,10 @@ func (h *harness) addTracks(t *testing.T, names ...string) map[string]string {
 }
 
 // storedQueueMeta reads the raw persisted mode, shuffle order and position.
-func storedQueueMeta(t *testing.T, h *harness, nodeID string) (mode string, order []string, pos int) {
+func storedQueueMeta(t *testing.T, h *harness, deviceKey string) (mode string, order []string, pos int) {
 	t.Helper()
 	var orderJSON string
-	if err := h.st.DB.QueryRow(`SELECT mode,shuffle_order,position FROM node_queue WHERE node_id=?`, nodeID).
+	if err := h.st.DB.QueryRow(`SELECT mode,shuffle_order,position FROM playback_queue WHERE device_key=?`, deviceKey).
 		Scan(&mode, &orderJSON, &pos); err != nil {
 		t.Fatalf("read queue row: %v", err)
 	}
@@ -490,7 +512,7 @@ func TestQueueModePersistenceAndLegacyRows(t *testing.T) {
 	if err != nil || q.Mode != QueueModeShuffle || len(q.ShuffleOrder) != 3 || !sameMultiset(q.ShuffleOrder, list) {
 		t.Fatalf("enable shuffle: %+v %v", q, err)
 	}
-	mode, order, _ := storedQueueMeta(t, h, nodeID)
+	mode, order, _ := storedQueueMeta(t, h, makeDeviceKey(nodeID, "default"))
 	if mode != QueueModeShuffle || !equalStrings(order, q.ShuffleOrder) {
 		t.Fatalf("shuffle not persisted: mode=%q order=%v", mode, order)
 	}
@@ -523,12 +545,12 @@ func TestQueueModePersistenceAndLegacyRows(t *testing.T) {
 	}
 
 	// Rows written without the mode column behave as sequence.
-	if _, err := h.st.DB.Exec(`DELETE FROM node_queue WHERE node_id=?`, nodeID); err != nil {
+	if _, err := h.st.DB.Exec(`DELETE FROM playback_queue WHERE device_key=?`, makeDeviceKey(nodeID, "default")); err != nil {
 		t.Fatal(err)
 	}
 	idsJSON, _ := json.Marshal(list)
-	if _, err := h.st.DB.Exec(`INSERT INTO node_queue(node_id,track_ids,position,updated_at) VALUES(?,?,?,?)`,
-		nodeID, string(idsJSON), 1, 7); err != nil {
+	if _, err := h.st.DB.Exec(`INSERT INTO playback_queue(device_key,track_ids,position,updated_at) VALUES(?,?,?,?)`,
+		makeDeviceKey(nodeID, "default"), string(idsJSON), 1, 7); err != nil {
 		t.Fatal(err)
 	}
 	q, err = h.srv.Queue(nodeID)
@@ -539,7 +561,7 @@ func TestQueueModePersistenceAndLegacyRows(t *testing.T) {
 	if err := h.srv.SetQueue(nodeID, list, 0); err != nil {
 		t.Fatal(err)
 	}
-	if mode, order, _ = storedQueueMeta(t, h, nodeID); mode != QueueModeSequence || len(order) != 0 {
+	if mode, order, _ = storedQueueMeta(t, h, makeDeviceKey(nodeID, "default")); mode != QueueModeSequence || len(order) != 0 {
 		t.Fatalf("legacy edit persisted mode=%q order=%v", mode, order)
 	}
 }
@@ -558,7 +580,7 @@ func TestQueueModeSequenceStopsAtEnd(t *testing.T) {
 		t.Fatalf("expected ErrQueueEnd, got %v", err)
 	}
 	// Natural EOF at the tail stops too.
-	h.srv.autoAdvance(nodeID, ids["b"])
+	h.srv.autoAdvance(makeDeviceKey(nodeID, "default"), ids["b"])
 	if pos, tr, _ := queuePosition(t, h, nodeID); pos != 1 || tr != ids["b"] {
 		t.Fatalf("sequence wrapped at EOF: pos=%d track=%s", pos, tr)
 	}
@@ -567,12 +589,12 @@ func TestQueueModeSequenceStopsAtEnd(t *testing.T) {
 	if _, err := h.srv.QueueJump(context.Background(), nodeID, 0); !errors.Is(err, ErrNotConnected) {
 		t.Fatalf("jump: %v", err)
 	}
-	h.srv.autoAdvance(nodeID, ids["a"])
+	h.srv.autoAdvance(makeDeviceKey(nodeID, "default"), ids["a"])
 	if pos, tr, _ := queuePosition(t, h, nodeID); pos != 1 || tr != ids["b"] {
 		t.Fatalf("sequence did not advance: pos=%d track=%s", pos, tr)
 	}
 	// A finished track that no longer matches the cursor suppresses the advance.
-	h.srv.autoAdvance(nodeID, ids["a"])
+	h.srv.autoAdvance(makeDeviceKey(nodeID, "default"), ids["a"])
 	if pos, tr, _ := queuePosition(t, h, nodeID); pos != 1 || tr != ids["b"] {
 		t.Fatalf("stale finish advanced the queue: pos=%d track=%s", pos, tr)
 	}
@@ -606,20 +628,20 @@ func TestQueueModeLoopAllWraps(t *testing.T) {
 	}
 
 	// Natural EOF wraps as well.
-	h.srv.autoAdvance(nodeID, ids["c"])
+	h.srv.autoAdvance(makeDeviceKey(nodeID, "default"), ids["c"])
 	if pos, tr, _ := queuePosition(t, h, nodeID); pos != 0 || tr != ids["a"] {
 		t.Fatalf("loop_all EOF did not wrap: pos=%d track=%s", pos, tr)
 	}
-	h.srv.autoAdvance(nodeID, ids["a"])
+	h.srv.autoAdvance(makeDeviceKey(nodeID, "default"), ids["a"])
 	if pos, tr, _ := queuePosition(t, h, nodeID); pos != 1 || tr != ids["b"] {
 		t.Fatalf("loop_all EOF did not advance: pos=%d track=%s", pos, tr)
 	}
 	// Stale finish is ignored.
-	h.srv.autoAdvance(nodeID, ids["c"])
+	h.srv.autoAdvance(makeDeviceKey(nodeID, "default"), ids["c"])
 	if pos, _, _ := queuePosition(t, h, nodeID); pos != 1 {
 		t.Fatalf("loop_all advanced on a stale finish: pos=%d", pos)
 	}
-	if mode, _, pos := storedQueueMeta(t, h, nodeID); mode != QueueModeLoopAll || pos != 1 {
+	if mode, _, pos := storedQueueMeta(t, h, makeDeviceKey(nodeID, "default")); mode != QueueModeLoopAll || pos != 1 {
 		t.Fatalf("loop_all not persisted: mode=%q pos=%d", mode, pos)
 	}
 }
@@ -638,7 +660,7 @@ func TestQueueModeLoopOneRepeatsAndManualNextAdvances(t *testing.T) {
 
 	// Natural EOF repeats the same track without moving the cursor.
 	for i := 0; i < 2; i++ {
-		h.srv.autoAdvance(nodeID, ids["a"])
+		h.srv.autoAdvance(makeDeviceKey(nodeID, "default"), ids["a"])
 		if pos, tr, _ := queuePosition(t, h, nodeID); pos != 0 || tr != ids["a"] {
 			t.Fatalf("loop_one EOF moved the cursor: pos=%d track=%s", pos, tr)
 		}
@@ -651,7 +673,7 @@ func TestQueueModeLoopOneRepeatsAndManualNextAdvances(t *testing.T) {
 		t.Fatalf("loop_one manual next stuck: pos=%d track=%s", pos, tr)
 	}
 	// The last entry also repeats naturally.
-	h.srv.autoAdvance(nodeID, ids["b"])
+	h.srv.autoAdvance(makeDeviceKey(nodeID, "default"), ids["b"])
 	if pos, tr, _ := queuePosition(t, h, nodeID); pos != 1 || tr != ids["b"] {
 		t.Fatalf("loop_one tail EOF moved the cursor: pos=%d track=%s", pos, tr)
 	}
@@ -666,7 +688,7 @@ func TestQueueModeLoopOneRepeatsAndManualNextAdvances(t *testing.T) {
 		t.Fatalf("loop_one prev: pos=%d track=%s", pos, tr)
 	}
 	// A stale finish (queue edited meanwhile) must not replay.
-	h.srv.autoAdvance(nodeID, ids["b"])
+	h.srv.autoAdvance(makeDeviceKey(nodeID, "default"), ids["b"])
 	if pos, _, _ := queuePosition(t, h, nodeID); pos != 0 {
 		t.Fatalf("stale finish replayed: pos=%d", pos)
 	}
@@ -699,7 +721,7 @@ func TestQueueModeShuffleFixedOrderCycle(t *testing.T) {
 	cur := start
 	visited := make([]string, 0, len(frozen))
 	for i := 0; i < len(frozen); i++ {
-		h.srv.autoAdvance(nodeID, cur)
+		h.srv.autoAdvance(makeDeviceKey(nodeID, "default"), cur)
 		pos, tr, st := queuePosition(t, h, nodeID)
 		want := frozen[(indexOf(frozen, cur)+1)%len(frozen)]
 		if tr != want || pos != indexOf(list, want) {

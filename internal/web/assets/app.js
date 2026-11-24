@@ -405,7 +405,6 @@ const NAV = [
   { id: "library", get name() { return appT("m066"); }, icon: "library" },
   { id: "favorites", get name() { return appT("navFavorites"); }, icon: "heart" },
   { id: "playlists", get name() { return appT("navPlaylists"); }, icon: "layers" },
-  { id: "nodes", get name() { return appT("m067"); }, icon: "server" },
   { id: "settings", get name() { return appT("m069"); }, icon: "settings" }
 ];
 
@@ -450,6 +449,7 @@ async function refreshFor(v, silent) {
 function refreshCurrent() { return refreshFor(S.view, true); }
 function setView(v) {
   if (v === "keys" || v === "catalog") { openSettings(v === "keys" ? "authorization" : "packages"); return; }
+  if (v === "nodes") { openSettings("devices"); return; }
   stopPrefix("view:");
   cleanupOverview();
   cleanupTerminalCenter();
@@ -652,10 +652,10 @@ function ovAlbumCard(g, info = {}) {
   const key = g ? esc(albumKey(g)) : "";
   const count = appT(historical ? "listenedTracks" : "m151", { count: historical ? info.track_count : g.tracks.length });
   const unavailable = !OV.loaded ? appT("m125") : OV.tracksError ? appT("m126") : appT("m127");
-  const favArtist = missing ? "" : albumGroupArtist(g);
+  const favArtist = missing ? (artist || "") : albumGroupArtist(g);
   const meta = missing ? { year: 0, genres: [] } : albumGroupMeta(g);
   const metaText = [meta.year > 0 ? String(meta.year) : "", meta.genres.slice(0, 2).join(" / ")].filter(Boolean).join(" · ");
-  const heart = missing || !favArtist || typeof favoriteAlbumHeart !== "function" ? "" : favoriteAlbumHeart(favArtist, album, "ov-heart");
+  const heart = typeof favoriteAlbumHeart !== "function" ? "" : favoriteAlbumHeart(favArtist, album || "", "ov-heart");
   const artistLine = missing
     ? `<span class="ov-album-artist truncate">${esc(artist || appT("m117"))}</span>`
     : `<button class="ov-album-artist truncate" data-act="artist-albums" data-name="${esc(favArtist || artist || "")}">${esc(artist || appT("m117"))}</button>`;
@@ -664,9 +664,9 @@ function ovAlbumCard(g, info = {}) {
       <span class="al-cover">${hash ? `<img class="al-img" src="/api/v1/covers/${esc(hash)}/384" alt="" loading="lazy">` : icon("disc", 30)}<span class="al-cnt mono">${esc(count)}</span></span>
       <span class="al-name truncate">${esc(album || appT("m128"))}</span>
     </button>
-    ${artistLine}
+    <div class="ov-album-artist-line">${artistLine}${heart}</div>
     ${metaText ? `<div class="al-meta mono truncate">${esc(metaText)}</div>` : ""}
-    <div class="ov-album-foot"><span class="hint truncate" title="${esc(info.time ? fmtTime(info.time) : "")}">${info.time ? ago(info.time) : ""}</span>${heart}<button class="btn xs ghost" data-act="album-push" data-ak="${key}" ${playable ? "" : "disabled"} title="${missing ? esc(unavailable) : appH("m129")}" aria-label="${appH("m131", { value: album || appT("m128") })}">${icon("send", 12)}</button></div>
+    <div class="ov-album-foot"><span class="hint truncate" title="${esc(info.time ? fmtTime(info.time) : "")}">${info.time ? ago(info.time) : ""}</span><button class="btn xs ghost" data-act="album-push" data-ak="${key}" ${playable ? "" : "disabled"} title="${missing ? esc(unavailable) : appH("m129")}" aria-label="${appH("m131", { value: album || appT("m128") })}">${icon("send", 12)}</button></div>
   </article>`;
 }
 function paintOvRecent() {
@@ -741,37 +741,79 @@ function paintModePopover(prefix, mode, enabled) {
   });
 }
 const PB = {
-  id: "", chosen: false, nodes: [], loaded: false, nodesError: false, nodesAt: 0,
+  deviceKey: "", nodeId: "", device: null, chosen: false,
+  nodes: [], devices: [], registry: [], loaded: false, nodesError: false, devicesError: false, nodesAt: 0,
   seq: 0, busy: null, fresh: false, trackID: "", track: null, dragging: false, volDrag: false,
-  seekContext: null, seekPending: 0, volPending: 0
+  seekContext: null, seekPending: 0, volPending: 0, mutePrev: {}
 };
-function terminalPopoverHtml(prefix = "pb") {
-  return `<details class="pop pb-term" id="${prefix}-term-wrap" data-disabled="1"><summary id="${prefix}-term" aria-label="${appH("m164")}" title="${appH("m164")}">${icon("server", 14)}<span class="pb-term-name truncate" id="${prefix}-node-label">—</span></summary><div class="pop-menu pb-term-menu" role="menu" id="${prefix}-term-menu"></div></details>`;
+function playbackDeviceKey(d) {
+  return d && (d.device_key || (d.node_id && d.hw ? d.node_id + "::" + d.hw : "")) || "";
+}
+function playbackNodeID(key) {
+  const value = String(key || ""), cut = value.indexOf("::");
+  return cut > 0 ? value.slice(0, cut) : "";
+}
+function availablePlaybackDevice(key, devices = PB.devices) {
+  const wanted = String(key || "");
+  return (Array.isArray(devices) ? devices : []).find(d => playbackDeviceKey(d) === wanted && d.enabled !== false && d.present && d.online && d.node_id === playbackNodeID(wanted)) || null;
+}
+function playbackDeviceLabel(target, devices = PB.devices) {
+  const key = typeof target === "string" ? target : playbackDeviceKey(target);
+  if (!key) return appT("m174");
+  const d = (typeof target === "string" ? availablePlaybackDevice(key, devices) : target) ||
+    (PB.registry || []).find(x => playbackDeviceKey(x) === key) ||
+    (PB.device && playbackDeviceKey(PB.device) === key ? PB.device : null);
+  const hw = d?.hw || key.slice(playbackNodeID(key).length + 2);
+  return d?.name || d?.reported_name || (hw === "default" ? appT("m262") : hw || "—");
+}
+function playbackTargetStatus(key) {
+  const device = availablePlaybackDevice(key), p = S.play[key] || {};
+  if (!PB.loaded) return appT("m172");
+  if (PB.devicesError) return appT("m968");
+  if (!key) return PB.devices.length || (PB.registry || []).length ? appT("m174") : appT("m175");
+  if (!device) {
+    const known = (PB.registry || []).find(d => playbackDeviceKey(d) === key);
+    return known ? appT("m177") : appT("m176");
+  }
+  if (!PB.fresh) return appT("m178");
+  return !p.connected ? appT("m179") : p.playing ? appT("m180") : p.state === "paused" ? appT("m181") : appT("m182");
+}
+function requirePlaybackDevice(key, devices = PB.devices) {
+  const device = availablePlaybackDevice(key, devices);
+  if (!device) {
+    toast(appT("m970"), "warn");
+    refreshPlayerBar();
+    return null;
+  }
+  return { key: playbackDeviceKey(device), id: device.node_id, device };
+}
+function devicePopoverHtml(prefix = "pb") {
+  return `<details class="pop pb-term" id="${prefix}-term-wrap" data-disabled="1"><summary id="${prefix}-term" aria-label="${appH("m164")}" title="${appH("m164")}">${icon("speaker", 14)}<span class="pb-term-name truncate" id="${prefix}-node-label">—</span></summary><div class="pop-menu pb-term-menu" role="menu" id="${prefix}-term-menu"></div></details>`;
 }
 function volumePopoverHtml(prefix = "pb") {
   return `<details class="pop pb-vol" id="${prefix}-vol-wrap"><summary id="${prefix}-vol-btn" aria-label="${appH("m163")}" title="${appH("m163")}">${icon("speaker", 16)}<span class="pb-vol-val mono" id="${prefix}-volume-value">100</span></summary><div class="pop-menu pb-vol-menu"><input id="${prefix}-volume" type="range" min="0" max="100" step="1" value="100" data-change="${prefix}-volume" aria-label="${appH("m163")}" disabled></div></details>`;
 }
-function devicePopoverHtml(prefix = "ply") {
-  return `<details class="pop pb-dev" id="${prefix}-dev-wrap" data-disabled="1"><summary id="${prefix}-dev-btn" aria-label="${appH("m166")}" title="${appH("m166")}">${icon("speaker", 14)}<span class="pb-term-name truncate" id="${prefix}-dev-label">—</span></summary><div class="pop-menu" role="menu" id="${prefix}-dev-menu"></div></details>`;
-}
-function paintDeviceMenu(prefix, p, connected) {
-  const wrap = document.getElementById(`${prefix}-dev-wrap`), menu = document.getElementById(`${prefix}-dev-menu`);
-  const label = document.getElementById(`${prefix}-dev-label`);
-  if (!wrap || !menu) return;
-  wrap.dataset.disabled = connected ? "0" : "1";
-  const { devs, cur, names, absent } = nodePlayDevs(p || {});
-  const curLabel = cur === "default" ? appT("m262") : names.get(cur) ? names.get(cur) + " · " + cur : cur;
-  if (label) { if (label.textContent !== curLabel) label.textContent = curLabel; }
+function paintDeviceMenu(prefix, currentKey, disabled) {
+  const menu = document.getElementById(`${prefix}-term-menu`), wrap = document.getElementById(`${prefix}-term-wrap`);
+  const label = document.getElementById(`${prefix}-node-label`);
+  if (!menu || !wrap) return;
+  const txt = playbackDeviceLabel(currentKey);
+  if (label && label.textContent !== txt) label.textContent = txt;
+  wrap.dataset.disabled = disabled ? "1" : "0";
   const sum = wrap.querySelector("summary");
-  if (sum && sum.title !== curLabel) { sum.title = curLabel; sum.setAttribute("aria-label", appT("m166") + "：" + curLabel); }
-  const sig = devs.join("|") + "#" + cur + "#" + [...absent].join(",");
+  if (sum) {
+    const title = appT("m164") + "：" + txt;
+    if (sum.title !== title) { sum.title = title; sum.setAttribute("aria-label", title); }
+  }
+  const sig = JSON.stringify([PB.devices.map(d => [playbackDeviceKey(d), playbackDeviceLabel(d)]), currentKey, appT("m175"), appT("m176")]);
   if (menu.dataset.sig === sig) return;
   menu.dataset.sig = sig;
-  menu.innerHTML = devs.map(d => {
-    const off = absent.has(d);
-    const nm = (d === "default" ? appT("m262") : names.get(d) ? names.get(d) + " · " + d : d) + (off ? " · " + appT("m967") : "");
-    return `<button class="pop-item ${d === cur ? "active" : ""}" role="menuitemradio" aria-checked="${d === cur}" data-act="${prefix}-device-pick" data-dev="${esc(d)}" ${off ? "disabled" : ""}>${icon("speaker", 13)}<span class="truncate">${esc(nm)}</span>${d === cur ? icon("check", 13) : ""}</button>`;
-  }).join("");
+  menu.innerHTML = PB.devices.length
+    ? PB.devices.map(d => {
+        const key = playbackDeviceKey(d), sel = key === currentKey;
+        return `<button class="pop-item ${sel ? "active" : ""}" role="menuitemradio" aria-checked="${sel}" data-act="${prefix}-device-pick" data-device-key="${esc(key)}">${icon("speaker", 13)}<span class="truncate">${esc(playbackDeviceLabel(d))}</span>${sel ? icon("check", 13) : ""}</button>`;
+      }).join("")
+    : `<div class="pop-head">${appT("m175")}</div>`;
 }
 function playerBarShell() {
   return `<section class="player-bar" id="player-bar" aria-label="${appH("m154")}">
@@ -783,11 +825,12 @@ function playerBarShell() {
       <div class="player-bar-seek"><span id="pb-elapsed" class="mono">0:00</span><input id="pb-seek" type="range" min="0" max="0" step="500" value="0" data-change="pb-seek" aria-label="${appH("m162")}" disabled><span id="pb-total" class="mono">0:00</span></div>
     </div>
     <div class="pb-aux">
-      ${terminalPopoverHtml()}
+      ${devicePopoverHtml()}
       <div class="pb-aux-right">
         ${volumePopoverHtml()}
         ${pbModeShell()}
         ${sleepPopoverHtml("pb", "")}
+        <button class="btn ghost sm" id="pb-eq" data-act="pb-eq" title="${appH("eqTitle")}" aria-label="${appH("eqTitle")}">${icon("sliders", 15)}</button>
       </div>
     </div>
     <div class="pb-fav">${typeof favoritePlayerShell === "function" ? favoritePlayerShell() : ""}</div>
@@ -798,25 +841,27 @@ function initPlayerBar() {
   const bar = $("#player-bar");
   if (bar && typeof bar.addEventListener === "function") bar.addEventListener("click", e => {
     if (e.target.closest("button,input,select,label,a,summary")) return;
-    if (PB.id && typeof openPlayer === "function") openPlayer(PB.id);
+    if (PB.deviceKey && typeof openPlayer === "function") openPlayer(PB.deviceKey);
   });
   new ResizeObserver(entries => {
     document.documentElement.style.setProperty("--player-bar-height", Math.ceil(entries[0].target.getBoundingClientRect().height) + "px");
   }).observe($("#player-bar"));
   poll("playback", refreshPlayerBar, 1000, true);
 }
-function selectPlayerBar(id) {
-  if (PLY.id && $("#ply-body") && PLY.id !== id) {
-    if (id) return openPlayer(id);
+function selectPlayerBar(deviceKey) {
+  if (PLY.deviceKey && $("#ply-body") && PLY.deviceKey !== deviceKey) {
+    if (deviceKey) return openPlayer(deviceKey);
     closeModal();
   }
   PB.chosen = true;
-  if (id !== PB.id) {
-    PB.id = id; PB.seq++; PB.busy = null; PB.fresh = false; PB.nodesAt = 0;
+  if (deviceKey !== PB.deviceKey) {
+    PB.deviceKey = deviceKey; PB.seq++; PB.busy = null; PB.fresh = false; PB.nodesAt = 0;
     PB.trackID = ""; PB.track = null;
     PB.dragging = PB.volDrag = false; PB.seekContext = null;
     PB.seekPending = PB.volPending = 0;
   }
+  PB.nodeId = playbackNodeID(deviceKey);
+  PB.device = availablePlaybackDevice(deviceKey) || (PB.device && playbackDeviceKey(PB.device) === deviceKey ? PB.device : null);
   paintPlayerBar();
   return refreshPlayerBar();
 }
@@ -826,50 +871,62 @@ function refreshPlayerBar() {
   const seq = PB.seq;
   const work = (async () => {
     if (!PB.loaded || Date.now() - PB.nodesAt >= 5000) {
-      const nodes = await api("GET", "/nodes").catch(() => null);
+      const [devices, nodes] = await Promise.all([
+        api("GET", "/playback/devices").catch(() => null),
+        api("GET", "/nodes").catch(() => null)
+      ]);
       if (seq !== PB.seq) return;
-      PB.loaded = true; PB.nodesError = !Array.isArray(nodes); PB.nodesAt = Date.now();
+      PB.loaded = true; PB.devicesError = !Array.isArray(devices); PB.nodesError = !Array.isArray(nodes); PB.nodesAt = Date.now();
       if (Array.isArray(nodes)) PB.nodes = nodes;
-      if (!PB.chosen && !PB.nodesError && PB.nodes.length) {
-        PB.id = (PB.nodes.find(n => n.status === "online") || PB.nodes[0]).node_id;
-        PB.chosen = true;
+      if (Array.isArray(devices)) {
+        PB.registry = devices.filter(d => {
+          const key = playbackDeviceKey(d);
+          return key && d.node_id === playbackNodeID(key);
+        });
+        PB.devices = PB.registry.filter(d => d.enabled !== false && d.present && d.online);
+      }
+      if (!PB.chosen && !PB.devicesError && PB.devices.length) {
+        PB.deviceKey = playbackDeviceKey(PB.devices[0]); PB.chosen = true;
+        PB.trackID = ""; PB.track = null;
       }
     }
-    const id = PB.id, n = PB.nodes.find(n => n.node_id === id);
-    if (!id || !n || n.status !== "online" || PB.nodesError) {
+    const key = PB.deviceKey, id = playbackNodeID(key), device = availablePlaybackDevice(key);
+    PB.nodeId = id;
+    PB.device = device || (PB.device && playbackDeviceKey(PB.device) === key ? PB.device : null);
+    if (!key || !device || PB.devicesError) {
       PB.fresh = false;
     } else {
+      const query = "?device_key=" + enc(key);
       const [p, q] = await Promise.all([
-        api("GET", `/nodes/${enc(id)}/play`).catch(() => null),
-        api("GET", `/nodes/${enc(id)}/queue`).catch(() => null)
+        api("GET", `/nodes/${enc(id)}/play${query}`).catch(() => null),
+        api("GET", `/nodes/${enc(id)}/queue${query}`).catch(() => null)
       ]);
-      if (seq !== PB.seq || id !== PB.id) return;
+      if (seq !== PB.seq || key !== PB.deviceKey) return;
       PB.fresh = !!p;
-      S.play[id] = p || { connected: false, playing: false };
-      S.nodePlay[id] = S.play[id];
-      S.nodeQueue[id] = q;
+      const previous = S.play[key];
+      S.play[key] = p || (previous ? { ...previous, connected: false, playing: false } : { node_id: id, device_key: key, connected: false, playing: false });
+      S.nodeQueue[key] = q;
       const trackID = p && p.track_id || "";
       if (trackID !== PB.trackID) {
         PB.trackID = trackID; PB.track = null;
         const cached = S.tracks.find(t => t.id === trackID);
         const track = cached || (trackID && !p.cover_hash ? await api("GET", `/tracks/${enc(trackID)}`).catch(() => null) : null);
-        if (seq !== PB.seq || id !== PB.id) return;
+        if (seq !== PB.seq || key !== PB.deviceKey) return;
         PB.track = track;
       }
     }
     paintPlayerBar();
-    if (PLY.id === id && $("#ply-body")) paintPlayerLive();
+    if (PLY.deviceKey === key && $("#ply-body")) paintPlayerLive();
   })().finally(() => { if (PB.busy === work) PB.busy = null; });
   PB.busy = work;
   return work;
 }
 function playerBarConnected() {
-  const n = PB.nodes.find(n => n.node_id === PB.id);
-  return !!(PB.loaded && !PB.nodesError && PB.fresh && n && n.status === "online" && (S.play[PB.id] || {}).connected);
+  return !!(PB.loaded && !PB.devicesError && PB.fresh && availablePlaybackDevice(PB.deviceKey) && (S.play[PB.deviceKey] || {}).connected);
 }
 function paintPlayerBar() {
   const root = $("#player-bar"); if (!root) return;
-  const id = PB.id, n = PB.nodes.find(n => n.node_id === id), p = S.play[id] || {};
+  const key = PB.deviceKey, device = availablePlaybackDevice(key), p = S.play[key] || {};
   const connected = playerBarConnected(), active = connected && (p.playing || p.state === "paused");
   const t = active && p.track_id ? S.tracks.find(t => t.id === p.track_id) || (PB.trackID === p.track_id ? PB.track : null) : null;
   if (typeof paintPlayerFavorite === "function") paintPlayerFavorite(active ? p.track_id || "" : "");
@@ -879,14 +936,14 @@ function paintPlayerBar() {
   const set = (selector, text) => { const el = $(selector); if (el && el.textContent !== text) el.textContent = text; };
   set("#pb-title", title);
   set("#pb-sub", active ? artist + " · " + album : appT("m156"));
-  const status = !PB.loaded ? appT("m172") : PB.nodesError ? appT("m173") : !id ? (PB.nodes.length ? appT("m174") : appT("m175")) : !n ? appT("m176") : n.status !== "online" ? appT("m177") : !PB.fresh ? appT("m178") : !connected ? appT("m179") : p.playing ? appT("m180") : p.state === "paused" ? appT("m181") : appT("m182");
+  const status = playbackTargetStatus(key);
   set("#pb-state", status);
   root.classList.toggle("is-playing", !!(active && p.playing));
   const cover = $("#pb-cover"), hash = active ? (t && t.cover_hash) || p.cover_hash : "";
   const sig = JSON.stringify([album, artist, hash]);
   if (cover && cover.dataset.sig !== sig) { cover.innerHTML = coverArt(album, artist, "thumb", 22, hash); cover.dataset.sig = sig; }
-  const q = S.nodeQueue[id], tracks = (q && q.tracks) || [], pos = (q && q.position) || 0;
-  const button = (sel, disabled) => { const b = $(sel); if (b) { b.disabled = disabled; b.dataset.id = id; } return b; };
+  const q = S.nodeQueue[key], tracks = (q && q.tracks) || [], pos = (q && q.position) || 0;
+  const button = (sel, disabled) => { const b = $(sel); if (b) { b.disabled = disabled; b.dataset.id = key; } return b; };
   const mode = (q && q.mode) || "sequence";
   const wraps = mode === "loop_all" || mode === "shuffle";
   button("#pb-prev", !connected || !tracks.length);
@@ -894,7 +951,7 @@ function paintPlayerBar() {
   const pp = button("#pb-pause", !active);
   const ppLabel = active && p.playing ? appT("m183") : appT("m159");
   if (pp && pp.title !== ppLabel) { pp.innerHTML = icon(active && p.playing ? "pause" : "play", 18); pp.title = ppLabel; pp.setAttribute("aria-label", ppLabel); }
-  paintSleepPopover("pb", id, Number(p.sleep_stop_at) || 0);
+  paintSleepPopover("pb", connected ? key : "", Number(p.sleep_stop_at) || 0);
   paintModePopover("pb", mode, connected);
   const mqa = !!(active && p.mqa), dop = !!(active && p.dop), converted = !!(active && p.converted), strict = mqa || dop;
   const mqaBadge = $("#pb-mqa");
@@ -921,43 +978,27 @@ function paintPlayerBar() {
     if (!PB.volDrag && !PB.volPending && document.activeElement !== vol) { vol.value = String(clamp(p.volume == null ? 100 : Number(p.volume), 0, 100)); set("#pb-volume-value", appN(Number(vol.value))); }
     vol.setAttribute("aria-valuetext", appN(Number(vol.value) / 100, { style: "percent" }));
   }
-  paintTerminalMenu("pb", PB.nodes, PB.id, !PB.loaded || PB.nodesError || !PB.nodes.length, appT("m174"));
-}
-function paintTerminalMenu(prefix, nodes, currentID, disabled, fallback) {
-  const menu = document.getElementById(`${prefix}-term-menu`), wrap = document.getElementById(`${prefix}-term-wrap`);
-  const label = document.getElementById(`${prefix}-node-label`);
-  if (!menu || !wrap) return;
-  const cur = nodes.find(n => n.node_id === currentID);
-  if (label) { const txt = cur ? (cur.alias || shortId(cur.node_id)) : (fallback || "—"); if (label.textContent !== txt) label.textContent = txt; }
-  wrap.dataset.disabled = disabled ? "1" : "0";
-  const sig = nodes.map(n => n.node_id + ":" + n.status).join("|") + "#" + currentID;
-  if (menu.dataset.sig === sig) return;
-  menu.dataset.sig = sig;
-  menu.innerHTML = nodes.length
-    ? nodes.map(n => {
-        const on = n.status === "online", sel = n.node_id === currentID;
-        return `<button class="pop-item ${sel ? "active" : ""}" role="menuitemradio" aria-checked="${sel}" data-act="${prefix}-node-pick" data-id="${esc(n.node_id)}" ${on ? "" : "disabled"}>${icon("server", 13)}<span class="truncate">${esc(n.alias || shortId(n.node_id))}</span><span class="pop-extra">${on ? "" : esc(appT("m177"))}</span>${sel ? icon("check", 13) : ""}</button>`;
-      }).join("")
-    : `<div class="pop-head">${appH("m175")}</div>`;
+  paintDeviceMenu("pb", key, !PB.loaded || PB.devicesError || !PB.devices.length);
 }
 function playerBarBeginRange(el) {
   if (el.disabled) return;
   if (el.id === "pb-seek" && !PB.dragging) {
-    const p = S.play[PB.id] || {};
-    PB.seekContext = { id: PB.id, track: p.track_id, session: p.session_id };
+    const p = S.play[PB.deviceKey] || {};
+    PB.seekContext = { deviceKey: PB.deviceKey, nodeId: PB.nodeId, track: p.track_id, session: p.session_id };
     PB.dragging = true;
   } else if (el.id === "pb-volume") PB.volDrag = true;
 }
 async function playerBarRangeChange(el, volume) {
-  const id = PB.id, seq = PB.seq, field = volume ? "volPending" : "seekPending";
-  const value = Number(el.value), p = S.play[id] || {}, context = PB.seekContext;
+  const key = PB.deviceKey, seq = PB.seq, field = volume ? "volPending" : "seekPending";
+  const value = Number(el.value), p = S.play[key] || {}, context = PB.seekContext;
   if (volume) PB.volDrag = false; else { PB.dragging = false; PB.seekContext = null; }
   if (!playerBarConnected() || !(p.playing || p.state === "paused") || el.disabled) { paintPlayerBar(); return; }
-  if (!volume && (!context || context.id !== id || context.track !== p.track_id || context.session !== p.session_id)) { toast(appT("m186"), "warn"); el.blur(); paintPlayerBar(); return; }
+  if (!volume && (!context || context.deviceKey !== key || context.nodeId !== PB.nodeId || context.track !== p.track_id || context.session !== p.session_id)) { toast(appT("m186"), "warn"); el.blur(); paintPlayerBar(); return; }
+  const target = requirePlaybackDevice(key); if (!target) { paintPlayerBar(); return; }
   PB[field]++;
   paintPlayerBar();
   try {
-    await api("POST", `/nodes/${enc(id)}/${volume ? "volume" : "seek"}`, volume ? { volume: clamp(value, 0, 100) } : { position_ms: Math.max(0, value) });
+    await api("POST", `/nodes/${enc(target.id)}/${volume ? "volume" : "seek"}`, volume ? { volume: clamp(value, 0, 100), device_key: key } : { position_ms: Math.max(0, value), device_key: key });
   } catch (e) { toast(e.message, "err"); el.blur(); }
   finally {
     if (seq === PB.seq) { PB[field] = Math.max(0, PB[field] - 1); await refreshPlayerBar(); }
@@ -1083,7 +1124,7 @@ async function deleteNodes(ids) {
 /* ================= ADD-NODE WIZARD ================= */
 const WZ = { step: 1, alias: "", group: "", arch: "amd64", distro: "debian", ttl: 1800, note: "", token: "", expiresAt: 0, nodeId: "", node: null,
   method: "manual", sshForm: { host: "", port: "22", user: "", auth: "password" }, sshInfo: null, sshCred: null, jobId: "", job: null };
-const ANDROID_APK = "https://github.com/Eyebright/Zephyr-HiFi-Kit/releases/download/v0.58/Zephyr-HiFi-Kit-terminal-0.58.apk";
+const ANDROID_APK = "https://github.com/Eyebright/Zephyr-HiFi-Kit/releases/download/v0.68/Zephyr-HiFi-Kit-terminal-0.68.apk";
 function installCmd() {
   if (WZ.arch === "android") return appT("m209", { id: ANDROID_APK, value: location.origin, value2: WZ.token });
   return `curl -fsSL ${location.origin}/dl/agent-install.sh | sudo bash -s -- --server ${location.origin} --token ${WZ.token}`;
@@ -1184,6 +1225,7 @@ function wzStep2() {
   const installPanel = android
     ? `<div class="field"><label>${appH("m229")}</label>
       <div class="f-hint">${appH("m230")}</div>
+      <div class="f-hint">${appH("androidNumericHint")}</div>
       <a class="btn sm block" href="${ANDROID_APK}" target="_blank" rel="noopener">${icon("download", 14)} ${appH("m231")}</a>
       <div class="cmd-box wrap"><span id="wz-cmd">${esc(installCmd())}</span></div>
       <button class="btn sm block" data-act="wz-copy-cmd">${icon("copy", 14)} ${appH("m232")}</button>
@@ -1235,7 +1277,7 @@ async function wzNext() {
   if (!WZ.alias) return fail(appT("m250"));
   if (S.nodes.some(n => (n.alias || "").trim().toLowerCase() === WZ.alias.toLowerCase())) return fail(appT("m251"));
   try {
-    const r = await api("POST", "/nodes/token", { ttl_seconds: WZ.ttl });
+    const r = await api("POST", "/nodes/token", { ttl_seconds: WZ.ttl, arch: WZ.arch, digits: WZ.arch === "android" ? 8 : 0 });
     WZ.token = r.token; WZ.expiresAt = ts(r.expires_at) || (Math.floor(Date.now() / 1000) + WZ.ttl);
     WZ.step = 2; renderWizard(); startWzPolls();
   } catch (e) { fail(e.message); }
@@ -1258,7 +1300,7 @@ function tickWzCountdown() {
 }
 async function wzReissue() {
   try {
-    const r = await api("POST", "/nodes/token", { ttl_seconds: WZ.ttl });
+    const r = await api("POST", "/nodes/token", { ttl_seconds: WZ.ttl, arch: WZ.arch, digits: WZ.arch === "android" ? 8 : 0 });
     WZ.token = r.token; WZ.expiresAt = ts(r.expires_at) || (Math.floor(Date.now() / 1000) + WZ.ttl);
     renderWizard(); startWzPolls();
   } catch (e) { toast(e.message, "err"); }
@@ -1341,39 +1383,14 @@ function tile(ic, name, sub, act, color, id) {
 }
 const CMD_ZH = { get "os-check"() { return appT("m256"); }, get "os-upgrade"() { return appT("m257"); }, get netdiag() { return appT("m258"); }, get "apt-install"() { return appT("m259"); }, get "apt-source"() { return appT("m260"); }, get "agent-upgrade"() { return appT("m261"); } };
 
-/* ---- shared playback device picker (homepage and full player) ---- */
-function nodePlayDevs(p) {
-  const curated = Array.isArray(p.play_devices) ? p.play_devices : null;
-  if (curated) {
-    const devs = curated.map(d => d.hw);
-    const cur = p.pref_device || p.configured_device || "default";
-    if (!devs.includes(cur)) devs.push(cur);
-    const names = new Map(curated.map(d => [d.hw, d.name]));
-    const absent = new Set(curated.filter(d => !d.present).map(d => d.hw));
-    return { devs, cur, names, absent };
-  }
-  const devs = Array.isArray(p.devices) ? p.devices.slice() : [];
-  if (!devs.includes("default")) devs.unshift("default");
-  const cur = p.pref_device || p.configured_device || "default";
-  if (!devs.includes(cur)) devs.push(cur);
-  const names = new Map((Array.isArray(p.device_info) ? p.device_info : []).filter(d => d && d.hw && d.name).map(d => [d.hw, d.name]));
-  return { devs, cur, names, absent: new Set() };
-}
-function nodePlayOpts(devs, cur, names, absent) {
-  return devs.map(d => {
-    const label = d === "default" ? appT("m262") : names?.get(d) ? names.get(d) + " · " + d : d;
-    const off = absent?.has(d) ? " disabled" : "";
-    return `<option value="${esc(d)}"${d === cur ? " selected" : ""}${off}>${esc(label)}${off ? " · " + esc(appT("m967")) : ""}</option>`;
-  }).join("");
-}
-
 /* ---- shared server-side playback queue actions ---- */
-async function queueMove(id, dir) {
+async function queueMove(deviceKey, dir) {
+  const target = requirePlaybackDevice(deviceKey); if (!target) return;
   try {
-    await api("POST", `/nodes/${enc(id)}/queue/${dir}`);
+    await api("POST", `/nodes/${enc(target.id)}/queue/${dir}?device_key=${enc(deviceKey)}`);
     toast(dir === "next" ? appT("m263") : appT("m264"), "ok");
   } catch (e) { toast(e.message, "err"); }
-  await queueAfter(id);
+  await queueAfter(deviceKey);
 }
 
 /* ---------- keyboard shortcuts ---------- */
@@ -1381,33 +1398,36 @@ function hotkeyTyping(t) {
   return !!(t && (t.isContentEditable || (t.closest && t.closest("input,textarea,select,[contenteditable=true]"))));
 }
 async function hotkeySeek(deltaSec) {
-  const id = PB.id; if (!id) return;
-  const p = S.play[id] || {};
+  const key = PB.deviceKey; if (!key) return;
+  const p = S.play[key] || {};
   if (!(p.playing || p.state === "paused")) return;
+  const target = requirePlaybackDevice(key); if (!target) return;
   const rate = p.rate || 0, total = p.duration_ms || 0;
   let elapsed = rate && p.pts ? p.pts / rate * 1000 : 0;
   if (total && elapsed > total) elapsed = total;
-  const target = Math.max(0, Math.round(elapsed + deltaSec * 1000));
-  try { await api("POST", `/nodes/${enc(id)}/seek`, { position_ms: total ? Math.min(target, total) : target }); }
+  const targetMS = Math.max(0, Math.round(elapsed + deltaSec * 1000));
+  try { await api("POST", `/nodes/${enc(target.id)}/seek`, { position_ms: total ? Math.min(targetMS, total) : targetMS, device_key: key }); }
   catch (e) { toast(e.message, "err"); }
   await refreshPlayerBar();
 }
 async function hotkeyVolume(delta) {
-  const id = PB.id; if (!id) return;
-  const slider = $("#pb-volume"), p = S.play[id] || {};
+  const key = PB.deviceKey; if (!key) return;
+  const slider = $("#pb-volume"), p = S.play[key] || {};
   const current = slider ? Number(slider.value) : Number(p.volume == null ? 100 : p.volume);
   const next = clamp(current + delta, 0, 100);
   if (next === current) return;
-  try { await api("POST", `/nodes/${enc(id)}/volume`, { volume: next }); }
+  const target = requirePlaybackDevice(key); if (!target) return;
+  try { await api("POST", `/nodes/${enc(target.id)}/volume`, { volume: next, device_key: key }); }
   catch (e) { toast(e.message, "err"); }
   await refreshPlayerBar();
 }
 async function hotkeyMute() {
-  const id = PB.id; if (!id) return;
-  const p = S.play[id] || {};
+  const key = PB.deviceKey; if (!key) return;
+  const p = S.play[key] || {};
   const current = Number(p.volume == null ? 100 : p.volume);
-  if (current > 0) PB.mutePrev = current;
-  try { await api("POST", `/nodes/${enc(id)}/volume`, { volume: current > 0 ? 0 : (PB.mutePrev || 50) }); }
+  if (current > 0) PB.mutePrev[key] = current;
+  const target = requirePlaybackDevice(key); if (!target) return;
+  try { await api("POST", `/nodes/${enc(target.id)}/volume`, { volume: current > 0 ? 0 : (PB.mutePrev[key] || 50), device_key: key }); }
   catch (e) { toast(e.message, "err"); }
   await refreshPlayerBar();
 }
@@ -1416,9 +1436,8 @@ function openHotkeys() {
   openModal(`${icon("info", 18)} ${appT("hotkeysTitle")}`, `<div class="q-list">${rows.map(([key, label]) => `<div class="q-row"><span class="hk-key mono">${esc(key)}</span><span class="q-info"><span class="q-title">${esc(label)}</span></span></div>`).join("")}</div><p class="f-hint">${appT("hkNote")}</p>`, `<button class="btn ghost" data-act="modal-close">${appH("m040")}</button>`, { narrow: true });
 }
 async function hotkeyMove(dir) {
-  const id = PB.id;
-  if (!id) { toast(appT("noTerminal"), "warn"); return; }
-  await queueMove(id, dir);
+  if (!PB.deviceKey) { toast(appT("m174"), "warn"); return; }
+  await queueMove(PB.deviceKey, dir);
 }
 function onHotkey(e) {
   if (e.defaultPrevented || e.altKey || e.metaKey) return;
@@ -1430,7 +1449,7 @@ function onHotkey(e) {
   }
   if (key === " " || key === "Spacebar") {
     if (e.target && e.target.matches && e.target.matches("button,a,summary,[role=button]")) return;
-    e.preventDefault(); if (PB.id) playPause(PB.id);
+    e.preventDefault(); if (PB.deviceKey) playPause(PB.deviceKey);
     return;
   }
   if (key === "ArrowLeft") { e.preventDefault(); hotkeyMove("prev"); }
@@ -1441,13 +1460,15 @@ function onHotkey(e) {
   else if (key === "f" || key === "F") { const b = $("#pb-favorite"); if (b && !b.disabled) b.click(); }
   else if (key === "?") { e.preventDefault(); openHotkeys(); }
 }
-async function queueJump(id, idx) {
-  try { await api("POST", `/nodes/${enc(id)}/queue/jump`, { index: idx }); toast(appT("m265"), "ok"); }
+async function queueJump(deviceKey, idx) {
+  const target = requirePlaybackDevice(deviceKey); if (!target) return;
+  try { await api("POST", `/nodes/${enc(target.id)}/queue/jump?device_key=${enc(deviceKey)}`, { index: idx }); toast(appT("m265"), "ok"); }
   catch (e) { toast(e.message, "err"); }
-  await queueAfter(id);
+  await queueAfter(deviceKey);
 }
-async function queueRemove(id, idx) {
-  const q = S.nodeQueue[id]; if (!q) return;
+async function queueRemove(deviceKey, idx) {
+  const q = S.nodeQueue[deviceKey]; if (!q) return;
+  const target = requirePlaybackDevice(deviceKey); if (!target) return;
   const ids = (q.tracks || []).map(t => t.track_id);
   if (idx < 0 || idx >= ids.length) return;
   ids.splice(idx, 1);
@@ -1455,15 +1476,18 @@ async function queueRemove(id, idx) {
   if (idx < pos) pos--;
   if (pos >= ids.length) pos = ids.length - 1;
   if (pos < 0) pos = 0;
-  try { S.nodeQueue[id] = await api("PUT", `/nodes/${enc(id)}/queue`, { track_ids: ids, position: pos }); toast(appT("m266"), "ok"); }
+  try { S.nodeQueue[deviceKey] = await api("PUT", `/nodes/${enc(target.id)}/queue`, { track_ids: ids, position: pos, device_key: deviceKey }); toast(appT("m266"), "ok"); }
   catch (e) { toast(e.message, "err"); }
-  paintNodePlay(id);
+  if (deviceKey === PB.deviceKey) paintPlayerBar();
+  if (deviceKey === PLY.deviceKey) paintPlayerLive();
   await syncPlayUI();
 }
-async function queueClear(id) {
-  try { S.nodeQueue[id] = await api("PUT", `/nodes/${enc(id)}/queue`, { track_ids: [], position: 0 }); toast(appT("m267"), "ok"); }
+async function queueClear(deviceKey) {
+  const target = requirePlaybackDevice(deviceKey); if (!target) return;
+  try { S.nodeQueue[deviceKey] = await api("PUT", `/nodes/${enc(target.id)}/queue`, { track_ids: [], position: 0, device_key: deviceKey }); toast(appT("m267"), "ok"); }
   catch (e) { toast(e.message, "err"); }
-  paintNodePlay(id);
+  if (deviceKey === PB.deviceKey) paintPlayerBar();
+  if (deviceKey === PLY.deviceKey) paintPlayerLive();
   await syncPlayUI();
 }
 
@@ -1632,25 +1656,23 @@ function openConsole(id) {
 }
 
 /* ================= NODE CONFIG ================= */
-const CFG = { id: "", node: null, boms: [], license: null, apps: [], nodes: [], offline: 45, busy: false, play: null };
+const CFG = { id: "", node: null, boms: [], license: null, apps: [], nodes: [], offline: 45, busy: false };
 async function openConfig(id) {
-  Object.assign(CFG, { id, node: null, boms: [], license: null, apps: [], nodes: [], offline: 45, busy: false, play: null });
+  Object.assign(CFG, { id, node: null, boms: [], license: null, apps: [], nodes: [], offline: 45, busy: false });
   openModal(`${icon("sliders", 18)} ${appH("m313", { id: shortId(id) })}`, empty("refresh", appT("m314"), "", true), "");
   let n;
   try { n = await api("GET", `/nodes/${enc(id)}`); } catch (e) { closeModal(); toast(e.message, "err"); return; }
   CFG.node = n; CFG.offline = clamp(Number(n.offline_after) || 45, 15, 86400);
-  const [boms, lic, apps, nodes, play] = await Promise.all([
+  const [boms, lic, apps, nodes] = await Promise.all([
     api("GET", "/boms?status=published").catch(() => []),
     api("GET", "/license").catch(() => null),
     api("GET", `/nodes/${enc(id)}/apps`).catch(() => []),
-    api("GET", "/nodes").catch(() => []),
-    api("GET", `/nodes/${enc(id)}/play`).catch(() => null)
+    api("GET", "/nodes").catch(() => [])
   ]);
   CFG.boms = Array.isArray(boms) ? boms : [];
   CFG.license = lic;
   CFG.apps = Array.isArray(apps) ? apps : (apps && apps.apps) || [];
   CFG.nodes = Array.isArray(nodes) ? nodes : [];
-  CFG.play = play;
   if (!$(".modal") || CFG.id !== id) return;
   setModalBody(cfgBody()); setModalFoot(cfgFoot());
   paintCfgDrift(); paintCfgSeat();
@@ -3102,16 +3124,6 @@ function mountBadge(st) {
   return badge(appT("m759"), "muted");
 }
 function shellLibrary() { return shellLibraryBrowser(); }
-async function fetchPlay(nodes) {
-  const online = (nodes || []).filter(n => n.status === "online");
-  const entries = await Promise.all(online.map(async n => {
-    try { return [n.node_id, await api("GET", `/nodes/${enc(n.node_id)}/play`)]; }
-    catch (e) { return [n.node_id, { node_id: n.node_id, connected: false, playing: false }]; }
-  }));
-  const map = {};
-  for (const [id, p] of entries) map[id] = p || {};
-  S.play = map;
-}
 async function refreshLibrary() { await refreshLibraryBrowser(); }
 async function refreshLibraryLive() {
   if (S.libTab === "playlists") await refreshLibraryBrowser();
@@ -3228,8 +3240,8 @@ async function libDelete(id) {
 }
 async function libRefresh() { if (typeof LB !== "undefined") { LB.artist = null; LB.artistAt = 0; } try { await refreshCurrent(); toast(appT("m807"), "ok"); } catch (e) { toast(e.message, "err"); } }
 
-/* ---- push playback: terminal picker (single track / album / playlist) ---- */
-const TP = { cur: null, trackIDs: [], track: null, label: "", playlistID: "", sel: "", busy: false };
+/* ---- push playback: available-device picker (single track / album / playlist) ---- */
+const TP = { cur: null, trackIDs: [], track: null, label: "", playlistID: "", sel: "", picked: false, devices: [], loaded: false, error: false, busy: false };
 async function openTrackPlay(trackID) {
   const t = await api("GET", `/tracks/${enc(trackID)}`);
   await openPushPicker({ trackIDs: [trackID], track: t, label: t.title || appT("m171") });
@@ -3241,24 +3253,34 @@ async function openPlPush(id) {
   if (!ids.length) { toast(appT("m808"), "warn"); return; }
   openPushPicker({ trackIDs: ids, label: d.name, playlistID: id });
 }
+async function refreshPushDevices(selection = TP.cur) {
+  const [devices, nodes] = await Promise.all([
+    api("GET", "/playback/devices").catch(() => null),
+    api("GET", "/nodes").catch(() => null)
+  ]);
+  if (!$(".modal") || TP.cur !== selection) return false;
+  TP.loaded = true; TP.error = !Array.isArray(devices);
+  if (Array.isArray(nodes)) S.nodes = nodes;
+  TP.devices = Array.isArray(devices) ? devices.filter(d => {
+    const key = playbackDeviceKey(d);
+    return key && d.present && d.online && d.node_id === playbackNodeID(key);
+  }) : [];
+  if (!TP.sel && availablePlaybackDevice(PB.deviceKey, TP.devices)) {
+    TP.sel = PB.deviceKey; TP.picked = true;
+  }
+  paintTrackPlay();
+  return true;
+}
 async function openPushPicker(opts) {
   TP.cur = opts; TP.trackIDs = opts.trackIDs; TP.track = opts.track || null;
-  TP.label = opts.label || ""; TP.playlistID = opts.playlistID || ""; TP.sel = ""; TP.busy = false;
+  TP.label = opts.label || ""; TP.playlistID = opts.playlistID || ""; TP.sel = ""; TP.picked = false; TP.devices = []; TP.loaded = false; TP.error = false; TP.busy = false;
   openModal(`${icon("send", 18)} ${appH("m809")}`, `<div id="tp-body">${empty("refresh", appT("m172"), "", true)}</div>`,
     `<button class="btn ghost" data-act="modal-close">${appH("m063")}</button><div class="spacer"></div><button class="btn" id="tp-next" data-act="track-next-go" disabled>${appH("m810")}</button><button class="btn" id="tp-enq" data-act="track-enqueue-go" disabled>${icon("plus", 15)} ${appH("m811")}</button><button class="btn primary" id="tp-go" data-act="track-play-go" disabled>${icon("play", 15)} ${appH("m809")}</button>`, { narrow: true });
-  try {
-    const nodes = await api("GET", "/nodes");
-    S.nodes = Array.isArray(nodes) ? nodes : [];
-    await fetchPlay(S.nodes);
-  } catch (e) { /* keep cached nodes */ }
-  if (!$(".modal") || TP.cur !== opts) return;
-  if (S.nodes.some(n => n.node_id === PB.id && n.status === "online" && n.authorized)) TP.sel = PB.id;
-  paintTrackPlay();
+  await refreshPushDevices(opts);
 }
 function paintTrackPlay() {
   const body = $("#tp-body"); if (!body) return;
   const t = TP.track || {};
-  const online = S.nodes.filter(n => n.status === "online");
   const head = TP.track
     ? `<div class="tp-track">
       <div class="tp-title truncate">${esc(t.title || appT("m171"))}</div>
@@ -3268,46 +3290,49 @@ function paintTrackPlay() {
       <div class="tp-title truncate">${esc(TP.label)}</div>
       <div class="tp-meta">${appH("m814", { count: appN(TP.trackIDs.length) })}${TP.playlistID ? appH("m812") : appH("m813")}</div>
     </div>`;
-  let h = head + `<div class="divider"></div><span class="lbl">${appH("m815", { count: appN(online.length) })}</span>`;
-  if (!online.length) {
-    h += empty("server", appT("m816"), `<button class="btn ghost sm" data-act="tp-goto-nodes">${icon("server", 14)} ${appH("m683")}</button>`, true);
+  let h = head + `<div class="divider"></div><span class="lbl">${appH("m815", { count: appN(TP.devices.length) })}</span>`;
+  if (!TP.loaded) h += empty("refresh", appT("m172"), "", true);
+  else if (TP.error) h += empty("alert", appT("m968"), `<button class="btn ghost sm" data-act="tp-refresh">${icon("refresh", 14)} ${appH("m072")}</button>`, true);
+  else if (!TP.devices.length) {
+    h += empty("speaker", appT("m816"), `<button class="btn ghost sm" data-act="tp-goto-nodes">${icon("server", 14)} ${appH("m683")}</button>`, true);
   } else {
-    h += `<div class="tp-nodes">` + online.map(n => {
-      const p = S.play[n.node_id] || {};
-      const sel = TP.sel === n.node_id;
-      return `<div class="tp-node ${sel ? "sel" : ""} ${n.authorized ? "" : "dis"}" data-act="tp-pick" data-id="${esc(n.node_id)}" role="button" tabindex="0">
+    h += `<div class="tp-nodes">` + TP.devices.map(d => {
+      const key = playbackDeviceKey(d), sel = TP.sel === key;
+      const node = S.nodes.find(n => n.node_id === d.node_id) || {};
+      return `<div class="tp-node ${sel ? "sel" : ""}" data-act="tp-pick" data-id="${esc(key)}" role="button" tabindex="0">
         <span class="tp-radio"></span>
         <span class="tp-ninfo">
-          <span class="tp-nalias truncate">${esc(n.alias || shortId(n.node_id))}</span>
-          <span class="tp-nmeta mono">${esc(shortId(n.node_id))}${n.ip ? " · " + esc(n.ip) : ""}</span>
+          <span class="tp-nalias truncate">${esc(playbackDeviceLabel(d, TP.devices))}</span>
+          <span class="tp-nmeta mono">${esc(d.hw)}${node.ip ? " · " + esc(node.ip) : ""}</span>
         </span>
-        <span class="tp-nbadges">${authBadge(n)}${p.connected ? badge(appT("m817"), "ok") : badge(appT("m818"), "muted")}${n.playing ? badge(appT("m819"), "info") : ""}</span>
+        <span class="tp-nbadges">${badge(appT("m817"), "ok")}</span>
       </div>`;
     }).join("") + `</div>`;
     h += `<div class="f-hint mt8">${appH("m820")}</div>`;
-    if (!online.some(n => n.authorized)) h += `<div class="banner warn mt12">${icon("alert", 15)}<span>${appH("m821")}</span></div>`;
-    else if (TP.sel && !(S.nodes.find(n => n.node_id === TP.sel) || {}).authorized) h += `<div class="banner warn mt12">${icon("alert", 15)}<span>${appH("m822")}</span></div>`;
   }
+  if (TP.picked && (!TP.loaded || TP.error || !availablePlaybackDevice(TP.sel, TP.devices))) h += `<div class="banner warn mt12">${icon("alert", 15)}<span>${appH("m970")}</span></div>`;
   body.innerHTML = h;
-  const go = $("#tp-go"); if (go) go.disabled = !TP.sel || TP.busy;
-  const enq = $("#tp-enq"); if (enq) enq.disabled = !TP.sel || TP.busy;
-  const next = $("#tp-next"); if (next) next.disabled = !TP.sel || TP.busy;
+  const selected = !!availablePlaybackDevice(TP.sel, TP.devices);
+  const go = $("#tp-go"); if (go) go.disabled = !selected || TP.busy;
+  const enq = $("#tp-enq"); if (enq) enq.disabled = !selected || TP.busy;
+  const next = $("#tp-next"); if (next) next.disabled = !selected || TP.busy;
 }
 async function trackPlayGo() {
-  const nodeID = TP.sel, selection = TP.cur; if (!nodeID || TP.busy || !TP.trackIDs.length) return;
-  if (TP.cur !== selection || TP.busy || TP.sel !== nodeID) return;
-  const n = S.nodes.find(x => x.node_id === nodeID);
-  if (n && !n.authorized) { toast(appT("m826"), "warn"); return; }
+  const deviceKey = TP.sel, selection = TP.cur; if (!deviceKey || TP.busy || !TP.trackIDs.length) return;
+  const target = requirePlaybackDevice(deviceKey, TP.devices);
+  if (!target) { await refreshPushDevices(selection); return; }
+  if (TP.cur !== selection || TP.busy || TP.sel !== deviceKey) return;
+  const nodeID = target.id, device = target.device;
   TP.busy = true;
   const go = $("#tp-go"); if (go) { go.disabled = true; go.innerHTML = `${icon("refresh", 15)} ${appH("m827")}`; }
-  const label = n ? (n.alias || shortId(nodeID)) : shortId(nodeID);
+  const label = playbackDeviceLabel(device, TP.devices);
   try {
     let r;
     if (TP.playlistID) {
-      r = await api("POST", `/playlists/${enc(TP.playlistID)}/push`, { node_id: nodeID });
+      r = await api("POST", `/playlists/${enc(TP.playlistID)}/push`, { node_id: nodeID, device_key: deviceKey });
     } else {
-      r = await api("POST", `/nodes/${enc(nodeID)}/play`, { track_id: TP.trackIDs[0] });
-      if (TP.trackIDs.length > 1) await api("PUT", `/nodes/${enc(nodeID)}/queue`, { track_ids: TP.trackIDs, position: 0 });
+      r = await api("POST", `/nodes/${enc(nodeID)}/play`, { track_id: TP.trackIDs[0], device_key: deviceKey });
+      if (TP.trackIDs.length > 1) await api("PUT", `/nodes/${enc(nodeID)}/queue`, { track_ids: TP.trackIDs, position: 0, device_key: deviceKey });
     }
     toast(appT("m828", { count: TP.trackIDs.length > 1 ? " " + TP.trackIDs.length + appT("m124") : "", value: label, id: r && r.session_id ? " · " + shortId(r.session_id) : "" }), "ok");
     closeModal();
@@ -3315,24 +3340,28 @@ async function trackPlayGo() {
   } catch (e) {
     TP.busy = false;
     if (go) { go.disabled = false; go.innerHTML = `${icon("play", 15)} ${appH("m809")}`; }
+    await refreshPushDevices(selection);
     toast(e.message, "err");
   }
 }
 async function trackEnqueueGo(next = false) {
-  const nodeID = TP.sel; if (!nodeID || TP.busy || !TP.trackIDs.length) return;
-  const n = S.nodes.find(x => x.node_id === nodeID);
-  if (n && !n.authorized) { toast(appT("m826"), "warn"); return; }
+  const deviceKey = TP.sel, selection = TP.cur; if (!deviceKey || TP.busy || !TP.trackIDs.length) return;
+  const target = requirePlaybackDevice(deviceKey, TP.devices);
+  if (!target) { await refreshPushDevices(selection); return; }
+  if (TP.cur !== selection || TP.busy || TP.sel !== deviceKey) return;
+  const nodeID = target.id, device = target.device;
   TP.busy = true;
   const enq = $("#tp-enq"); if (enq) { enq.disabled = true; enq.innerHTML = `${icon("refresh", 15)} ${appH("m829")}`; }
-  const label = n ? (n.alias || shortId(nodeID)) : shortId(nodeID);
+  const label = playbackDeviceLabel(device, TP.devices);
   try {
-    const r = await api("POST", `/nodes/${enc(nodeID)}/queue/batch`, { track_ids: TP.trackIDs, next });
+    const r = await api("POST", `/nodes/${enc(nodeID)}/queue/batch`, { track_ids: TP.trackIDs, next, device_key: deviceKey });
     toast(appT("m833", { value: next ? appT("m830") : appT("m831"), value2: label, count: appN(TP.trackIDs.length), id: r && r.session_id ? appT("m832") : "" }), "ok");
     closeModal();
     await refreshCurrent();
   } catch (e) {
     TP.busy = false;
     if (enq) { enq.disabled = false; enq.innerHTML = `${icon("plus", 15)} ${appH("m811")}`; }
+    await refreshPushDevices(selection);
     toast(e.message, "err");
   }
 }
@@ -3439,7 +3468,7 @@ function paintAlbumSelection() {
   const bar = $("#album-sel-bar"); if (!bar) return;
   const cnt = bar.querySelector(".b-cnt");
   if (cnt) cnt.textContent = typeof lbT === "function" ? lbT("libSelectedCount", { count: I18n.number(ALB.sel.size) }) : String(ALB.sel.size);
-  bar.querySelectorAll('[data-act="album-sel-push"], [data-act="album-sel-pl"], [data-act="album-sel-clear"]').forEach(b => { b.disabled = ALB.sel.size === 0; });
+  bar.querySelectorAll('[data-act="album-sel-push"], [data-act="album-sel-clear"]').forEach(b => { b.disabled = ALB.sel.size === 0; });
 }
 function albumPageHeader(el) {
   if (!el) return;
@@ -3477,7 +3506,6 @@ function albumPageItems(el) {
       </span>
       <span class="at-dur mono">${t.duration_ms ? fmtDur(t.duration_ms) : "—"}</span>
       <span class="at-acts">
-        <button class="btn xs ghost" data-act="track-pl" data-id="${esc(t.id)}" title="${appH("m836")}">${icon("layers", 12)}</button>
         <button class="btn xs ghost" data-act="track-play" data-id="${esc(t.id)}" ${t.decodable ? "" : "disabled"} title="${appH("m763")}">${icon("send", 12)}</button>
       </span>
     </div>`).join("");
@@ -3492,7 +3520,6 @@ function albumPageItems(el) {
         <div class="album-hero-badges">${badges}</div>
         <div class="album-hero-actions">
           <button class="btn primary" data-act="album-page-push" ${dec ? "" : "disabled"}>${icon("send", 15)} ${appH("m839")}</button>
-          <button class="btn ghost" data-act="album-page-pl" ${dec ? "" : "disabled"}>${icon("layers", 15)} ${appH("m836")}</button>
           <button class="btn ghost" data-act="album-open-folder" title="${esc(folder)}">${icon("folder", 15)} ${appH("m966")}</button>
           <div class="spacer"></div>
           ${typeof favoriteAlbumButton === "function" ? favoriteAlbumButton(ALB.artist, ALB.album) : ""}
@@ -3506,7 +3533,6 @@ function albumPageItems(el) {
           <div class="spacer"></div>
           <button class="btn ghost xs" data-act="album-sel-all">${esc(typeof lbT === "function" ? lbT("libSelectPage") : "Select all")}</button>
           <button class="btn xs" data-act="album-sel-push" ${selCount ? "" : "disabled"}>${appH("m839")}</button>
-          <button class="btn ghost xs" data-act="album-sel-pl" ${selCount ? "" : "disabled"}>${appH("m836")}</button>
           <button class="btn ghost xs" data-act="album-sel-clear" ${selCount ? "" : "disabled"}>${esc(typeof lbT === "function" ? lbT("tcClearSelection") : "Clear")}</button>
         </div>
         <div class="album-track-head"><label class="check at-check"><input type="checkbox" id="album-sel-all" data-change="album-sel-head" aria-label="${appH("m963")}"><span class="box"></span></label><span class="at-idx">#</span><span class="at-info">${appH("m963")}</span><span class="at-dur">${appH("m964")}</span><span class="at-acts"></span></div>
@@ -3712,59 +3738,54 @@ async function plDelete(id) {
   } catch (e) { toast(e.message, "err"); }
 }
 
-async function playStop(nodeID) {
-  try { await api("POST", `/nodes/${enc(nodeID)}/stop`); toast(appT("m863"), "ok"); }
+async function playStop(deviceKey) {
+  const key = String(deviceKey || ""), id = playbackNodeID(key), cut = key.indexOf("::");
+  if (cut <= 0 || cut + 2 >= key.length) { toast(appT("m970"), "warn"); return; }
+  try { await api("POST", `/nodes/${enc(id)}/stop?device_key=${enc(key)}`); toast(appT("m863"), "ok"); }
   catch (e) { toast(e.message, "err"); }
   await syncPlayUI();
 }
-async function playPause(nodeID) {
-  const p = S.play[nodeID] || S.nodePlay[nodeID] || {};
+async function playPause(deviceKey) {
+  const target = requirePlaybackDevice(deviceKey); if (!target) return;
+  const p = S.play[deviceKey] || {};
   try {
-    if (p.playing) { await api("POST", `/nodes/${enc(nodeID)}/pause`); toast(appT("m181"), "ok"); }
-    else if (p.state === "paused") { await api("POST", `/nodes/${enc(nodeID)}/resume`); toast(appT("m159"), "ok"); }
+    if (p.playing) { await api("POST", `/nodes/${enc(target.id)}/pause?device_key=${enc(deviceKey)}`); toast(appT("m181"), "ok"); }
+    else if (p.state === "paused") { await api("POST", `/nodes/${enc(target.id)}/resume?device_key=${enc(deviceKey)}`); toast(appT("m159"), "ok"); }
     else return;
   } catch (e) { toast(e.message, "err"); }
   await syncPlayUI();
 }
 async function syncPlayUI() {
   await refreshPlayerBar();
-  if (drawerCtx && drawerCtx.kind === "node") {
-    const id = drawerCtx.id;
-    if (id !== PB.id) {
-      try { S.nodePlay[id] = await api("GET", `/nodes/${enc(id)}/play`); } catch (e) { /* aux */ }
-    }
-    if (drawerCtx && drawerCtx.kind === "node" && drawerCtx.id === id) paintNodePlay(id);
-  }
+  if (PLY.deviceKey && $("#ply-body")) paintPlayerLive();
 }
-async function queueAfter(id) {
-  try { S.nodeQueue[id] = await api("GET", `/nodes/${enc(id)}/queue`); } catch (e) { /* keep last */ }
-  paintNodePlay(id);
-  await syncPlayUI();
+async function queueAfter(deviceKey) {
+  const target = requirePlaybackDevice(deviceKey); if (!target) return;
+  try { S.nodeQueue[deviceKey] = await api("GET", `/nodes/${enc(target.id)}/queue?device_key=${enc(deviceKey)}`); } catch (e) { /* keep last */ }
+  if (deviceKey === PB.deviceKey) paintPlayerBar();
+  if (deviceKey === PLY.deviceKey) paintPlayerLive();
+  await refreshPlayerBar();
 }
 
 /* ================= PLAYER CONSOLE ================= */
-const PLY = { id: "", dragging: false, volDrag: false, addOpen: false, addSel: new Set(), addSearch: "" };
-async function openPlayer(nodeID) {
+const PLY = { deviceKey: "", nodeId: "", dragging: false, volDrag: false, addOpen: false, addSel: new Set(), addSearch: "", eqOpen: false, eq: null, eqSaveTimer: 0 };
+async function openPlayer(deviceKey) {
   PLY.dragging = false; PLY.volDrag = false; PLY.addOpen = false; PLY.addSel = new Set(); PLY.addSearch = "";
   openModal(`${icon("sliders", 18)} ${appH("m864")}`, `<div id="ply-body">${empty("refresh", appT("m865"), "", true)}</div>`, "", {
-    onClose: () => { if (PLY.id === nodeID) PLY.id = ""; }
+    onClose: () => { if (PLY.deviceKey === deviceKey) { PLY.deviceKey = ""; PLY.nodeId = ""; } }
   });
-  PLY.id = nodeID;
+  PLY.deviceKey = deviceKey; PLY.nodeId = playbackNodeID(deviceKey); PLY.eq = null;
   const root = $("#ply-body");
-  await selectPlayerBar(nodeID);
+  await selectPlayerBar(deviceKey);
   if (!S.tracks.length) { const tr = await api("GET", "/tracks").catch(() => []); S.tracks = Array.isArray(tr) ? tr : []; }
   if (!S.playlists.length) { const pl = await api("GET", "/playlists").catch(() => []); S.playlists = Array.isArray(pl) ? pl : []; }
-  if ($("#ply-body") !== root || PLY.id !== nodeID) return;
+  if ($("#ply-body") !== root || PLY.deviceKey !== deviceKey) return;
   root.innerHTML = playerShell();
   paintPlayerLive();
-}
-function plyNodeList() {
-  const id = PLY.id;
-  const online = PB.nodes.filter(x => x.status === "online");
-  return online.some(x => x.node_id === id) ? online : online.concat(PB.nodes.filter(x => x.node_id === id));
+  if (PLY.eqOpen) loadPlayerEQ();
 }
 function playerShell() {
-  const id = PLY.id;
+  const deviceKey = PLY.deviceKey, id = PLY.nodeId;
   const plOpts = `<option value="">${appH("m866")}</option>` + S.playlists.map(pl => `<option value="${esc(pl.id)}">${appH("m867", { name: pl.name, count: pl.count })}</option>`).join("");
   return `<div class="ply">
     <div class="ply-top">
@@ -3780,10 +3801,10 @@ function playerShell() {
     </div>
     <div class="ply-capsule">
       <div class="ply-transport">
-        <button class="btn" id="ply-prev" data-act="queue-prev" data-id="${esc(id)}" title="${appH("m158")}">${icon("chevL", 18)}</button>
-        <button class="btn primary ply-big" id="ply-pp" data-act="play-pause" data-id="${esc(id)}" title="${appH("m868")}">${icon("play", 20)}</button>
-        <button class="btn" id="ply-next" data-act="queue-next" data-id="${esc(id)}" title="${appH("m160")}">${icon("chevR", 18)}</button>
-        <button class="btn danger" id="ply-stop" data-act="play-stop" data-id="${esc(id)}" title="${appH("m390")}">${icon("stop", 16)}</button>
+        <button class="btn" id="ply-prev" data-act="queue-prev" data-id="${esc(deviceKey)}" title="${appH("m158")}">${icon("chevL", 18)}</button>
+        <button class="btn primary ply-big" id="ply-pp" data-act="play-pause" data-id="${esc(deviceKey)}" title="${appH("m868")}">${icon("play", 20)}</button>
+        <button class="btn" id="ply-next" data-act="queue-next" data-id="${esc(deviceKey)}" title="${appH("m160")}">${icon("chevR", 18)}</button>
+        <button class="btn danger" id="ply-stop" data-act="play-stop" data-id="${esc(deviceKey)}" title="${appH("m390")}">${icon("stop", 16)}</button>
       </div>
       <div class="ply-seek">
         <span class="ply-time mono" id="ply-el">0:00</span>
@@ -3793,23 +3814,25 @@ function playerShell() {
     </div>
     <div class="ply-controls">
       <div class="ply-src">
-        ${terminalPopoverHtml("ply")}
         ${devicePopoverHtml("ply")}
       </div>
       <div class="ply-aux">
         ${volumePopoverHtml("ply")}
         ${pbModeShell("ply")}
-        ${sleepPopoverHtml("ply", id)}
+        ${sleepPopoverHtml("ply", deviceKey)}
+        <button class="btn ghost sm" id="ply-eq-toggle" data-act="ply-eq-toggle" title="${appH("eqTitle")}" aria-label="${appH("eqTitle")}">${icon("sliders", 15)} ${appH("eqTitle")}</button>
       </div>
     </div>
+    <div id="ply-eq" class="ply-eq hidden"></div>
+    <div class="f-hint" id="ply-state" role="status"></div>
     <div class="divider"></div>
     <div class="sec-head">
       <div class="sec-title">${icon("layers", 16)} ${appH("m869")} <span class="txt-faint" id="ply-qcnt"></span></div>
       <div class="spacer"></div>
-      <button class="btn xs ghost" data-act="ply-add-toggle">${icon("plus", 12)} ${appH("m870")}</button>
+      <button class="btn xs ghost" id="ply-add-toggle" data-act="ply-add-toggle">${icon("plus", 12)} ${appH("m870")}</button>
       <select id="ply-load" class="inp ply-load" data-change="ply-load">${plOpts}</select>
-      <button class="btn xs ghost" data-act="ply-save">${icon("layers", 12)} ${appH("m871")}</button>
-      <button class="btn xs ghost" data-act="queue-clear" data-id="${esc(id)}">${icon("trash", 12)} ${appH("m872")}</button>
+      <button class="btn xs ghost" id="ply-save" data-act="ply-save">${icon("layers", 12)} ${appH("m871")}</button>
+      <button class="btn xs ghost" data-act="queue-clear" data-id="${esc(deviceKey)}">${icon("trash", 12)} ${appH("m872")}</button>
     </div>
     <div id="ply-add" class="ply-add hidden">
       <input id="ply-add-search" class="inp" data-voice placeholder="${appH("m873")}" value="" autocomplete="off">
@@ -3821,14 +3844,85 @@ function playerShell() {
   </div>`;
 }
 
+const EQ_FREQ = ["25", "40", "63", "100", "160", "250", "400", "630", "1k", "1.6k", "2.5k", "4k", "6.3k", "10k", "16k", "20k"];
+function eqPresetName(p) { return I18n.locale === "en" ? p.name_en : p.name_zh; }
+function eqPanelHtml() {
+  const eq = PLY.eq; if (!eq) return empty("refresh", appT("m865"), "", true);
+  const cfg = eq.cfg;
+  const peq = cfg.mode === "peq";
+  const presetOpts = eq.presets.map(p => `<option value="${esc(p.id)}" ${cfg.preset === p.id ? "selected" : ""}>${esc(eqPresetName(p))}</option>`).join("") +
+    `<option value="custom" ${cfg.preset === "custom" ? "selected" : ""}>${appH("eqCustom")}</option>`;
+  const bands = EQ_FREQ.map((freq, i) => { const g = Number(cfg.bands?.[i]) || 0; return `<label class="eq-band"><input type="range" min="-12" max="12" step="0.5" value="${g}" data-change="ply-eq-band" data-band="${i}" aria-label="${esc(freq)} Hz"><span class="eq-band-val mono" id="ply-eq-band-${i}">${appFixed(g, 1)}</span><span class="eq-band-freq mono">${esc(freq)}</span></label>`; }).join("");
+  const peqRows = (cfg.peq || []).map((b, i) => `<div class="peq-row">
+    <select class="inp xs" data-change="ply-peq-type" data-index="${i}" aria-label="${appH("eqPeqType")}">${["peaking", "lowshelf", "highshelf"].map(t => `<option value="${t}" ${b.type === t ? "selected" : ""}>${appH(t === "peaking" ? "eqPeaking" : t === "lowshelf" ? "eqLowShelf" : "eqHighShelf")}</option>`).join("")}</select>
+    <label class="peq-f"><span class="mono">${appH("eqFreq")}</span><input class="inp xs" type="number" min="20" max="20000" step="1" value="${Math.round(b.freq)}" data-change="ply-peq-freq" data-index="${i}"></label>
+    <label class="peq-f"><span class="mono">${appH("eqGain")}</span><input class="inp xs" type="number" min="-24" max="24" step="0.5" value="${b.gain}" data-change="ply-peq-gain" data-index="${i}"></label>
+    <label class="peq-f"><span class="mono">Q</span><input class="inp xs" type="number" min="0.1" max="10" step="0.1" value="${b.q}" data-change="ply-peq-q" data-index="${i}"></label>
+    <button class="btn xs ghost" data-act="ply-peq-del" data-index="${i}" title="${appH("eqPeqDel")}">${icon("trash", 12)}</button>
+  </div>`).join("");
+  return `<div class="sec-head"><div class="sec-title">${icon("sliders", 16)} ${appH("eqTitle")}</div><div class="spacer"></div>
+    <label class="switch sm" title="${appH("eqEnable")}"><input type="checkbox" data-change="ply-eq-enabled" ${cfg.enabled ? "checked" : ""} ${eq.bypass ? "disabled" : ""} aria-label="${appH("eqEnable")}"><span class="track"></span></label>
+    <button class="btn xs ghost" data-act="ply-eq-reset">${appH("eqReset")}</button></div>
+    ${eq.bypass ? `<div class="banner warn mt8">${appH("eqBypass")}</div>` : ""}
+    <div class="eq-row">
+      <label class="field"><span>${appH("eqMode")}</span><select class="inp" data-change="ply-eq-mode" aria-label="${appH("eqMode")}"><option value="graphic" ${!peq ? "selected" : ""}>${appH("eqGraphic")}</option><option value="peq" ${peq ? "selected" : ""}>${appH("eqPeq")}</option></select></label>
+      ${peq ? "" : `<label class="field"><span>${appH("eqPreset")}</span><select class="inp" data-change="ply-eq-preset" aria-label="${appH("eqPreset")}">${presetOpts}</select></label>`}
+      <label class="field eq-preamp"><span>${appH("eqPreamp")} <span id="ply-eq-preamp-val" class="mono">${appFixed(cfg.preamp, 1)}</span> dB</span><input type="range" min="-12" max="6" step="0.5" value="${cfg.preamp}" data-change="ply-eq-preamp" aria-label="${appH("eqPreamp")}"></label>
+    </div>
+    ${peq ? `<div class="peq-list">${peqRows || `<div class="f-hint">${appH("eqPeqEmpty")}</div>`}</div><button class="btn xs ghost mt8" data-act="ply-peq-add">${icon("plus", 12)} ${appH("eqPeqAdd")}</button>` : `<div class="eq-bands">${bands}</div>`}`;
+}
+function paintPlayerEQ() {
+  const el = $("#ply-eq"); if (!el) return;
+  if (!PLY.eqOpen) { el.classList.add("hidden"); el.innerHTML = ""; return; }
+  el.classList.remove("hidden");
+  el.innerHTML = eqPanelHtml();
+}
+async function loadPlayerEQ() {
+  const deviceKey = PLY.deviceKey; if (!deviceKey) return;
+  const hw = deviceKey.slice(PLY.nodeId.length + 2);
+  try {
+    const [presets, cfg] = await Promise.all([
+      api("GET", "/dsp/presets"),
+      api("GET", `/nodes/${enc(PLY.nodeId)}/devices/${enc(hw)}/dsp`)
+    ]);
+    if (PLY.deviceKey !== deviceKey) return;
+    PLY.eq = { presets: Array.isArray(presets) ? presets : [], cfg: { enabled: !!cfg.enabled, preset: cfg.preset || "flat", preamp: Number(cfg.preamp) || 0, bands: Array.isArray(cfg.bands) ? cfg.bands.slice(0, EQ_FREQ.length) : new Array(EQ_FREQ.length).fill(0), mode: cfg.mode === "peq" ? "peq" : "graphic", peq: Array.isArray(cfg.peq) ? cfg.peq.slice(0, 8) : [] }, bypass: !!cfg.bypass };
+    while (PLY.eq.cfg.bands.length < EQ_FREQ.length) PLY.eq.cfg.bands.push(0);
+    paintPlayerEQ();
+  } catch (e) {
+    if (PLY.deviceKey === deviceKey) { PLY.eq = null; const el = $("#ply-eq"); if (el && PLY.eqOpen) el.innerHTML = `<div class="banner err">${esc(appT("eqLoadFailed"))}：${esc(e.message)}</div>`; }
+  }
+}
+function eqScheduleSave() {
+  clearTimeout(PLY.eqSaveTimer);
+  PLY.eqSaveTimer = setTimeout(() => { savePlayerEQ(); }, 350);
+}
+async function savePlayerEQ() {
+  const eq = PLY.eq, deviceKey = PLY.deviceKey; if (!eq || !deviceKey) return;
+  const hw = deviceKey.slice(PLY.nodeId.length + 2);
+  try {
+    await api("PUT", `/nodes/${enc(PLY.nodeId)}/devices/${enc(hw)}/dsp`, eq.cfg);
+    if (PB.device && playbackDeviceKey(PB.device) === deviceKey) PB.device.dsp_enabled = eq.cfg.enabled;
+  } catch (e) { toast(e.message, "err"); }
+}
+function eqSyncControls() {
+  const eq = PLY.eq; if (!eq) return;
+  eq.cfg.bands.forEach((g, i) => {
+    const input = $(`#ply-eq [data-band="${i}"]`); if (input && document.activeElement !== input) input.value = String(g);
+    const lab = $(`#ply-eq-band-${i}`); if (lab) lab.textContent = appFixed(g, 1);
+  });
+  const pre = $('#ply-eq [data-change="ply-eq-preamp"]'); if (pre && document.activeElement !== pre) pre.value = String(eq.cfg.preamp);
+  const pv = $("#ply-eq-preamp-val"); if (pv) pv.textContent = appFixed(eq.cfg.preamp, 1);
+  const sel = $('#ply-eq [data-change="ply-eq-preset"]'); if (sel) sel.value = eq.cfg.preset;
+}
 function paintPlayerLive() {
-  const id = PLY.id; if (!id || !$("#ply-body")) return;
-  const p = S.play[id] || {};
+  const deviceKey = PLY.deviceKey; if (!deviceKey || !$("#ply-body")) return;
+  const p = S.play[deviceKey] || {};
   const t = p.track_id ? S.tracks.find(x => x.id === p.track_id) || (PB.trackID === p.track_id ? PB.track : null) : null;
-  const q = S.nodeQueue[id] || {};
+  const q = S.nodeQueue[deviceKey] || {};
   const tracks = q.tracks || [];
   const pos = q.position || 0;
-  const connected = id === PB.id && playerBarConnected();
+  const connected = deviceKey === PB.deviceKey && playerBarConnected();
   const playing = connected && !!p.playing, paused = connected && p.state === "paused", active = playing || paused;
   const hasTrack = !!(p.track_id || p.title);
   const title = p.title || (t && t.title) || "";
@@ -3851,7 +3945,7 @@ function paintPlayerLive() {
     (playing ? " " + badge(appT("m819"), "ok") : paused ? " " + badge(appT("m181"), "warn") : "") +
     (p.underruns ? " " + badge("underrun ×" + p.underruns, "warn") : ""));
   const sleepAt = Number(p.sleep_stop_at) || 0;
-  paintSleepPopover("ply", id, sleepAt);
+  paintSleepPopover("ply", connected ? deviceKey : "", sleepAt);
   const seek = $("#ply-seek");
   if (seek) {
     seek.disabled = !(connected && active && rate > 0 && total > 0);
@@ -3875,15 +3969,15 @@ function paintPlayerLive() {
   const prev = $("#ply-prev"), next = $("#ply-next"), stop = $("#ply-stop");
   if (prev) prev.disabled = !connected || !tracks.length;
   if (next) next.disabled = !connected || !tracks.length || pos >= tracks.length - 1;
-  if (stop) stop.disabled = !active;
+  if (stop) stop.disabled = !hasTrack && !p.session_id;
   const mode = q.mode || "sequence";
   paintModePopover("ply", mode, connected);
-  const nodes = plyNodeList();
-  paintTerminalMenu("ply", nodes, id, !nodes.length, "");
-  paintDeviceMenu("ply", p, connected);
+  paintDeviceMenu("ply", deviceKey, !PB.loaded || PB.devicesError || !PB.devices.length);
+  set("#ply-state", esc(playbackTargetStatus(deviceKey)));
+  for (const selector of ["#ply-add-toggle", "#ply-load", "#ply-save"]) { const el = $(selector); if (el) el.disabled = !connected; }
   if (typeof paintPlayerFavorite === "function") paintPlayerFavorite(hasTrack ? (p.track_id || "") : "");
   const cnt = $("#ply-qcnt"); if (cnt) cnt.textContent = `(${appN(tracks.length)})`;
-  set("#ply-qlist", playerQueueList(id, q));
+  set("#ply-qlist", playerQueueList(deviceKey, q, connected));
 }
 /* ---- sleep timer ---- */
 const SLEEP_LABELS = { 15: "m943", 30: "m944", 60: "m945", 120: "m946" };
@@ -3942,19 +4036,19 @@ document.addEventListener("click", e => {
     if (!d.contains(e.target)) d.open = false;
   });
 });
-function sleepPopoverHtml(prefix, nodeID) {
-  const idAttr = nodeID ? ` data-id="${esc(nodeID)}"` : "";
+function sleepPopoverHtml(prefix, deviceKey) {
+  const keyAttr = deviceKey ? ` data-id="${esc(deviceKey)}"` : "";
   return `<details class="pop pb-sleep" id="${prefix}-sleep-wrap" data-disabled="1"><summary id="${prefix}-sleep" title="${appH("m942")}">${icon("clock", 14)}<span class="pb-sleep-remain mono" id="${prefix}-sleep-label" hidden></span></summary>
     <div class="pop-menu pb-sleep-menu" role="menu">
       <div class="pb-sleep-head" id="${prefix}-sleep-remain">${appH("m953")}</div>
-      ${[15, 30, 60, 120].map(m => `<button class="pop-item" role="menuitem" data-act="sleep-set" data-min="${m}"${idAttr}>${appH(SLEEP_LABELS[m])}</button>`).join("")}
-      <button class="pop-item danger" role="menuitem" id="${prefix}-sleep-cancel" data-act="sleep-cancel"${idAttr} hidden>${icon("trash", 13)} ${appH("m947")}</button>
+      ${[15, 30, 60, 120].map(m => `<button class="pop-item" role="menuitem" data-act="sleep-set" data-min="${m}"${keyAttr}>${appH(SLEEP_LABELS[m])}</button>`).join("")}
+      <button class="pop-item danger" role="menuitem" id="${prefix}-sleep-cancel" data-act="sleep-cancel"${keyAttr} hidden>${icon("trash", 13)} ${appH("m947")}</button>
     </div>
   </details>`;
 }
-function paintSleepPopover(prefix, nodeID, stopAt) {
+function paintSleepPopover(prefix, deviceKey, stopAt) {
   const wrap = document.getElementById(`${prefix}-sleep-wrap`); if (!wrap) return;
-  wrap.dataset.disabled = nodeID ? "0" : "1";
+  wrap.dataset.disabled = deviceKey ? "0" : "1";
   const title = stopAt ? appT("m948", { value: sleepRemain(stopAt) }) : appT("m942");
   const sum = wrap.querySelector("summary");
   if (sum) { if (sum.title !== title) { sum.title = title; sum.setAttribute("aria-label", title); } }
@@ -3963,32 +4057,34 @@ function paintSleepPopover(prefix, nodeID, stopAt) {
   if (lbl) { const txt = stopAt ? sleepRemain(stopAt) : ""; if (lbl.textContent !== txt) lbl.textContent = txt; lbl.hidden = !stopAt; }
   const rem = document.getElementById(`${prefix}-sleep-remain`);
   if (rem) rem.textContent = stopAt ? appT("m948", { value: sleepRemain(stopAt) }) : appT("m953");
+  wrap.querySelectorAll('[data-act="sleep-set"], [data-act="sleep-cancel"]').forEach(button => {
+    if (deviceKey) button.dataset.id = deviceKey; else delete button.dataset.id;
+  });
   const cancel = document.getElementById(`${prefix}-sleep-cancel`);
-  if (cancel) { cancel.hidden = !stopAt; if (nodeID) cancel.dataset.id = nodeID; }
-  if (nodeID) wrap.querySelectorAll('[data-act="sleep-set"]').forEach(b => { b.dataset.id = nodeID; });
+  if (cancel) cancel.hidden = !stopAt;
 }
 function closeSleepPopovers() { document.querySelectorAll(".pop[open]").forEach(d => { d.open = false; }); }
-async function sleepSet(rawID, minutes) {
-  const id = rawID || PB.id;
-  if (!id || !minutes) { toast(appT("m951"), "warn"); return; }
+async function sleepSet(rawKey, minutes) {
+  const deviceKey = rawKey || PB.deviceKey;
+  const target = requirePlaybackDevice(deviceKey); if (!target || !minutes) return;
   try {
-    const r = await api("PUT", `/nodes/${enc(id)}/sleep`, { minutes });
-    if (S.play[id]) S.play[id].sleep_stop_at = r.stop_at;
+    const r = await api("PUT", `/nodes/${enc(target.id)}/sleep`, { minutes, device_key: deviceKey });
+    if (S.play[deviceKey]) S.play[deviceKey].sleep_stop_at = r.stop_at;
     toast(appT("m949", { value: appT(SLEEP_LABELS[minutes] || "m943") }), "ok");
     closeSleepPopovers(); refreshPlayerBar();
   } catch (e) { toast(e.message, "err"); }
 }
-async function sleepCancel(rawID) {
-  const id = rawID || PB.id;
-  if (!id) return;
+async function sleepCancel(rawKey) {
+  const deviceKey = rawKey || PB.deviceKey;
+  const target = requirePlaybackDevice(deviceKey); if (!target) return;
   try {
-    await api("DELETE", `/nodes/${enc(id)}/sleep`);
-    if (S.play[id]) S.play[id].sleep_stop_at = 0;
+    await api("DELETE", `/nodes/${enc(target.id)}/sleep?device_key=${enc(deviceKey)}`);
+    if (S.play[deviceKey]) S.play[deviceKey].sleep_stop_at = 0;
     toast(appT("m950"), "ok");
     closeSleepPopovers(); refreshPlayerBar();
   } catch (e) { toast(e.message, "err"); }
 }
-function playerQueueList(id, q) {
+function playerQueueList(deviceKey, q, connected = false) {
   const tracks = (q && q.tracks) || [];
   if (!tracks.length) return empty("music", appT("m878"), appH("m879"), true);
   const pos = q.position || 0;
@@ -4000,25 +4096,26 @@ function playerQueueList(id, q) {
         <span class="q-sub txt-faint">${esc([t.artist, t.album].filter(Boolean).join(" · ") || "—")}${t.duration_ms ? " · " + fmtDur(t.duration_ms) : ""}</span>
       </span>
       <span class="q-acts">
-        <button class="btn xs ghost" data-act="ply-q-up" data-idx="${i}" ${i === 0 ? "disabled" : ""} title="${appH("m852")}">${icon("arrowUp", 12)}</button>
-        <button class="btn xs ghost" data-act="ply-q-down" data-idx="${i}" ${i === tracks.length - 1 ? "disabled" : ""} title="${appH("m853")}">${icon("arrowDown", 12)}</button>
-        ${i !== pos ? `<button class="btn xs ghost" data-act="queue-jump" data-id="${esc(id)}" data-idx="${i}" title="${appH("m880")}">${icon("play", 12)}</button>` : ""}
-        <button class="btn xs ghost" data-act="queue-remove" data-id="${esc(id)}" data-idx="${i}" title="${appH("m881")}">${icon("x", 12)}</button>
+        <button class="btn xs ghost" data-act="ply-q-up" data-idx="${i}" ${i === 0 || !connected ? "disabled" : ""} title="${appH("m852")}">${icon("arrowUp", 12)}</button>
+        <button class="btn xs ghost" data-act="ply-q-down" data-idx="${i}" ${i === tracks.length - 1 || !connected ? "disabled" : ""} title="${appH("m853")}">${icon("arrowDown", 12)}</button>
+        ${i !== pos ? `<button class="btn xs ghost" data-act="queue-jump" data-id="${esc(deviceKey)}" data-idx="${i}" ${connected ? "" : "disabled"} title="${appH("m880")}">${icon("play", 12)}</button>` : ""}
+        <button class="btn xs ghost" data-act="queue-remove" data-id="${esc(deviceKey)}" data-idx="${i}" ${connected ? "" : "disabled"} title="${appH("m881")}">${icon("x", 12)}</button>
       </span>
     </div>`).join("") + `</div>`;
 }
 
 async function plyQueueMove(idx, dir) {
-  const id = PLY.id; const q = S.nodeQueue[id]; if (!id || !q) return;
+  const deviceKey = PLY.deviceKey, q = S.nodeQueue[deviceKey];
+  const target = requirePlaybackDevice(deviceKey); if (!target || !q) return;
   const ids = (q.tracks || []).map(t => t.track_id);
   const j = idx + dir;
   if (idx < 0 || j < 0 || idx >= ids.length || j >= ids.length) return;
   [ids[idx], ids[j]] = [ids[j], ids[idx]];
   let pos = q.position || 0;
   if (pos === idx) pos = j; else if (pos === j) pos = idx;
-  try { S.nodeQueue[id] = await api("PUT", `/nodes/${enc(id)}/queue`, { track_ids: ids, position: pos }); }
+  try { S.nodeQueue[deviceKey] = await api("PUT", `/nodes/${enc(target.id)}/queue`, { track_ids: ids, position: pos, device_key: deviceKey }); }
   catch (e) { toast(e.message, "err"); }
-  paintPlayerLive();
+  if (PLY.deviceKey === deviceKey) paintPlayerLive();
 }
 function plyAddToggle() {
   PLY.addOpen = !PLY.addOpen;
@@ -4048,13 +4145,14 @@ function paintPlayerAddList() {
   plyAddCnt();
 }
 async function plyAddGo() {
-  const id = PLY.id; if (!id || !PLY.addSel.size) return;
+  const deviceKey = PLY.deviceKey;
+  const target = requirePlaybackDevice(deviceKey); if (!target || !PLY.addSel.size) return;
   const ids = Array.from(PLY.addSel);
   const go = $("#ply-add-go"); if (go) { go.disabled = true; go.innerHTML = `${icon("refresh", 14)} ${appH("m829")}`; }
   try {
     let started = false;
     for (const tid of ids) {
-      const r = await api("POST", `/nodes/${enc(id)}/queue/enqueue`, { track_id: tid });
+      const r = await api("POST", `/nodes/${enc(target.id)}/queue/enqueue`, { track_id: tid, device_key: deviceKey });
       if (r && r.session_id) started = true;
     }
     toast(appT("m885", { count: appN(ids.length), value: started ? appT("m832") : "" }), "ok");
@@ -4065,25 +4163,27 @@ async function plyAddGo() {
   if (go) { go.innerHTML = `${icon("plus", 14)} ${appH("m811")}`; go.disabled = !PLY.addSel.size; }
 }
 async function plyLoadPlaylist(plID) {
-  const id = PLY.id; if (!id || !plID) return;
+  const deviceKey = PLY.deviceKey;
+  const target = requirePlaybackDevice(deviceKey); if (!target || !plID) return;
   let d;
   try { d = await api("GET", `/playlists/${enc(plID)}`); } catch (e) { toast(e.message, "err"); return; }
+  if (PLY.deviceKey !== deviceKey) return;
   const ids = (d.items || []).filter(t => !t.missing).map(t => t.track_id);
   const sel = $("#ply-load"); if (sel) sel.value = "";
   if (!ids.length) { toast(appT("m886"), "warn"); return; }
-  try { await api("PUT", `/nodes/${enc(id)}/queue`, { track_ids: ids, position: 0 }); }
+  try { await api("PUT", `/nodes/${enc(target.id)}/queue`, { track_ids: ids, position: 0, device_key: deviceKey }); }
   catch (e) { toast(e.message, "err"); await refreshPlayerBar(); return; }
   try {
-    await api("POST", `/nodes/${enc(id)}/queue/jump`, { index: 0 });
+    await api("POST", `/nodes/${enc(target.id)}/queue/jump?device_key=${enc(deviceKey)}`, { index: 0 });
     toast(appT("m887", { name: d.name, count: appN(ids.length) }), "ok");
   } catch (e) { toast(appT("m888", { name: d.name }), "warn"); }
   await refreshPlayerBar();
 }
 function plySaveQueue() {
-  const q = S.nodeQueue[PLY.id];
+  const deviceKey = PLY.deviceKey, q = S.nodeQueue[deviceKey];
   const ids = ((q && q.tracks) || []).map(t => t.track_id);
   if (!ids.length) { toast(appT("m889"), "warn"); return; }
-  openPlNew(ids, PLY.id);
+  openPlNew(ids, deviceKey);
 }
 
 /* ================= ACTION MAP ================= */
@@ -4224,7 +4324,6 @@ Object.assign(ACT, {
   "album-page-back": () => { albumPageReset(); if (S.view === "library") { if (typeof renderSidebarNav === "function") renderSidebarNav(); return refreshLibraryBrowser(); } setView("library"); },
   "album-page-retry": () => refreshLibraryBrowser(),
   "album-page-push": () => { const ids = ALB.tracks.filter(t => t.decodable).map(t => t.id); if (ids.length) openPushPicker({ trackIDs: ids, label: [ALB.album, ALB.artist].filter(Boolean).join(" · ") }); },
-  "album-page-pl": () => { const ids = ALB.tracks.filter(t => t.decodable).map(t => t.id); if (ids.length) openPlPicker(ids); },
   "album-artist-open": ds => { if (ds.name && typeof openArtistAlbums === "function") return openArtistAlbums(ds.name); },
   "album-cover-zoom": ds => { if (ds.hash) openModal(`${icon("disc", 18)} ${appH("m958")}`, `<img class="album-zoom-img" src="/api/v1/covers/${esc(ds.hash)}/640" alt="">`, `<button class="btn ghost" data-act="modal-close">${appH("m063")}</button>`); },
   "album-sel-all": () => { ALB.tracks.filter(t => t.decodable).forEach(t => ALB.sel.add(t.id)); paintAlbumSelection(); },
@@ -4232,10 +4331,6 @@ Object.assign(ACT, {
   "album-sel-push": () => {
     const ids = ALB.tracks.filter(t => t.decodable && ALB.sel.has(t.id)).map(t => t.id);
     if (ids.length) openPushPicker({ trackIDs: ids, label: [ALB.album, ALB.artist].filter(Boolean).join(" · ") });
-  },
-  "album-sel-pl": () => {
-    const ids = ALB.tracks.filter(t => t.decodable && ALB.sel.has(t.id)).map(t => t.id);
-    if (ids.length) openPlPicker(ids);
   },
   "album-open-folder": () => {
     const t = ALB.tracks.find(x => x.mount_id && x.rel_path) || ALB.tracks[0];
@@ -4255,7 +4350,6 @@ Object.assign(ACT, {
   "artist-albums": ds => { if (typeof openArtistAlbums === "function") openArtistAlbums(ds.name || ""); },
   "album-push": ds => albumPush(ds.ak),
   "album-pl": ds => { const g = albumByKey(ds.ak); if (g) openPlPicker(g.tracks.map(t => t.id)); },
-  "track-pl": ds => openPlPicker([ds.id]),
   "pl-new": () => openPlNew([]),
   "pl-new-submit": () => plNewSubmit(),
   "pl-pick": ds => plPick(ds.id),
@@ -4273,18 +4367,13 @@ Object.assign(ACT, {
   "pl-rename-submit": ds => plRenameSubmit(ds.id),
   "pl-delete": ds => plDelete(ds.id),
   "track-play": ds => openTrackPlay(ds.id),
-  "tp-pick": ds => { TP.sel = ds.id; paintTrackPlay(); },
+  "tp-pick": ds => { if (availablePlaybackDevice(ds.id, TP.devices)) { TP.sel = ds.id; TP.picked = true; paintTrackPlay(); } },
+  "tp-refresh": () => refreshPushDevices(),
   "tp-goto-nodes": () => { closeModal(); setView("nodes"); },
   "track-play-go": () => trackPlayGo(),
   "play-stop": ds => playStop(ds.id),
-  "pb-node-pick": ds => { closeSleepPopovers(); return selectPlayerBar(ds.id || ""); },
-  "ply-node-pick": ds => { closeSleepPopovers(); if (ds.id && ds.id !== PLY.id) return openPlayer(ds.id); },
-  "ply-device-pick": async ds => {
-    const id = PLY.id; if (!id || !ds.dev) return;
-    closeSleepPopovers();
-    try { await api("POST", `/nodes/${enc(id)}/device`, { device: ds.dev }); toast(appT("m187"), "ok"); await refreshPlayerBar(); }
-    catch (e) { toast(e.message, "err"); }
-  },
+  "pb-device-pick": ds => { closeSleepPopovers(); return selectPlayerBar(ds.deviceKey || ""); },
+  "ply-device-pick": ds => { closeSleepPopovers(); return selectPlayerBar(ds.deviceKey || ""); },
   "sleep-set": ds => sleepSet(ds.id, Number(ds.min) || 0),
   "sleep-cancel": ds => sleepCancel(ds.id),
   "queue-prev": ds => queueMove(ds.id, "prev"),
@@ -4301,17 +4390,17 @@ Object.assign(ACT, {
   "ply-add-toggle": () => plyAddToggle(),
   "ply-add-go": () => plyAddGo(),
   "pb-mode-set": async ds => {
-    const inConsole = !!$("#ply-body");
-    const id = (inConsole && PLY.id) || PB.id;
-    if (!id || !ds.mode) return;
+    const inConsole = !!$("#ply-body") && !!PLY.deviceKey;
+    const deviceKey = inConsole ? PLY.deviceKey : PB.deviceKey;
+    const target = requirePlaybackDevice(deviceKey); if (!target || !ds.mode) return;
     const def = PB_MODES.find(x => x[0] === ds.mode) || PB_MODES[0];
     try {
-      await api("POST", `/nodes/${enc(id)}/queue/mode`, { mode: ds.mode });
-      if (S.nodeQueue[id]) S.nodeQueue[id].mode = ds.mode;
+      await api("POST", `/nodes/${enc(target.id)}/queue/mode`, { mode: ds.mode, device_key: deviceKey });
+      if (S.nodeQueue[deviceKey]) S.nodeQueue[deviceKey].mode = ds.mode;
       toast(appT("queueModeChanged", { mode: appT(def[2]) }), "ok");
-      const wrap = $("#pb-mode"); if (wrap) wrap.open = false;
+      closeSleepPopovers();
       await refreshPlayerBar();
-      if (inConsole && PLY.id === id) paintPlayerLive();
+      if (inConsole && PLY.deviceKey === deviceKey) paintPlayerLive();
     } catch (e) { toast(e.message, "err"); paintPlayerBar(); }
   },
   "ply-save": () => plySaveQueue()
@@ -4335,15 +4424,17 @@ const CHG = {
   },
   "ply-seek": async el => {
     PLY.dragging = false;
-    const id = PLY.id; if (!id) return;
-    try { await api("POST", `/nodes/${enc(id)}/seek`, { position_ms: Number(el.value) }); }
+    const deviceKey = PLY.deviceKey;
+    const target = requirePlaybackDevice(deviceKey); if (!target) return;
+    try { await api("POST", `/nodes/${enc(target.id)}/seek`, { position_ms: Number(el.value), device_key: deviceKey }); }
     catch (e) { toast(e.message, "err"); }
     refreshPlayerBar();
   },
   "ply-volume": async el => {
     PLY.volDrag = false;
-    const id = PLY.id; if (!id) return;
-    try { await api("POST", `/nodes/${enc(id)}/volume`, { volume: Number(el.value) }); }
+    const deviceKey = PLY.deviceKey;
+    const target = requirePlaybackDevice(deviceKey); if (!target) return;
+    try { await api("POST", `/nodes/${enc(target.id)}/volume`, { volume: Number(el.value), device_key: deviceKey }); }
     catch (e) { toast(e.message, "err"); }
     refreshPlayerBar();
   },
@@ -4394,6 +4485,7 @@ function appLanguageChanged() {
   const health = $("#health-line");
   if (health) health.textContent = S.health ? appT("m075", { value: sigModeZh(S.health.signature_mode), value2: appT(S.health.play_gate ? "m073" : "m074") }) : appT("connectingServer");
   setConn(appConnOK); paintBell(); paintPlayerBar();
+  if (PLY.deviceKey && $("#ply-body")) paintPlayerLive();
   if (S.view === "overview") {
     text("#ov-greeting", "m065"); text(".ov-scope", "m079");
     attr(".ov-filters .chips", "aria-label", "m080");
@@ -4431,6 +4523,68 @@ CHG["album-sel-head"] = el => {
   if (el.checked) ALB.tracks.filter(t => t.decodable).forEach(t => ALB.sel.add(t.id));
   paintAlbumSelection();
 };
+Object.assign(ACT, {
+  "ply-eq-toggle": () => { PLY.eqOpen = !PLY.eqOpen; if (PLY.eqOpen && !PLY.eq) loadPlayerEQ(); else paintPlayerEQ(); },
+  "ply-eq-reset": () => {
+    if (!PLY.eq) return;
+    PLY.eq.cfg = { enabled: PLY.eq.cfg.enabled, preset: "flat", preamp: 0, bands: new Array(EQ_FREQ.length).fill(0), mode: PLY.eq.cfg.mode, peq: PLY.eq.cfg.mode === "peq" ? [] : PLY.eq.cfg.peq };
+    paintPlayerEQ(); eqScheduleSave();
+  },
+  "ply-peq-add": () => {
+    if (!PLY.eq || PLY.eq.cfg.peq.length >= 8) return;
+    PLY.eq.cfg.peq.push({ type: "peaking", freq: 1000, gain: 0, q: 1 });
+    PLY.eq.cfg.preset = "custom";
+    paintPlayerEQ(); eqScheduleSave();
+  },
+  "ply-peq-del": ds => {
+    if (!PLY.eq) return;
+    PLY.eq.cfg.peq.splice(Number(ds.index), 1);
+    PLY.eq.cfg.preset = "custom";
+    paintPlayerEQ(); eqScheduleSave();
+  },
+  "pb-eq": async () => {
+    if (!PB.deviceKey) { toast(appT("m174"), "warn"); return; }
+    PLY.eqOpen = true;
+    await openPlayer(PB.deviceKey);
+    if (!PLY.eq) await loadPlayerEQ(); else paintPlayerEQ();
+  }
+});
+Object.assign(CHG, {
+  "ply-eq-enabled": el => { if (!PLY.eq) return; PLY.eq.cfg.enabled = el.checked; savePlayerEQ(); },
+  "ply-eq-mode": el => {
+    if (!PLY.eq) return;
+    PLY.eq.cfg.mode = el.value === "peq" ? "peq" : "graphic";
+    paintPlayerEQ(); eqScheduleSave();
+  },
+  "ply-peq-type": el => { const b = PLY.eq && PLY.eq.cfg.peq[Number(el.dataset.index)]; if (b) { b.type = el.value; PLY.eq.cfg.preset = "custom"; eqScheduleSave(); } },
+  "ply-peq-freq": el => { const b = PLY.eq && PLY.eq.cfg.peq[Number(el.dataset.index)]; if (b) { b.freq = Number(el.value) || 1000; PLY.eq.cfg.preset = "custom"; eqScheduleSave(); } },
+  "ply-peq-gain": el => { const b = PLY.eq && PLY.eq.cfg.peq[Number(el.dataset.index)]; if (b) { b.gain = Number(el.value) || 0; PLY.eq.cfg.preset = "custom"; eqScheduleSave(); } },
+  "ply-peq-q": el => { const b = PLY.eq && PLY.eq.cfg.peq[Number(el.dataset.index)]; if (b) { b.q = Number(el.value) || 1; PLY.eq.cfg.preset = "custom"; eqScheduleSave(); } },
+  "ply-eq-preset": el => {
+    if (!PLY.eq) return;
+    const p = PLY.eq.presets.find(x => x.id === el.value);
+    if (p) { PLY.eq.cfg.preset = p.id; PLY.eq.cfg.preamp = p.preamp != null ? p.preamp : 0; PLY.eq.cfg.bands = EQ_FREQ.map((_, i) => Number(p.bands?.[i]) || 0); }
+    else PLY.eq.cfg.preset = el.value;
+    eqSyncControls(); eqScheduleSave();
+  },
+  "ply-eq-band": el => {
+    if (!PLY.eq) return;
+    const i = Number(el.dataset.band);
+    PLY.eq.cfg.bands[i] = Number(el.value);
+    PLY.eq.cfg.preset = "custom";
+    const lab = $(`#ply-eq-band-${i}`); if (lab) lab.textContent = appFixed(Number(el.value), 1);
+    const sel = $('#ply-eq [data-change="ply-eq-preset"]'); if (sel) sel.value = "custom";
+    eqScheduleSave();
+  },
+  "ply-eq-preamp": el => {
+    if (!PLY.eq) return;
+    PLY.eq.cfg.preamp = Number(el.value);
+    PLY.eq.cfg.preset = "custom";
+    const pv = $("#ply-eq-preamp-val"); if (pv) pv.textContent = appFixed(Number(el.value), 1);
+    const sel = $('#ply-eq [data-change="ply-eq-preset"]'); if (sel) sel.value = "custom";
+    eqScheduleSave();
+  }
+});
 function onChange(e) {
   const el = e.target.closest("[data-change]");
   if (!el) return;
@@ -4454,6 +4608,7 @@ function onInput(e) {
   if (t.id === "ply-seek") { PLY.dragging = true; const el = $("#ply-el"); if (el) el.textContent = fmtDur(Number(t.value)); return; }
   if (t.id === "ply-volume") { PLY.volDrag = true; const v = $("#ply-volume-value"); if (v) v.textContent = appN(Number(t.value)); return; }
   if (t.id === "ply-add-search") { PLY.addSearch = t.value; paintPlayerAddList(); return; }
+  if (t.classList && t.classList.contains("tc-dev-input")) { if (typeof TC !== "undefined" && TC.devEdit) TC.devEdit.value = t.value; return; }
   if (t.classList && t.classList.contains("ro-pct-i")) paintRoSum();
 }
 function onKey(e) {
@@ -4477,6 +4632,7 @@ function paintSearch() {
   const v = S.view;
   if (v === "overview") { paintOvRecent(); paintOvAlbums(); paintOvPlaylists(); }
   else if (v === "nodes") paintTerminalSearch();
+  else if (v === "settings" && typeof SETTINGS !== "undefined" && SETTINGS.section === "devices") paintTerminalSearch();
   else if (v === "library") libraryBrowserSearch(S.search);
   else if (v === "catalog" || (v === "settings" && SETTINGS.section === "packages")) { paintApps(); paintBoms(); }
   else if (v === "audit") paintAudit();

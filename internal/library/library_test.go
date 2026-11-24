@@ -272,7 +272,7 @@ func TestScanCataloguesAudio(t *testing.T) {
 	if wav.Codec != "pcm_s16le" || wav.Rate != 44100 || wav.Channels != 2 || wav.Bits != 16 || !wav.Decodable {
 		t.Fatalf("wav probe wrong: %+v", wav)
 	}
-	if wav.Artist != "" || wav.Album != "" {
+	if wav.Artist != "Artist" || wav.Album != "Album" || wav.AlbumArtist != "Artist" || wav.TrackNumber != 1 {
 		t.Fatalf("metadata wrong: %+v", wav)
 	}
 	if wav.RelPath != "Artist/Album/01 Track.wav" {
@@ -311,11 +311,11 @@ func TestScanFlatAndTwoLevelMeta(t *testing.T) {
 	for _, tr := range tracks {
 		switch tr.Title {
 		case "loose":
-			if tr.Album != "" || tr.Artist != "" {
+			if tr.Album != unidentifiedAlbumPrefix+"loose" || tr.Artist != "" {
 				t.Fatalf("flat meta wrong: %+v", tr)
 			}
 		case "song":
-			if tr.Album != "" || tr.Artist != "" {
+			if tr.Album != unidentifiedAlbumPrefix+"song" || tr.Artist != "" {
 				t.Fatalf("two-level meta wrong: %+v", tr)
 			}
 		}
@@ -956,7 +956,7 @@ func TestScanMetadataAndMalformedTagFallback(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tr := range tracks {
-		wantTitle, wantArtist, wantAlbum, wantGenre := "broken", "", "", ""
+		wantTitle, wantArtist, wantAlbum, wantGenre := "broken", "Folder Artist", "Folder Album", ""
 		switch filepath.Base(tr.Path) {
 		case "tagged.wav":
 			wantTitle, wantArtist, wantAlbum, wantGenre = "Tagged WAV", "WAV Artist", "WAV Album", "Jazz; Rock"
@@ -966,7 +966,7 @@ func TestScanMetadataAndMalformedTagFallback(t *testing.T) {
 				t.Fatalf("extended FLAC scan fields: %+v", tr)
 			}
 		case "partial.wav":
-			wantTitle, wantAlbum = "partial", "Tagged Album"
+			wantTitle, wantArtist, wantAlbum = "partial", "Folder Artist", "Tagged Album"
 		}
 		if tr.Title != wantTitle || tr.Artist != wantArtist || tr.Album != wantAlbum || tr.Genre != wantGenre || !tr.Decodable {
 			t.Fatalf("metadata/fallback or identification wrong: %+v", tr)

@@ -256,18 +256,28 @@ func (s *settingsAdmin) issueSession(w http.ResponseWriter, r *http.Request) err
 func (a *API) settingsSession(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	auth := a.admin.authenticated(w, r)
+	local := settingsLocalRequest(r)
 	configured, canSetup := false, false
 	if a.admin != nil {
 		a.admin.mu.Lock()
 		configured = a.admin.configured
-		canSetup = !configured && !a.admin.unavailable && strings.TrimSpace(a.admin.dataDir) != "" && settingsLocalRequest(r)
+		canSetup = !configured && !a.admin.unavailable && strings.TrimSpace(a.admin.dataDir) != "" && local
 		if canSetup {
 			_, err := a.settingsProfileLocked()
 			canSetup = err == nil
 		}
+		available := !a.admin.unavailable
 		a.admin.mu.Unlock()
+		// Same-machine (loopback) access is trusted: once an admin exists, issue a
+		// session automatically so local use never prompts for the password.
+		// Remote clients still must authenticate explicitly.
+		if local && !auth && configured && available {
+			if err := a.admin.issueSession(w, r); err == nil {
+				auth = true
+			}
+		}
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"configured": configured, "authenticated": auth, "can_setup": canSetup, "secure_context": settingsSecureContext(r)})
+	writeJSON(w, http.StatusOK, map[string]bool{"configured": configured, "authenticated": auth, "can_setup": canSetup, "secure_context": settingsSecureContext(r), "local": local})
 }
 
 func settingsReadPassword(w http.ResponseWriter, r *http.Request) (string, bool) {

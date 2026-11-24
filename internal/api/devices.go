@@ -31,13 +31,33 @@ func (a *API) nodeDevices(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]map[string]any, 0, len(rows))
 	for _, d := range rows {
+		reported := d.ReportedName
+		if reported == "" {
+			reported = names[d.HW]
+		}
 		out = append(out, map[string]any{
-			"hw": d.HW, "name": d.Name, "reported_name": names[d.HW],
-			"enabled": d.Enabled, "sort": d.Sort,
-			"present": d.HW == "default" || present[d.HW],
+			"hw": d.HW, "name": d.Name, "reported_name": reported,
+			"enabled": d.Enabled, "sort": d.Sort, "volume": d.Volume, "device_key": id + "::" + d.HW,
+			"present": d.HW == "default" || present[d.HW], "online": st.Connected,
+			"dsp_enabled": d.DSPEnabled, "dsd_mode": d.DSDMode,
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"devices": out})
+}
+
+func (a *API) setNodeDeviceDSDMode(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Mode string `json:"mode"`
+	}
+	if err := decode(r, &body); err != nil {
+		writeErrorCode(w, http.StatusBadRequest, "bad_json", "请求体不是合法 JSON")
+		return
+	}
+	if err := a.nodes.SetDeviceDSDMode(r.PathValue("id"), r.PathValue("hw"), body.Mode); err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "dsd_mode": body.Mode})
 }
 
 func (a *API) nodeDeviceActivate(w http.ResponseWriter, r *http.Request) {
@@ -52,7 +72,7 @@ func (a *API) nodeDeviceActivate(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, http.StatusNotFound, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "device_key": r.PathValue("id") + "::" + r.PathValue("hw")})
 }
 
 func (a *API) nodeDeviceRename(w http.ResponseWriter, r *http.Request) {
@@ -71,5 +91,5 @@ func (a *API) nodeDeviceRename(w http.ResponseWriter, r *http.Request) {
 		writeErrorCode(w, http.StatusBadRequest, "device_name_invalid", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "device_key": r.PathValue("id") + "::" + r.PathValue("hw")})
 }

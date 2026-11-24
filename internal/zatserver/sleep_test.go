@@ -9,6 +9,7 @@ import (
 func TestSleepTimerSetCancelPersist(t *testing.T) {
 	h := setup(t)
 	nodeID, _ := h.register(t, "ep-sleep", true)
+	deviceKey := makeDeviceKey(nodeID, "default")
 
 	stopAt, err := h.srv.SetSleepTimer(nodeID, 15)
 	if err != nil {
@@ -26,7 +27,7 @@ func TestSleepTimerSetCancelPersist(t *testing.T) {
 	}
 	// Persisted for restart survival.
 	var stored int64
-	if err := h.st.DB.QueryRow(`SELECT stop_at FROM node_sleep_timer WHERE node_id=?`, nodeID).Scan(&stored); err != nil || stored != stopAt {
+	if err := h.st.DB.QueryRow(`SELECT stop_at FROM playback_sleep_timer WHERE device_key=?`, deviceKey).Scan(&stored); err != nil || stored != stopAt {
 		t.Fatalf("persisted stop_at: %d %v", stored, err)
 	}
 	reloaded := New("127.0.0.1:0", h.nodes, h.lib, h.st)
@@ -41,7 +42,7 @@ func TestSleepTimerSetCancelPersist(t *testing.T) {
 		t.Fatalf("deadline after cancel = %d", got)
 	}
 	var n int
-	if err := h.st.DB.QueryRow(`SELECT COUNT(*) FROM node_sleep_timer WHERE node_id=?`, nodeID).Scan(&n); err != nil || n != 0 {
+	if err := h.st.DB.QueryRow(`SELECT COUNT(*) FROM playback_sleep_timer WHERE device_key=?`, deviceKey).Scan(&n); err != nil || n != 0 {
 		t.Fatalf("row after cancel: %d %v", n, err)
 	}
 }
@@ -49,6 +50,7 @@ func TestSleepTimerSetCancelPersist(t *testing.T) {
 func TestSleepTimerValidationAndFire(t *testing.T) {
 	h := setup(t)
 	nodeID, _ := h.register(t, "ep-sleep2", true)
+	deviceKey := makeDeviceKey(nodeID, "default")
 
 	for _, m := range []int{0, -1, 1441} {
 		if _, err := h.srv.SetSleepTimer(nodeID, m); !errors.Is(err, ErrSleepMinutes) {
@@ -69,7 +71,7 @@ func TestSleepTimerValidationAndFire(t *testing.T) {
 		t.Fatalf("deadline after fire = %d", got)
 	}
 	var n int
-	if err := h.st.DB.QueryRow(`SELECT COUNT(*) FROM node_sleep_timer WHERE node_id=?`, nodeID).Scan(&n); err != nil || n != 0 {
+	if err := h.st.DB.QueryRow(`SELECT COUNT(*) FROM playback_sleep_timer WHERE device_key=?`, deviceKey).Scan(&n); err != nil || n != 0 {
 		t.Fatalf("row after fire: %d %v", n, err)
 	}
 	// A not-yet-due timer survives a check.

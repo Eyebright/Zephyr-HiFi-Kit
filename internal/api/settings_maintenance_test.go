@@ -31,7 +31,7 @@ func maintenanceTestAPI(t *testing.T) (*API, *store.Store, *http.Cookie) {
 
 func TestSettingsMaintenanceAuthentication(t *testing.T) {
 	a := adminTestAPI(t)
-	for _, h := range []http.HandlerFunc{a.settingsMaintenance, a.exportSettingsBackup, a.restoreSettingsBackup, a.cleanupSettingsLibrary} {
+	for _, h := range []http.HandlerFunc{a.settingsMaintenance, a.exportSettingsBackup, a.restoreSettingsBackup, a.cleanupSettingsLibrary, a.settingsMetadataOrganizationPreview, a.settingsMetadataOrganizationApply} {
 		w := httptest.NewRecorder()
 		h(w, adminTestRequest("POST", `{}`))
 		if w.Code != 401 {
@@ -39,7 +39,7 @@ func TestSettingsMaintenanceAuthentication(t *testing.T) {
 		}
 	}
 	cookie := adminTestSetup(t, a)
-	for _, h := range []http.HandlerFunc{a.settingsMaintenance, a.exportSettingsBackup, a.restoreSettingsBackup, a.cleanupSettingsLibrary} {
+	for _, h := range []http.HandlerFunc{a.settingsMaintenance, a.exportSettingsBackup, a.restoreSettingsBackup, a.cleanupSettingsLibrary, a.settingsMetadataOrganizationPreview, a.settingsMetadataOrganizationApply} {
 		r := adminTestRequest("POST", `{}`)
 		r.AddCookie(cookie)
 		r.Header.Set("Origin", "https://attacker.example")
@@ -48,6 +48,81 @@ func TestSettingsMaintenanceAuthentication(t *testing.T) {
 		if w.Code != 403 {
 			t.Fatalf("cross-origin operation: %d", w.Code)
 		}
+	}
+}
+
+func TestSettingsMetadataOrganizationConfirmation(t *testing.T) {
+	a, _, cookie := maintenanceTestAPI(t)
+	call := func(body string) *httptest.ResponseRecorder {
+		r := adminTestRequest("POST", body)
+		r.AddCookie(cookie)
+		w := httptest.NewRecorder()
+		a.settingsMetadataOrganizationApply(w, r)
+		return w
+	}
+	if w := call(`{}`); w.Code != http.StatusBadRequest {
+		t.Fatalf("missing confirmation: %d %s", w.Code, w.Body.String())
+	}
+	previewR := adminTestRequest("GET", "")
+	previewR.AddCookie(cookie)
+	previewW := httptest.NewRecorder()
+	a.settingsMetadataOrganizationPreview(previewW, previewR)
+	if previewW.Code != http.StatusOK {
+		t.Fatalf("preview: %d %s", previewW.Code, previewW.Body.String())
+	}
+	var preview library.MetadataOrganizationPreview
+	if err := json.Unmarshal(previewW.Body.Bytes(), &preview); err != nil || preview.PreviewToken == "" {
+		t.Fatalf("preview token: %+v %v", preview, err)
+	}
+	body, err := json.Marshal(map[string]string{"confirm": "ORGANIZE", "preview_token": preview.PreviewToken})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := call(string(body)); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"updated":0`) {
+		t.Fatalf("empty organization: %d %s", w.Code, w.Body.String())
+	}
+	if w := call(`{"confirm":"ORGANIZE","preview_token":"stale"}`); w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "metadata_preview_mismatch") {
+		t.Fatalf("stale preview: %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestSettingsMetadataOrganizationSkipUnavailable(t *testing.T) {
+	a, st, cookie := maintenanceTestAPI(t)
+	root := t.TempDir()
+	m, err := a.lib.AddMount(library.AddMountRequest{Kind: "local", Path: root, Share: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.DB.Exec(`INSERT INTO tracks(id,mount_id,path,rel_path,title,scanned_at) VALUES('missing',?,?,'missing.wav','Missing',1)`, m.ID, filepath.Join(root, "missing.wav")); err != nil {
+		t.Fatal(err)
+	}
+	previewR := adminTestRequest("GET", "")
+	previewR.AddCookie(cookie)
+	previewW := httptest.NewRecorder()
+	a.settingsMetadataOrganizationPreview(previewW, previewR)
+	if previewW.Code != http.StatusOK {
+		t.Fatalf("preview: %d %s", previewW.Code, previewW.Body.String())
+	}
+	var preview library.MetadataOrganizationPreview
+	if err := json.Unmarshal(previewW.Body.Bytes(), &preview); err != nil || preview.Unavailable != 1 {
+		t.Fatalf("preview: %+v %v", preview, err)
+	}
+	call := func(skip bool) *httptest.ResponseRecorder {
+		body, err := json.Marshal(map[string]any{"confirm": "ORGANIZE", "preview_token": preview.PreviewToken, "skip_unavailable": skip})
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := adminTestRequest("POST", string(body))
+		r.AddCookie(cookie)
+		w := httptest.NewRecorder()
+		a.settingsMetadataOrganizationApply(w, r)
+		return w
+	}
+	if w := call(false); w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "metadata_source_unavailable") {
+		t.Fatalf("strict apply: %d %s", w.Code, w.Body.String())
+	}
+	if w := call(true); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"skipped":1`) {
+		t.Fatalf("partial apply: %d %s", w.Code, w.Body.String())
 	}
 }
 
@@ -123,13 +198,16 @@ func TestSettingsMaintenanceBlocksPlaybackAndUnknownState(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, test := range []struct {
-		h    http.HandlerFunc
-		body string
+		h      http.HandlerFunc
+		method string
+		body   string
 	}{
-		{a.cleanupSettingsLibrary, `{"kind":"catalog","confirm":"CLEAN"}`},
-		{a.restoreSettingsBackup, `{"confirm":"RESTORE","backup":` + string(backup) + `}`},
+		{a.cleanupSettingsLibrary, "POST", `{"kind":"catalog","confirm":"CLEAN"}`},
+		{a.restoreSettingsBackup, "POST", `{"confirm":"RESTORE","backup":` + string(backup) + `}`},
+		{a.settingsMetadataOrganizationApply, "POST", `{"confirm":"ORGANIZE","preview_token":"preview-token"}`},
+		{a.deleteMount, "DELETE", ""},
 	} {
-		r := adminTestRequest("POST", test.body)
+		r := adminTestRequest(test.method, test.body)
 		r.AddCookie(cookie)
 		w := httptest.NewRecorder()
 		test.h(w, r)

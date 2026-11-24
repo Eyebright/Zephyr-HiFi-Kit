@@ -49,6 +49,7 @@ type Setup struct {
 	Channels     int     `json:"channels"`
 	PrebufferMS  int     `json:"prebuffer_ms"`
 	ALSADevice   string  `json:"alsa_device"`
+	LockDevice   bool    `json:"lock_device,omitempty"`
 	TotalSamples uint64  `json:"total_samples"`
 	GainDB       float64 `json:"gain_db"`
 	// MQA asks the sink for strict bit-perfect output; software volume and
@@ -127,6 +128,25 @@ type Status struct {
 	// device list changed since HELLO, so older sources simply ignore it.
 	ALSADevices    []string     `json:"alsa_devices,omitempty"`
 	ALSADeviceInfo []ALSADevice `json:"alsa_device_info,omitempty"`
+}
+
+// MarshalJSON preserves an explicitly empty hotplug report while omitting nil
+// reports, so a sink can tell the source that its last DAC was removed.
+func (s Status) MarshalJSON() ([]byte, error) {
+	type alias Status
+	var devices *[]string
+	if s.ALSADevices != nil {
+		devices = &s.ALSADevices
+	}
+	var info *[]ALSADevice
+	if s.ALSADeviceInfo != nil {
+		info = &s.ALSADeviceInfo
+	}
+	return json.Marshal(struct {
+		alias
+		ALSADevices    *[]string     `json:"alsa_devices,omitempty"`
+		ALSADeviceInfo *[]ALSADevice `json:"alsa_device_info,omitempty"`
+	}{alias(s), devices, info})
 }
 
 // TrackMeta carries now-playing metadata source→sink.

@@ -69,6 +69,9 @@ func (a *API) deleteMount(w http.ResponseWriter, r *http.Request) {
 		writeErrorCode(w, http.StatusServiceUnavailable, "library_unavailable", "媒体库未启用")
 		return
 	}
+	if !a.settingsLibraryIdle(w) {
+		return
+	}
 	if err := a.lib.DeleteMount(r.Context(), r.PathValue("id")); err != nil {
 		fail(w, err)
 		return
@@ -221,13 +224,22 @@ func (a *API) getCoverSized(w http.ResponseWriter, r *http.Request) {
 
 // --- ZAT push playback ---
 
+func (a *API) listPlaybackDevices(w http.ResponseWriter, _ *http.Request) {
+	if a.zat == nil {
+		writeErrorCode(w, http.StatusServiceUnavailable, "zat_unavailable", "ZAT 服务未启用")
+		return
+	}
+	writeJSON(w, http.StatusOK, a.zat.ActiveDevices())
+}
+
 func (a *API) playTrack(w http.ResponseWriter, r *http.Request) {
 	if a.zat == nil {
 		writeErrorCode(w, http.StatusServiceUnavailable, "zat_unavailable", "ZAT 服务未启用")
 		return
 	}
 	var body struct {
-		TrackID string `json:"track_id"`
+		TrackID   string `json:"track_id"`
+		DeviceKey string `json:"device_key"`
 	}
 	if err := decode(r, &body); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad_json", err.Error(), "")
@@ -237,18 +249,14 @@ func (a *API) playTrack(w http.ResponseWriter, r *http.Request) {
 		writeErrorCode(w, http.StatusBadRequest, "track_id_required", "track_id 不能为空")
 		return
 	}
-	sessionID, err := a.zat.StartPlay(r.Context(), r.PathValue("id"), body.TrackID)
+	sessionID, err := a.zat.StartPlayDevice(r.Context(), r.PathValue("id"), body.TrackID, body.DeviceKey)
 	if err != nil {
-		if errors.Is(err, zatserver.ErrNotConnected) {
-			writeServiceError(w, http.StatusConflict, err)
-			return
-		}
-		fail(w, err)
+		zatControlFail(w, err)
 		return
 	}
 	// A direct push replaces the queue with the single track; enqueue keeps it.
-	if err := a.zat.SetQueue(r.PathValue("id"), []string{body.TrackID}, 0); err != nil {
-		fail(w, err)
+	if err := a.zat.SetQueueDevice(r.PathValue("id"), body.DeviceKey, []string{body.TrackID}, 0); err != nil {
+		zatControlFail(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"session_id": sessionID})
@@ -259,12 +267,8 @@ func (a *API) stopPlay(w http.ResponseWriter, r *http.Request) {
 		writeErrorCode(w, http.StatusServiceUnavailable, "zat_unavailable", "ZAT 服务未启用")
 		return
 	}
-	if err := a.zat.Stop(r.PathValue("id")); err != nil {
-		if errors.Is(err, zatserver.ErrNotConnected) {
-			writeServiceError(w, http.StatusConflict, err)
-			return
-		}
-		fail(w, err)
+	if err := a.zat.StopDevice(r.PathValue("id"), r.URL.Query().Get("device_key")); err != nil {
+		zatControlFail(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
@@ -275,9 +279,9 @@ func (a *API) playStatus(w http.ResponseWriter, r *http.Request) {
 		writeErrorCode(w, http.StatusServiceUnavailable, "zat_unavailable", "ZAT 服务未启用")
 		return
 	}
-	st, err := a.zat.Status(r.PathValue("id"))
+	st, err := a.zat.StatusDevice(r.PathValue("id"), r.URL.Query().Get("device_key"))
 	if err != nil {
-		fail(w, err)
+		zatControlFail(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, st)
@@ -289,17 +293,18 @@ func (a *API) setNodeDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Device string `json:"device"`
+		Device    string `json:"device"`
+		DeviceKey string `json:"device_key"`
 	}
 	if err := decode(r, &body); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad_json", err.Error(), "")
 		return
 	}
-	if err := a.zat.SetDevice(r.PathValue("id"), body.Device); err != nil {
+	if err := a.zat.SetDeviceKey(r.PathValue("id"), body.DeviceKey, body.Device); err != nil {
 		switch {
 		case errors.Is(err, zatserver.ErrNotConnected):
 			writeServiceError(w, http.StatusConflict, err)
-		case errors.Is(err, zatserver.ErrUnknownDevice):
+		case errors.Is(err, zatserver.ErrInvalidDeviceKey), errors.Is(err, zatserver.ErrUnknownDevice):
 			writeServiceError(w, http.StatusBadRequest, err)
 		case errors.Is(err, zatserver.ErrDeviceNotActivated):
 			writeServiceError(w, http.StatusConflict, err)
@@ -314,8 +319,11 @@ func (a *API) setNodeDevice(w http.ResponseWriter, r *http.Request) {
 // zatControlFail maps transport-control errors to HTTP status codes.
 func zatControlFail(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, zatserver.ErrNotConnected), errors.Is(err, zatserver.ErrNoSession):
+	case errors.Is(err, zatserver.ErrNotConnected), errors.Is(err, zatserver.ErrNoSession),
+		errors.Is(err, zatserver.ErrDeviceNotActivated):
 		writeServiceError(w, http.StatusConflict, err)
+	case errors.Is(err, zatserver.ErrInvalidDeviceKey), errors.Is(err, zatserver.ErrUnknownDevice):
+		writeServiceError(w, http.StatusBadRequest, err)
 	default:
 		fail(w, err)
 	}
@@ -326,7 +334,7 @@ func (a *API) pausePlay(w http.ResponseWriter, r *http.Request) {
 		writeErrorCode(w, http.StatusServiceUnavailable, "zat_unavailable", "ZAT 服务未启用")
 		return
 	}
-	if err := a.zat.Pause(r.PathValue("id")); err != nil {
+	if err := a.zat.PauseDevice(r.PathValue("id"), r.URL.Query().Get("device_key")); err != nil {
 		zatControlFail(w, err)
 		return
 	}
@@ -338,7 +346,7 @@ func (a *API) resumePlay(w http.ResponseWriter, r *http.Request) {
 		writeErrorCode(w, http.StatusServiceUnavailable, "zat_unavailable", "ZAT 服务未启用")
 		return
 	}
-	if err := a.zat.Resume(r.PathValue("id")); err != nil {
+	if err := a.zat.ResumeDevice(r.PathValue("id"), r.URL.Query().Get("device_key")); err != nil {
 		zatControlFail(w, err)
 		return
 	}
@@ -351,7 +359,8 @@ func (a *API) seekPlay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		PositionMS int `json:"position_ms"`
+		PositionMS int    `json:"position_ms"`
+		DeviceKey  string `json:"device_key"`
 	}
 	if err := decode(r, &body); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad_json", err.Error(), "")
@@ -362,9 +371,9 @@ func (a *API) seekPlay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
-	st, err := a.zat.Status(id)
+	st, err := a.zat.StatusDevice(id, body.DeviceKey)
 	if err != nil {
-		fail(w, err)
+		zatControlFail(w, err)
 		return
 	}
 	if st.Rate <= 0 {
@@ -372,7 +381,7 @@ func (a *API) seekPlay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	samples := uint64(body.PositionMS) * uint64(st.Rate) / 1000
-	if err := a.zat.Seek(id, samples); err != nil {
+	if err := a.zat.SeekDevice(id, body.DeviceKey, samples); err != nil {
 		zatControlFail(w, err)
 		return
 	}
@@ -385,7 +394,8 @@ func (a *API) setNodeVolume(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Volume int `json:"volume"`
+		Volume    int    `json:"volume"`
+		DeviceKey string `json:"device_key"`
 	}
 	if err := decode(r, &body); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad_json", err.Error(), "")
@@ -395,23 +405,23 @@ func (a *API) setNodeVolume(w http.ResponseWriter, r *http.Request) {
 		writeErrorCode(w, http.StatusBadRequest, "volume_invalid", "volume 须在 0..100")
 		return
 	}
-	if err := a.zat.SetVolume(r.PathValue("id"), body.Volume); err != nil {
+	if err := a.zat.SetVolumeDevice(r.PathValue("id"), body.DeviceKey, body.Volume); err != nil {
 		zatControlFail(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "volume": body.Volume})
 }
 
-// --- per-node playback queue ---
+// --- per-device playback queue ---
 
 func (a *API) nodeQueue(w http.ResponseWriter, r *http.Request) {
 	if a.zat == nil {
 		writeErrorCode(w, http.StatusServiceUnavailable, "zat_unavailable", "ZAT 服务未启用")
 		return
 	}
-	q, err := a.zat.Queue(r.PathValue("id"))
+	q, err := a.zat.QueueDevice(r.PathValue("id"), r.URL.Query().Get("device_key"))
 	if err != nil {
-		fail(w, err)
+		zatControlFail(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, q)
@@ -426,24 +436,26 @@ func (a *API) setNodeQueue(w http.ResponseWriter, r *http.Request) {
 		TrackIDs   []string `json:"track_ids"`
 		Position   int      `json:"position"`
 		PlayIfIdle bool     `json:"play_if_idle"`
+		DeviceKey  string   `json:"device_key"`
 	}
 	if err := decode(r, &body); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad_json", err.Error(), "")
 		return
 	}
+	id := r.PathValue("id")
 	var err error
 	if body.PlayIfIdle {
-		_, err = a.zat.ReplaceQueue(r.Context(), r.PathValue("id"), body.TrackIDs, body.Position)
+		_, err = a.zat.ReplaceQueueDevice(r.Context(), id, body.TrackIDs, body.Position, body.DeviceKey)
 	} else {
-		err = a.zat.SetQueue(r.PathValue("id"), body.TrackIDs, body.Position)
+		err = a.zat.SetQueueDevice(id, body.DeviceKey, body.TrackIDs, body.Position)
 	}
 	if err != nil {
-		fail(w, err)
+		zatControlFail(w, err)
 		return
 	}
-	q, err := a.zat.Queue(r.PathValue("id"))
+	q, err := a.zat.QueueDevice(id, body.DeviceKey)
 	if err != nil {
-		fail(w, err)
+		zatControlFail(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, q)
@@ -455,7 +467,8 @@ func (a *API) enqueueTrack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		TrackID string `json:"track_id"`
+		TrackID   string `json:"track_id"`
+		DeviceKey string `json:"device_key"`
 	}
 	if err := decode(r, &body); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad_json", err.Error(), "")
@@ -465,13 +478,13 @@ func (a *API) enqueueTrack(w http.ResponseWriter, r *http.Request) {
 		writeErrorCode(w, http.StatusBadRequest, "track_id_required", "track_id 不能为空")
 		return
 	}
-	q, sessionID, err := a.zat.Enqueue(r.Context(), r.PathValue("id"), body.TrackID)
+	q, sessionID, err := a.zat.EnqueueDevice(r.Context(), r.PathValue("id"), body.TrackID, body.DeviceKey)
 	if err != nil {
 		if errors.Is(err, zatserver.ErrNotConnected) {
 			writeServiceError(w, http.StatusConflict, err)
 			return
 		}
-		fail(w, err)
+		zatControlFail(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"queue": q, "session_id": sessionID})
@@ -483,27 +496,32 @@ func (a *API) enqueueTracks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		TrackIDs []string `json:"track_ids"`
-		Next     bool     `json:"next"`
+		TrackIDs  []string `json:"track_ids"`
+		Next      bool     `json:"next"`
+		DeviceKey string   `json:"device_key"`
 	}
 	if err := decode(r, &body); err != nil {
-		fail(w, err)
+		writeErr(w, http.StatusBadRequest, "bad_json", err.Error(), "")
 		return
 	}
-	q, sessionID, err := a.zat.EnqueueMany(r.Context(), r.PathValue("id"), body.TrackIDs, body.Next)
+	q, sessionID, err := a.zat.EnqueueManyDevice(r.Context(), r.PathValue("id"), body.TrackIDs, body.Next, body.DeviceKey)
 	if err != nil {
-		fail(w, err)
+		if errors.Is(err, zatserver.ErrNotConnected) {
+			writeServiceError(w, http.StatusConflict, err)
+			return
+		}
+		zatControlFail(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"queue": q, "session_id": sessionID})
 }
 
-func (a *API) queueMove(w http.ResponseWriter, r *http.Request, move func(context.Context, string) (string, error)) {
+func (a *API) queueMove(w http.ResponseWriter, r *http.Request, move func(context.Context, string, string) (string, error)) {
 	if a.zat == nil {
 		writeErrorCode(w, http.StatusServiceUnavailable, "zat_unavailable", "ZAT 服务未启用")
 		return
 	}
-	sessionID, err := move(r.Context(), r.PathValue("id"))
+	sessionID, err := move(r.Context(), r.PathValue("id"), r.URL.Query().Get("device_key"))
 	if err != nil {
 		switch {
 		case errors.Is(err, zatserver.ErrNotConnected):
@@ -511,7 +529,7 @@ func (a *API) queueMove(w http.ResponseWriter, r *http.Request, move func(contex
 		case errors.Is(err, zatserver.ErrQueueEmpty), errors.Is(err, zatserver.ErrQueueEnd), errors.Is(err, zatserver.ErrQueueIndex):
 			writeServiceError(w, http.StatusBadRequest, err)
 		default:
-			fail(w, err)
+			zatControlFail(w, err)
 		}
 		return
 	}
@@ -519,11 +537,11 @@ func (a *API) queueMove(w http.ResponseWriter, r *http.Request, move func(contex
 }
 
 func (a *API) queueNext(w http.ResponseWriter, r *http.Request) {
-	a.queueMove(w, r, a.zat.QueueNext)
+	a.queueMove(w, r, a.zat.QueueNextDevice)
 }
 
 func (a *API) queuePrev(w http.ResponseWriter, r *http.Request) {
-	a.queueMove(w, r, a.zat.QueuePrev)
+	a.queueMove(w, r, a.zat.QueuePrevDevice)
 }
 
 func (a *API) queueJump(w http.ResponseWriter, r *http.Request) {
@@ -538,12 +556,12 @@ func (a *API) queueJump(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_json", err.Error(), "")
 		return
 	}
-	a.queueMove(w, r, func(ctx context.Context, nodeID string) (string, error) {
-		return a.zat.QueueJump(ctx, nodeID, body.Index)
+	a.queueMove(w, r, func(ctx context.Context, nodeID, deviceKey string) (string, error) {
+		return a.zat.QueueJumpDevice(ctx, nodeID, body.Index, deviceKey)
 	})
 }
 
-// setQueueMode persists the terminal's queue playback mode ("sequence",
+// setQueueMode persists the device's queue playback mode ("sequence",
 // "loop_all", "loop_one" or "shuffle") and returns the updated queue.
 func (a *API) setQueueMode(w http.ResponseWriter, r *http.Request) {
 	if a.zat == nil {
@@ -551,7 +569,8 @@ func (a *API) setQueueMode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Mode string `json:"mode"`
+		Mode      string `json:"mode"`
+		DeviceKey string `json:"device_key"`
 	}
 	if err := decode(r, &body); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad_json", err.Error(), "")
@@ -561,13 +580,13 @@ func (a *API) setQueueMode(w http.ResponseWriter, r *http.Request) {
 		writeErrorCode(w, http.StatusBadRequest, "bad_request", "队列播放模式无效："+body.Mode)
 		return
 	}
-	q, err := a.zat.SetQueueMode(r.PathValue("id"), body.Mode)
+	q, err := a.zat.SetQueueModeDevice(r.PathValue("id"), body.DeviceKey, body.Mode)
 	if err != nil {
 		if errors.Is(err, zatserver.ErrQueueMode) {
 			writeServiceError(w, http.StatusBadRequest, err)
 			return
 		}
-		fail(w, err)
+		zatControlFail(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, q)

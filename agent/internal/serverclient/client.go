@@ -116,6 +116,7 @@ type QueueTrack struct {
 	Album      string `json:"album"`
 	DurationMS int    `json:"duration_ms"`
 	Codec      string `json:"codec"`
+	CoverHash  string `json:"cover_hash,omitempty"`
 	Decodable  bool   `json:"decodable"`
 	Missing    bool   `json:"missing"`
 }
@@ -125,6 +126,7 @@ type QueueState struct {
 	NodeID    string       `json:"node_id"`
 	Tracks    []QueueTrack `json:"tracks"`
 	Position  int          `json:"position"`
+	Mode      string       `json:"mode,omitempty"`
 	UpdatedAt int64        `json:"updated_at"`
 }
 
@@ -393,6 +395,11 @@ func (c *Client) QueueNext(ctx context.Context, nodeID string) error {
 // QueuePrev goes back one queue entry (restarting the current one at the head).
 func (c *Client) QueuePrev(ctx context.Context, nodeID string) error {
 	return c.do(ctx, "POST", "/nodes/"+nodeID+"/queue/prev", nil, nil)
+}
+
+// QueueJump starts the queue entry at index.
+func (c *Client) QueueJump(ctx context.Context, nodeID string, index int) error {
+	return c.do(ctx, "POST", "/nodes/"+nodeID+"/queue/jump", map[string]int{"index": index}, nil)
 }
 
 // Download streams an artifact to dest and returns its SHA-256 hex digest.
