@@ -65,6 +65,24 @@ func main() {
 	boms := bom.New(st, cat)
 	nodes := node.New(st, cfg.OfflineAfter)
 	lic := license.New(st, verifier)
+	// Android terminals have no operator authorize step: grant seats to any
+	// registered-but-unauthorized android node while seats remain.
+	if seats, _, err := lic.SeatLimit(); err == nil {
+		if ns, err := nodes.List(); err == nil {
+			used, _ := nodes.AuthorizedCount()
+			for _, n := range ns {
+				if used >= seats {
+					break
+				}
+				if n.Arch == "android" && !n.Authorized {
+					if err := nodes.SetAuthorized(n.NodeID, true); err == nil {
+						used++
+						logger.Info("auto-authorized android terminal", "node", n.NodeID, "alias", n.Alias)
+					}
+				}
+			}
+		}
+	}
 	ks := keys.New(cfg.GPGHome, st)
 	cmds := commands.New(st)
 	aptSrc := aptsrc.New(st)
@@ -102,6 +120,18 @@ func main() {
 	}
 	mntMgr := mount.NewBackend(mount.ExecRunner{}, cfg.MountCredDir)
 	lib := library.New(st, mntMgr, cfg.MountDir)
+
+	// A scan interrupted by a process restart resumes from its persisted walk
+	// cursor instead of starting over (long NAS walks survive deployments).
+	if mid, _, ok := lib.InterruptedScan(); ok {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
+			defer cancel()
+			if _, err := lib.ScanChanges(ctx, mid, false); err != nil {
+				logger.Warn("resume interrupted scan", "mount", mid, "err", err)
+			}
+		}()
+	}
 	if err := lib.EnsureArtistIndex(context.Background()); err != nil {
 		logger.Warn("artist index", "err", err)
 	}

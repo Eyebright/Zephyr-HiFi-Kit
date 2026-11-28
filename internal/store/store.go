@@ -132,6 +132,18 @@ func (s *Store) additiveMigrate() error {
 			return fmt.Errorf("add column %s.%s: %w", c.table, c.name, err)
 		}
 	}
+	// Cover indexes depend on columns added above, so they are created here
+	// rather than in the initial schema batch (where the columns may not exist
+	// yet on a fresh database).
+	for _, idx := range []string{
+		`CREATE INDEX IF NOT EXISTS idx_tracks_cover ON tracks(cover_hash)`,
+		`CREATE INDEX IF NOT EXISTS idx_history_cover ON play_history(cover_hash)`,
+		`CREATE INDEX IF NOT EXISTS idx_favorites_cover ON favorites(cover_hash)`,
+	} {
+		if _, err := s.DB.Exec(idx); err != nil {
+			return fmt.Errorf("create cover index: %w", err)
+		}
+	}
 	if err := s.backfillListeningSnapshots(); err != nil {
 		return err
 	}

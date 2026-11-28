@@ -168,6 +168,28 @@ func (s *Service) ScanProgress() ScanProgress {
 	return s.prog
 }
 
+// InterruptedScan reports the persisted walk cursor of a scan that did not
+// finish (process restart), so the next boot can resume where it stopped.
+func (s *Service) InterruptedScan() (mountID, rel string, ok bool) {
+	err := s.db.QueryRow(`SELECT value FROM server_state WHERE key='scan_cursor_mount'`).Scan(&mountID)
+	if err != nil || mountID == "" {
+		return "", "", false
+	}
+	if err := s.db.QueryRow(`SELECT value FROM server_state WHERE key='scan_cursor_rel'`).Scan(&rel); err != nil {
+		return "", "", false
+	}
+	return mountID, rel, true
+}
+
+func (s *Service) saveScanCursor(mountID, rel string) {
+	_, _ = s.db.Exec(`INSERT INTO server_state(key,value) VALUES('scan_cursor_mount',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, mountID)
+	_, _ = s.db.Exec(`INSERT INTO server_state(key,value) VALUES('scan_cursor_rel',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, rel)
+}
+
+func (s *Service) clearScanCursor() {
+	_, _ = s.db.Exec(`DELETE FROM server_state WHERE key IN ('scan_cursor_mount','scan_cursor_rel')`)
+}
+
 func (s *Service) progUpdate(fn func(p *ScanProgress)) {
 	s.progMu.Lock()
 	fn(&s.prog)
@@ -506,6 +528,13 @@ func (s *Service) scanChanges(ctx context.Context, id string, full bool) (ScanRe
 		p.Walked, p.Added, p.Updated, p.Unchanged, p.Removed, p.CoversFilled, p.Error = 0, 0, 0, 0, 0, 0, ""
 	})
 	now := time.Now().Unix()
+	resumeRel := ""
+	if full {
+		s.clearScanCursor()
+	} else if cm, cr, ok := s.InterruptedScan(); ok && cm == id {
+		resumeRel = cr
+	}
+	walkedSinceSave := 0
 	changed := []Track{}
 	backfill := []Track{}
 	seen := map[string]fs.FileInfo{}
@@ -556,6 +585,22 @@ func (s *Service) scanChanges(ctx context.Context, id string, full bool) (ScanRe
 			return err
 		}
 		rel = filepath.ToSlash(rel)
+		if resumeRel != "" {
+			if rel <= resumeRel {
+				// Already processed before the interruption: keep the index row
+				// and move on without re-probing over the network.
+				delete(remaining, rel)
+				result.Unchanged++
+				s.progUpdate(func(p *ScanProgress) { p.Walked++ })
+				return nil
+			}
+			resumeRel = ""
+		}
+		walkedSinceSave++
+		if walkedSinceSave >= 256 {
+			walkedSinceSave = 0
+			s.saveScanCursor(id, rel)
+		}
 		oldTrack, live := remaining[rel]
 		delete(remaining, rel)
 		seen[p] = info
@@ -777,6 +822,7 @@ func (s *Service) scanChanges(ctx context.Context, id string, full bool) (ScanRe
 		}
 	}
 	s.pruneCovers()
+	s.clearScanCursor()
 	return result, nil
 }
 

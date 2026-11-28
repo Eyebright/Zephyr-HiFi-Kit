@@ -1173,3 +1173,28 @@ func TestScanBackfillsCoversForUnchangedTracks(t *testing.T) {
 		t.Fatalf("second scan result = %+v err=%v", res, err)
 	}
 }
+
+func TestScanResumesFromPersistedCursor(t *testing.T) {
+	s, _ := newService(t, &fakeRunner{}, t.TempDir())
+	target := t.TempDir()
+	m := addMountedLocalSource(t, s, target)
+	buildWAV(t, filepath.Join(target, "a.wav"))
+	buildWAV(t, filepath.Join(target, "b.wav"))
+	buildWAV(t, filepath.Join(target, "c.wav"))
+	if _, err := s.ScanChanges(context.Background(), m.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	// Simulate a walk interrupted after a.wav: the resume must keep its index
+	// row, skip re-probing it and still finish the remaining files.
+	s.saveScanCursor(m.ID, "a.wav")
+	res, err := s.ScanChanges(context.Background(), m.ID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Unchanged != 3 || res.Added != 0 || res.Removed != 0 {
+		t.Fatalf("resume result: %+v", res)
+	}
+	if _, _, ok := s.InterruptedScan(); ok {
+		t.Fatal("cursor must be cleared after a successful scan")
+	}
+}
