@@ -563,9 +563,20 @@ async function settingsRefreshMaintenance(current) {
     settingsPaintMetadataOrganization();
     return;
   }
+  // Paint the last known stats instantly; the fresh fetch replaces them in
+  // the background so the overview never waits on the network or the DB.
+  if (typeof sessionStorage !== "undefined") {
+    try {
+      const cached = sessionStorage.getItem("zephyr-maintenance-stats");
+      if (cached) { SETTINGS.maintenance = JSON.parse(cached); settingsPaintMaintenance(); }
+    } catch {}
+  }
   const result = await api("GET", "/settings/maintenance");
   if (!current()) return;
   SETTINGS.maintenance = result;
+  if (typeof sessionStorage !== "undefined") {
+    try { sessionStorage.setItem("zephyr-maintenance-stats", JSON.stringify(result)); } catch {}
+  }
   settingsPaintMaintenance();
 }
 function settingsPaintMaintenance() {
