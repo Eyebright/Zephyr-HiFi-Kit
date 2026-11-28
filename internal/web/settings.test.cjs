@@ -252,8 +252,18 @@ test("about groups all twelve component sources in one list and makes the discla
   assert.ok(sources);
   assert.deepEqual([...sources.matchAll(/<dt>([^<]+)<\/dt>/g)].map(m => m[1]), ["QPlay", "MPD", "AirPlay", "UPnP / OpenHome", "UPnP/DLNA 渲染", "Roon Bridge", "HQPlayer NAA", "Spotify Connect", "LMS / Squeezebox", "多房间同步", "Qobuz Connect", "ZAT"]);
   assert.equal((sources.match(/<dd>/g) || []).length, 12);
-  assert.equal((html.match(/<section /g) || []).length, 3);
+  assert.equal((html.match(/<section /g) || []).length, 4);
   assert.doesNotMatch(html, /<article|settings-capability|协议能力与来源|前往终端中心/);
+  const plugin = html.match(/<section class="card" aria-labelledby="settings-plugin-title">[\s\S]*?<\/section>/)?.[0];
+  assert.ok(plugin, "the agent plugin card is rendered");
+  assert.deepEqual([...plugin.matchAll(/<dt>([^<]+)<\/dt>/g)].map(m => m[1]), ["Windows amd64", "Linux amd64", "Linux arm64"]);
+  assert.deepEqual([...plugin.matchAll(/<dd class="mono">([^<]+)<\/dd>/g)].map(m => m[1]), [
+    "Zephyr-HiFi-Kit-mcp-plugin-&lt;server-version&gt;-windows-amd64.zip",
+    "Zephyr-HiFi-Kit-mcp-plugin-&lt;server-version&gt;-linux-amd64.zip",
+    "Zephyr-HiFi-Kit-mcp-plugin-&lt;server-version&gt;-linux-arm64.zip"
+  ]);
+  assert.match(plugin, /scripts\/build-plugin\.sh/);
+  assert.equal((plugin.match(/target="_blank"/g) || []).length, 2);
   const disclaimer = html.match(/<section class="card settings-disclaimer"[^>]+>[\s\S]*?<\/section>/)?.[0];
   assert.ok(disclaimer);
   assert.match(disclaimer, /<h3 id="settings-disclaimer-title">[^]*?免责声明<\/h3>/);
