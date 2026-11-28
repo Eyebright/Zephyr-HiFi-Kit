@@ -35,7 +35,7 @@ function harness() {
       elements.clear();
       if (view === "maintenance") {
         h.html = vm.runInContext("shellMaintenanceView()", context);
-        for (const match of h.html.matchAll(/id="([^"]+)"/g)) elements.set("#" + match[1], element());
+        for (const match of h.html.matchAll(/\bid="([^"]+)"/g)) elements.set("#" + match[1], element());
         return;
       }
       if (view !== "settings") return;
