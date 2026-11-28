@@ -1,6 +1,6 @@
 # Zephyr HiFi Kit · 和风HiFi音乐播放套件 — 安装与部署
 
-**版本 0.68 · Git tag `v0.68`**
+**版本 0.82 · Git tag `v0.82`**
 
 [语言入口](README.md) · [中文 README](README.cn.md) · [English README / Windows quick start](README.en.md)
 
@@ -8,27 +8,30 @@
 
 ## 1. 选择发布包
 
-下载入口：[项目 Releases](https://github.com/Eyebright/Zephyr-HiFi-Kit/releases)。选择 `v0.68`，核对文件名、架构及发布校验和；以下为 0.68 交付命名，不代表资产已上传。
+下载入口：[项目 Releases](https://github.com/Eyebright/Zephyr-HiFi-Kit/releases)。选择 `v0.82`，核对文件名、架构及发布校验和；以下为 0.82 交付命名，不代表资产已上传。
 
 | 场景 | 文件名 / 镜像 |
 |---|---|
-| Linux amd64 + arm64 服务端管理包 | `Zephyr-HiFi-Kit-server-0.68.tar.gz` |
-| Linux amd64 服务端音频包 | `Zephyr-HiFi-Kit-server-0.68-audio-amd64.tar.gz` |
-| Linux arm64 服务端音频包 | `Zephyr-HiFi-Kit-server-0.68-audio-arm64.tar.gz` |
-| Windows amd64 服务端 | `Zephyr-HiFi-Kit-server-0.68-windows-amd64.zip` |
-| Linux amd64 终端管理 deb | `Zephyr-HiFi-Kit-terminal-0.68-linux-amd64.deb` |
-| Linux arm64 终端管理 deb | `Zephyr-HiFi-Kit-terminal-0.68-linux-arm64.deb` |
-| Linux armhf 终端管理 deb | `Zephyr-HiFi-Kit-terminal-0.68-linux-armhf.deb` |
-| Linux 多架构终端管理合集 | `Zephyr-HiFi-Kit-terminal-0.68-linux.tar.gz` |
-| Linux amd64 音频终端包 | `Zephyr-HiFi-Kit-terminal-0.68-audio-amd64.tar.gz` |
-| Linux arm64 音频终端包 | `Zephyr-HiFi-Kit-terminal-0.68-audio-arm64.tar.gz` |
-| Android 终端 | `Zephyr-HiFi-Kit-terminal-0.68.apk` |
-| Linux 容器镜像 | `ghcr.io/eyebright/zephyr-hifi-kit-server:0.68` |
+| Linux amd64 + arm64 服务端管理包 | `Zephyr-HiFi-Kit-server-0.82.tar.gz` |
+| Linux amd64 服务端音频包 | `Zephyr-HiFi-Kit-server-0.82-audio-amd64.tar.gz` |
+| Linux arm64 服务端音频包 | `Zephyr-HiFi-Kit-server-0.82-audio-arm64.tar.gz` |
+| Windows amd64 服务端 | `Zephyr-HiFi-Kit-server-0.82-windows-amd64.zip` |
+| Linux amd64 终端管理 deb | `Zephyr-HiFi-Kit-terminal-0.82-linux-amd64.deb` |
+| Linux arm64 终端管理 deb | `Zephyr-HiFi-Kit-terminal-0.82-linux-arm64.deb` |
+| Linux armhf 终端管理 deb | `Zephyr-HiFi-Kit-terminal-0.82-linux-armhf.deb` |
+| Linux 多架构终端管理合集 | `Zephyr-HiFi-Kit-terminal-0.82-linux.tar.gz` |
+| Linux amd64 音频终端包 | `Zephyr-HiFi-Kit-terminal-0.82-audio-amd64.tar.gz` |
+| Linux arm64 音频终端包 | `Zephyr-HiFi-Kit-terminal-0.82-audio-arm64.tar.gz` |
+| Android 终端 | `Zephyr-HiFi-Kit-terminal-0.82.apk` |
+| 智能体插件（Windows amd64） | `Zephyr-HiFi-Kit-mcp-plugin-0.82-windows-amd64.zip` |
+| 智能体插件（Linux amd64） | `Zephyr-HiFi-Kit-mcp-plugin-0.82-linux-amd64.zip` |
+| 智能体插件（Linux arm64） | `Zephyr-HiFi-Kit-mcp-plugin-0.82-linux-arm64.zip` |
+| Linux 容器镜像 | `ghcr.io/eyebright/zephyr-hifi-kit-server:0.82` |
 
 Linux 服务端管理包解压布局：
 
 ```text
-Zephyr-HiFi-Kit-server-0.68/
+Zephyr-HiFi-Kit-server-0.82/
 ├── server/
 │   ├── hifihub-server-linux-amd64
 │   ├── hifihub-server-linux-arm64
@@ -38,15 +41,15 @@ Zephyr-HiFi-Kit-server-0.68/
 │   ├── hifihub-server.service
 │   └── dist/
 │       ├── agent-install.sh
-│       ├── hifihub-agent_0.68_amd64.deb
-│       ├── hifihub-agent_0.68_arm64.deb
-│       ├── hifihub-agent_0.68_armhf.deb
+│       ├── hifihub-agent_0.82_amd64.deb
+│       ├── hifihub-agent_0.82_arm64.deb
+│       ├── hifihub-agent_0.82_armhf.deb
 │       └── SHA256SUMS
 ├── agent/
 └── SHA256SUMS
 ```
 
-`agent/` 是终端分发副本。Linux 服务端音频包按架构提供，使用相应音频构建与分发集。独立音频终端包中包含 `agent-install.sh`、`hifihub-agent_0.68_amd64.deb` 或 `hifihub-agent_0.68_arm64.deb`，以及配套 `SHA256SUMS`。
+`agent/` 是终端分发副本。Linux 服务端音频包按架构提供，使用相应音频构建与分发集。独立音频终端包中包含 `agent-install.sh`、`hifihub-agent_0.82_amd64.deb` 或 `hifihub-agent_0.82_arm64.deb`，以及配套 `SHA256SUMS`。
 
 **品牌名不是内部协议迁移。** Linux 安装后的二进制、systemd 服务、`/etc/hifihub`、环境变量 `HIFIHUB_*`、`/api/v1/` 和 `/dl/` 保持原名。对外终端 deb 更名，但内部 `Package: hifihub-agent`、安装服务 `hifihub-agent` 不变；不要把现有服务和目录手工改名。
 
@@ -59,7 +62,7 @@ Zephyr-HiFi-Kit-server-0.68/
 解压目录根应直接包含 `Zephyr-HiFi-Kit-server.exe`、`start.ps1`、`dist/` 和随包 README，而不是再套一层 `server/`：
 
 ```text
-Zephyr-HiFi-Kit-server-0.68-windows-amd64/
+Zephyr-HiFi-Kit-server-0.82-windows-amd64/
 ├── Zephyr-HiFi-Kit-server.exe
 ├── start.ps1
 ├── dist/
@@ -69,8 +72,8 @@ Zephyr-HiFi-Kit-server-0.68-windows-amd64/
 在下载目录打开 PowerShell：
 
 ```powershell
-Expand-Archive -LiteralPath .\Zephyr-HiFi-Kit-server-0.68-windows-amd64.zip -DestinationPath .
-Set-Location .\Zephyr-HiFi-Kit-server-0.68-windows-amd64
+Expand-Archive -LiteralPath .\Zephyr-HiFi-Kit-server-0.82-windows-amd64.zip -DestinationPath .
+Set-Location .\Zephyr-HiFi-Kit-server-0.82-windows-amd64
 .\start.ps1
 ```
 
@@ -165,7 +168,7 @@ $env:HIFIHUB_LISTEN = '0.0.0.0:8080'
 Windows 的 `dist/` 默认放管理版 Linux 终端，**没有 ALSA 实际播放后端**。需要真实播放时：
 
 1. 下载同版本、目标架构的音频终端包。
-2. 校验后把其 `agent-install.sh`、`hifihub-agent_0.68_<arch>.deb`、`SHA256SUMS` 作为一个完整分发集放入 `HIFIHUB_DIST_DIR` 指向的目录；脚本应烘焙版本 `0.68`。
+2. 校验后把其 `agent-install.sh`、`hifihub-agent_0.82_<arch>.deb`、`SHA256SUMS` 作为一个完整分发集放入 `HIFIHUB_DIST_DIR` 指向的目录；脚本应烘焙版本 `0.82`。
 3. 多架构分发时核对各架构均是预期音频/管理类型，合并目录后重新生成与实际内容匹配的校验清单；不要用单架构清单冒充完整合集。
 4. 在终端安装音频包并验证输出。仅打开 `HIFIHUB_UPDATE_FLEET` 不会把管理构建变成音频构建；错误分发集还可能覆盖已有音频终端。
 
@@ -218,8 +221,8 @@ ssh -N -L 18080:127.0.0.1:8080 user@server-host
 ```sh
 sudo apt-get update
 sudo apt-get install -y gnupg
-tar -xzf Zephyr-HiFi-Kit-server-0.68.tar.gz
-cd Zephyr-HiFi-Kit-server-0.68
+tar -xzf Zephyr-HiFi-Kit-server-0.82.tar.gz
+cd Zephyr-HiFi-Kit-server-0.82
 sha256sum -c SHA256SUMS
 cd server
 sudo ./install.sh
@@ -255,7 +258,7 @@ curl -fsS http://127.0.0.1:8080/api/v1/health
 curl -fsSI http://127.0.0.1:8080/dl/agent-install.sh
 ```
 
-需要原生 FLAC 解码时，使用 `Zephyr-HiFi-Kit-server-0.68-audio-amd64.tar.gz` 或 `Zephyr-HiFi-Kit-server-0.68-audio-arm64.tar.gz`，按包内同样的 `server/install.sh` 安装，并提供该构建链接的 libFLAC 运行库（例如发行版提供的 `libflac12`；以实际 ABI 为准）。管理版与音频版沿用相同内部配置和服务名。
+需要原生 FLAC 解码时，使用 `Zephyr-HiFi-Kit-server-0.82-audio-amd64.tar.gz` 或 `Zephyr-HiFi-Kit-server-0.82-audio-arm64.tar.gz`，按包内同样的 `server/install.sh` 安装，并提供该构建链接的 libFLAC 运行库（例如发行版提供的 `libflac12`；以实际 ABI 为准）。管理版与音频版沿用相同内部配置和服务名。
 
 ## 5. 音乐源与扫描
 
@@ -297,7 +300,7 @@ sudo bash ./agent-install.sh --server 'http://<服务端LAN地址>:8080' --token
 
 明文 HTTP 安装只适用于可信隔离 LAN；生产应使用已验证的安全传输或通过可信渠道离线传送并核对校验和。不要将不可信网络下载的脚本直接以 root 执行。
 
-安装脚本自动识别 amd64/arm64/armhf，下载 `/dl/hifihub-agent_0.68_<arch>.deb`，通过 dpkg/apt 安装依赖，写入 `/etc/hifihub/agent.env` 并启动 `hifihub-agent`。`--bind` 控制本地控制台绑定（默认 `0.0.0.0`、端口 8080）；`--deb` 可指定本地包。
+安装脚本自动识别 amd64/arm64/armhf，下载 `/dl/hifihub-agent_0.82_<arch>.deb`，通过 dpkg/apt 安装依赖，写入 `/etc/hifihub/agent.env` 并启动 `hifihub-agent`。`--bind` 控制本地控制台绑定（默认 `0.0.0.0`、端口 8080）；`--deb` 可指定本地包。
 
 新终端默认未授权。在控制台授权后再进行播放/软件下发。内置 3 席不需要另行购买许可证，但不会替你逐台授权。
 
@@ -308,7 +311,7 @@ sudo bash ./agent-install.sh --server 'http://<服务端LAN地址>:8080' --token
 独立管理 deb 的安装示例：
 
 ```sh
-sudo dpkg -i ./Zephyr-HiFi-Kit-terminal-0.68-linux-arm64.deb
+sudo dpkg -i ./Zephyr-HiFi-Kit-terminal-0.82-linux-arm64.deb
 sudo apt-get -f install
 ```
 
@@ -326,10 +329,10 @@ journalctl -u hifihub-agent -f
 sha256sum -c SHA256SUMS
 sudo bash ./agent-install.sh \
   --server 'http://<服务端LAN地址>:8080' --token '<一次性令牌>' \
-  --deb ./hifihub-agent_0.68_arm64.deb
+  --deb ./hifihub-agent_0.82_arm64.deb
 ```
 
-amd64 改用 `hifihub-agent_0.68_amd64.deb`。真实播放需要音频版的 ALSA 后端及其运行库（deb 声明依赖），管理版没有该后端。选择 DAC 后先用短曲验证格式、采样率、音量与实际出声，不能把“在线”当成“播放通过”。
+amd64 改用 `hifihub-agent_0.82_amd64.deb`。真实播放需要音频版的 ALSA 后端及其运行库（deb 声明依赖），管理版没有该后端。选择 DAC 后先用短曲验证格式、采样率、音量与实际出声，不能把“在线”当成“播放通过”。
 
 手动安装后需在 `/etc/hifihub/agent.env` 配置服务端 URL、一次性令牌和可选别名，再重启服务。该文件含注册信息，应限制为 root 可读。终端本地控制台以及 root 动作应仅限可信网络，按需要收紧 `HIFIHUB_AGENT_ALLOW_LOCAL`、`HIFIHUB_AGENT_ALLOW_POWER`；优先通过服务端受管理员保护的终端管理入口操作。
 
@@ -347,20 +350,20 @@ Agent 每次心跳都会上报版本、架构和构建类型（`audio` 或 `mana
 ```sh
 # Linux 服务端
 scripts/import-audio-dist.sh /var/lib/hifihub-server/dist \
-  Zephyr-HiFi-Kit-terminal-0.68-audio-arm64.tar.gz
+  Zephyr-HiFi-Kit-terminal-0.82-audio-arm64.tar.gz
 ```
 
 ```powershell
 # Windows 服务端
 .\import-audio-dist.ps1 -DistDir C:\path\to\dist `
-  -Bundle C:\path\to\Zephyr-HiFi-Kit-terminal-0.68-audio-arm64.tar.gz
+  -Bundle C:\path\to\Zephyr-HiFi-Kit-terminal-0.82-audio-arm64.tar.gz
 ```
 
 导入脚本会校验包内 SHA256SUMS 并重建分发目录的 SHA256SUMS。若终端提示“服务端分发缺少音频包”，先导入对应架构的音频终端包，再重试升级。不要为了省事把管理版 deb 推给需要 ALSA 播放的终端。
 
 ### 6.4 Android
 
-安装 `Zephyr-HiFi-Kit-terminal-0.68.apk`，仅在信任安装包来源后允许系统安装未知应用。当前目标为 Android API 26+ 的 arm64-v8a / armeabi-v7a；填写服务端可达地址、6–8 位数字验证码与可选别名后启动，回到服务端确认在线并授权。
+安装 `Zephyr-HiFi-Kit-terminal-0.82.apk`，仅在信任安装包来源后允许系统安装未知应用。当前目标为 Android API 26+ 的 arm64-v8a / armeabi-v7a；填写服务端可达地址、6–8 位数字验证码与可选别名后启动，回到服务端确认在线并授权。
 
 Android 输出使用 AAudio，优先独占、不可用时回退共享；设备及系统可能改变实际音频路径，不能无条件保证比特完美。Android 不使用 ALSA 设备名，也不通过 Linux deb 自动收敛升级。APK 更新需保留兼容签名，不能假定任意重签 APK 可覆盖原应用。
 
@@ -382,10 +385,10 @@ Android 输出使用 AAudio，优先独占、不可用时回退共享；设备�
 镜像入口：
 
 ```sh
-docker pull ghcr.io/eyebright/zephyr-hifi-kit-server:0.68
+docker pull ghcr.io/eyebright/zephyr-hifi-kit-server:0.82
 ```
 
-可参考仓库 `packaging/docker/compose.yml`，核对镜像标签为 `0.68`。关键部署要点：
+可参考仓库 `packaging/docker/compose.yml`，核对镜像标签为 `0.82`。关键部署要点：
 
 - 持久数据挂到 `/data`，分发集挂到 `/data/dist`；镜像中的服务用户为 `hifihub-server`（UID/GID 1000），宿主目录须授予必要权限，勿对整个宿主目录放宽权限。
 - 真实播放使用音频版终端分发集。服务端镜像包含 Linux libFLAC 解码能力，不意味着挂入的管理版终端 deb 有 ALSA。
@@ -405,13 +408,13 @@ docker pull ghcr.io/eyebright/zephyr-hifi-kit-server:0.68
 
 完整迁移应在停止服务端后备份整个数据目录、独立配置、外置数据路径以及要保留的分发集；音乐文件单独备份。完整数据库可能含 SMB 凭据与节点密钥，备份须按敏感数据保管，不能上传到 Release 或公开仓库。
 
-### 9.2 从 0.4.3 升到 0.68
+### 9.2 从 0.4.3 升到 0.82
 
-**必须手动安装一次。** 0.4.3 的自动更新器硬编码旧发布包名，不会因为 0.68 改了资产命名就自动找到新包。
+**必须手动安装一次。** 0.4.3 的自动更新器硬编码旧发布包名，不会因为 0.82 改了资产命名就自动找到新包。
 
 - **Windows**：先停止播放，在前台窗口按 Ctrl+C 并确认服务端进程退出；完整备份后，将新 ZIP 解压到独立目录，替换程序和正确的分发集，保留原数据目录并重新设置 `HIFIHUB_DATA_DIR`。启动后核对版本、登录、源、索引和终端状态。不要让两个进程同时使用同一数据库，也不要用新的空 data 覆盖原 data。
-- **Linux**：`sudo systemctl stop hifihub-server` 后完整备份，解压 0.68 匹配类型的包，运行 `server/install.sh`。安装器保留既有 env，但会复制程序与分发集，须核对自定义路径和音频终端文件。启动后检查日志与管理员登录。
-- **容器**：停止容器并备份数据卷，换用 `ghcr.io/eyebright/zephyr-hifi-kit-server:0.68` 重建，保留原卷与路径，并刷新相应分发集。
+- **Linux**：`sudo systemctl stop hifihub-server` 后完整备份，解压 0.82 匹配类型的包，运行 `server/install.sh`。安装器保留既有 env，但会复制程序与分发集，须核对自定义路径和音频终端文件。启动后检查日志与管理员登录。
+- **容器**：停止容器并备份数据卷，换用 `ghcr.io/eyebright/zephyr-hifi-kit-server:0.82` 重建，保留原卷与路径，并刷新相应分发集。
 - **终端**：包内部名不变，可用新 deb 手动升级；确认服务端分发集后再使用终端收敛。Android 通过兼容签名 APK 更新。
 
 有问题需回退时保留升级后的数据，优先恢复升级前完整备份和匹配程序，不能假定新数据库可安全配旧二进制。
@@ -434,7 +437,7 @@ docker pull ghcr.io/eyebright/zephyr-hifi-kit-server:0.68
 
 ### 9.4 卸载
 
-Linux 服务端使用 0.68 包内 `server/uninstall.sh`，保留配置和数据；终端包仍使用内部名：
+Linux 服务端使用 0.82 包内 `server/uninstall.sh`，保留配置和数据；终端包仍使用内部名：
 
 ```sh
 sudo apt-get remove hifihub-agent
@@ -459,17 +462,27 @@ Windows 停止进程后可移除程序目录，数据目录按需要保留并先
 | 扫描失败 | 查看返回错误，先恢复连接/读权限；失败扫描保留旧索引，不要为“刷新”删除源 |
 | `artifact_rejected` / `license_rejected` | GPG 可执行程序、可信公钥、签名与文件对应关系；保持 enforce |
 | 终端未授权 / 席位不足 | 逐台授权；内置 3 席无需激活额外许可证，超过可用席位才需扩容或释放 |
-| 升级等待/失败 | 播放门控、在途任务、签名/校验、架构、运行权限、dist 类型；0.4.3 跨到 0.68 手动安装 |
+| 升级等待/失败 | 播放门控、在途任务、签名/校验、架构、运行权限、dist 类型；0.4.3 跨到 0.82 手动安装 |
 
 建议在真实部署上分别记录：健康检查、管理员初始化与锁定/重登录、源复用、增量与完整扫描、归档/恢复、终端注册授权、WAV/FLAC 适用路径、实际出声及备份恢复。一次健康检查或单元测试不能代替这组端到端验证。
 
-## 11. 源码构建与测试
+## 11. 智能体插件（MCP）
 
-使用满足各 `go.mod` 的 Go 工具链（当前声明 `go 1.27.4`）。管理构建使用纯 Go；音频构建需相应 C 工具链。所有示例明确固定 `0.68`：
+`plugins/hifihub-player` 把服务端管理能力封装为 MCP 服务，供 Qoder 等智能体检索曲库、管理队列和控制播放，共 21 个工具。它只调用既有管理 API，不新增权限，也不绕过终端席位授权与播放门控。
+
+- **分发**：完整发布附带 `Zephyr-HiFi-Kit-mcp-plugin-0.82-<平台>.zip`，平台为 `windows-amd64` / `linux-amd64` / `linux-arm64`。包内顶层目录为 `hifihub-player/`，含 `.qoder-plugin/plugin.json`、`.mcp.json`、`skills/hifihub-player/SKILL.md`、`bin/hifihub-mcp`（Windows 为 `.exe`）、`README.md`、`LICENSE` 与 `SHA256SUMS`。
+- **安装**：核对 `SHA256SUMS` 后解压，把 `hifihub-player` 目录放入智能体的插件目录并重建会话。包内 `.mcp.json` 已按平台指向对应可执行文件，无需改命令。
+- **连接**：默认使用 `http://127.0.0.1:8080`，本机自动取得管理会话。远程部署需自行设置 `HIFIHUB_BASE_URL` 与 `HIFIHUB_SESSION_COOKIE`；服务端不会下发管理员凭据。
+- **版本**：插件自身维护 0.1.x 版本，与服务端两段号版本线独立；MCP `initialize` 报告的版本即包内清单版本。
+- **构建**：`VERSION=0.82 sh scripts/build-plugin.sh` 交叉编译并打包到 `release/`，可用 `TARGETS="linux-amd64"` 限定平台。
+
+## 12. 源码构建与测试
+
+使用满足各 `go.mod` 的 Go 工具链（当前声明 `go 1.27.4`）。管理构建使用纯 Go；音频构建需相应 C 工具链。所有示例明确固定 `0.82`：
 
 ```sh
 # 在仓库根目录：管理发布构建
-VERSION=0.68 sh scripts/build-release.sh
+VERSION=0.82 sh scripts/build-release.sh
 
 # 单元与前端测试
 go test ./...
@@ -481,9 +494,9 @@ Linux 原生音频构建（发布构建会调用音频构建；以下两种方�
 
 ```sh
 sudo apt-get install -y pkg-config libflac-dev libasound2-dev flac
-VERSION=0.68 AUDIO=1 TEST=1 sh scripts/build-release.sh
+VERSION=0.82 AUDIO=1 TEST=1 sh scripts/build-release.sh
 # 或仅构建音频产物和音频终端包并测试：
-# VERSION=0.68 TEST=1 sh scripts/build-audio.sh
+# VERSION=0.82 TEST=1 sh scripts/build-audio.sh
 ```
 
 构建脚本拒绝覆盖已有的非空版本输出目录；重建前请先保留并移走旧输出，不要直接删除可能需要的发布产物。前端测试还需安装支持 `node --test` 的 Node.js。
@@ -493,7 +506,7 @@ VERSION=0.68 AUDIO=1 TEST=1 sh scripts/build-release.sh
 Android 构建脚本使用 Linux NDK 工具链布局，需 Android SDK、NDK（脚本指定版本）、JDK 和 Gradle；配置好 `ANDROID_HOME` / `ANDROID_NDK_HOME` 后：
 
 ```sh
-VERSION=0.68 sh scripts/build-android.sh
+VERSION=0.82 sh scripts/build-android.sh
 ```
 
 签名材料由构建环境安全提供，不写入源码或发布包。Windows/macOS 上是否可调整工具链另行验证，不将脚本当前 Linux 限制宣称为平台永远无法构建。

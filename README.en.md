@@ -1,6 +1,6 @@
 # Zephyr HiFi Kit
 
-**和风HiFi音乐播放套件 · Version 0.68 · Release tag `v0.68`**
+**和风HiFi音乐播放套件 · Version 0.82 · Release tag `v0.82`**
 
 [Language selection](README.md) · [简体中文](README.cn.md) · [Installation guide](INSTALL.md) · [Changelog](CHANGELOG.md)
 
@@ -8,13 +8,14 @@ Zephyr HiFi Kit connects music files, a searchable library and network playback 
 
 Servers target Linux amd64/arm64 and Windows amd64. Linux audio terminals use ALSA; Android terminals use AAudio. **The Windows server is neither a Windows desktop audio player nor an automatically registered Windows system service.**
 
-## What is new in 0.68
+## What is new in 0.82
 
-- Per-device DSP: 16-band graphic EQ, reference curves, up to eight PEQ filters, preamp and soft limiting, remembered by `node_id::hw`; MQA/DoP bit-perfect paths bypass EQ automatically.
-- Safe DSD and isolated state: DSD defaults to PCM conversion and requires explicit per-device DoP selection, preventing unsupported DACs from playing DoP markers as noisy PCM. Queues, order, volume and sleep timers are isolated per playback device.
-- Audio Devices hub: activation, naming, DSD mode, EQ status and terminal deletion now live together in Settings; the player bar and console show playback-device names only.
-- Administration and enrollment: localhost receives a trusted administrator session without repeated password prompts, while remote administration still requires login. Android enrollment codes are now 6–8 numeric digits.
-- Library and audio fixes: stronger ID3/DSF/DFF/AIFF/Ogg/MP4 tag reading, directory fallbacks and previewable safe backfill; fixed high-rate/high-bit-depth loopback noise and push buttons for albums without year metadata.
+- Scanning no longer blocks playback: long scans commit in batches of 400, stay visible while running and resume after a restart. Fixed the UNC volume-root trailing separator that deadlocked scans at walked=400, and moved cover reads outside database transactions so SMB reads cannot hold the single pooled connection.
+- Lyrics pipeline: every result is cached (including "no lyrics") and each source file is read once; embedded and sidecar extraction has a 6-second hard timeout so a stalled NAS no longer hangs requests; enhanced-LRC inline bracket timestamps no longer leak into display text.
+- Android terminal: AAudio error -898 resolved through a sample-rate × performance-mode × format negotiation ladder with a PCM_FLOAT fallback; high-rate dropouts fixed by opening the stream at the DAC's native clock and resampling on the terminal, which now reports the real output rate. Added queue skipping, LAN server discovery, MediaSession lock-screen controls and per-line lyric highlighting.
+- Agent plugin: the new `hifihub-player` MCP plugin (21 tools) ships from CI next to the server for Windows/Linux, with download and setup notes under Settings → About.
+- One version line: server, Linux terminals, APK and plugin packages share a single version. Three-part tags (for example `v0.82.1`) publish only an Android hot-fix APK; every other artifact stays on the last full release.
+- Interface: home listening statistics now aggregate all devices, with the lead sentence switching across 1/7/30-day windows on the same row as the date control; playback devices collapse under their terminal in Settings.
 
 ## Capabilities and limits
 
@@ -28,9 +29,10 @@ Servers target Linux amd64/arm64 and Windows amd64. Linux audio terminals use AL
 | First run | Skippable welcome screen and three-step setup; persisted display name and progress; skipping does not create a password, install terminals or bypass authorization |
 | Terminals | One-time enrollment tokens, SSH auto-install with host-key confirmation, online status, per-terminal authorization, DAC and playback-protection settings, Linux software installation and system maintenance |
 | Delivery and licensing | Signed artifacts, BOM desired state, jobs, staged delivery and audit logs; app catalog split into public and self-supplied apps; 3 built-in terminal seats, expandable with an offline-signed license |
+| Agent access | The `hifihub-player` MCP plugin reuses the server admin API for library search, queue and playback control plus per-device equalisation; localhost obtains an admin session automatically while remote deployments supply their own cookie; it bypasses neither seat licensing nor play gates |
 | Maintenance | Music-data export/restore and cleanup; this export is not a complete backup of credentials, node identities or original audio files |
 
-This describes source-code capabilities, not acceptance testing on every platform. Release 0.68 is verified by CI (including a Windows host job and audio-build tests) and continuously exercised on the local production server; there is still no claim that every format, DAC, NAS or synchronized multi-room configuration has been verified.
+This describes source-code capabilities, not acceptance testing on every platform. Release 0.82 is verified by CI (including a Windows host job and audio-build tests) and continuously exercised on the local production server; there is still no claim that every format, DAC, NAS or synchronized multi-room configuration has been verified.
 
 ### Choosing an audio build
 
@@ -40,22 +42,25 @@ This describes source-code capabilities, not acceptance testing on every platfor
 - **Android:** AAudio requests exclusive mode first and may fall back to shared mode. Results depend on the device and system audio path.
 - `ffmpeg`, `ffprobe` and GPG are optional external installations, not bundled with the Windows ZIP. See [INSTALL.md](INSTALL.md) for their function-specific uses and current decoding limits; installing tools does not automatically enable every playback format.
 
-## Get 0.68
+## Get 0.82
 
-Choose `v0.68` in the [existing repository's Releases](https://github.com/Eyebright/Zephyr-HiFi-Kit/releases) and verify the published checksums. The naming table below does not assert that assets have already been uploaded.
+Choose `v0.82` in the [existing repository's Releases](https://github.com/Eyebright/Zephyr-HiFi-Kit/releases) and verify the published checksums. The naming table below does not assert that assets have already been uploaded.
 
 | Purpose | Release asset |
 |---|---|
-| Multi-architecture Linux management server | `Zephyr-HiFi-Kit-server-0.68.tar.gz` |
-| Linux audio server | `Zephyr-HiFi-Kit-server-0.68-audio-amd64.tar.gz` / `Zephyr-HiFi-Kit-server-0.68-audio-arm64.tar.gz` |
-| Windows amd64 server | `Zephyr-HiFi-Kit-server-0.68-windows-amd64.zip` |
-| Linux management terminal debs | `Zephyr-HiFi-Kit-terminal-0.68-linux-amd64.deb` / `Zephyr-HiFi-Kit-terminal-0.68-linux-arm64.deb` / `Zephyr-HiFi-Kit-terminal-0.68-linux-armhf.deb` |
-| Linux management terminal collection | `Zephyr-HiFi-Kit-terminal-0.68-linux.tar.gz` |
-| Linux audio terminal bundle | `Zephyr-HiFi-Kit-terminal-0.68-audio-amd64.tar.gz` / `Zephyr-HiFi-Kit-terminal-0.68-audio-arm64.tar.gz` |
-| Android terminal | `Zephyr-HiFi-Kit-terminal-0.68.apk` |
-| Container image | `ghcr.io/eyebright/zephyr-hifi-kit-server:0.68` |
+| Multi-architecture Linux management server | `Zephyr-HiFi-Kit-server-0.82.tar.gz` |
+| Linux audio server | `Zephyr-HiFi-Kit-server-0.82-audio-amd64.tar.gz` / `Zephyr-HiFi-Kit-server-0.82-audio-arm64.tar.gz` |
+| Windows amd64 server | `Zephyr-HiFi-Kit-server-0.82-windows-amd64.zip` |
+| Linux management terminal debs | `Zephyr-HiFi-Kit-terminal-0.82-linux-amd64.deb` / `Zephyr-HiFi-Kit-terminal-0.82-linux-arm64.deb` / `Zephyr-HiFi-Kit-terminal-0.82-linux-armhf.deb` |
+| Linux management terminal collection | `Zephyr-HiFi-Kit-terminal-0.82-linux.tar.gz` |
+| Linux audio terminal bundle | `Zephyr-HiFi-Kit-terminal-0.82-audio-amd64.tar.gz` / `Zephyr-HiFi-Kit-terminal-0.82-audio-arm64.tar.gz` |
+| Android terminal | `Zephyr-HiFi-Kit-terminal-0.82.apk` |
+| Agent plugin (MCP) | `Zephyr-HiFi-Kit-mcp-plugin-0.82-windows-amd64.zip` / `-linux-amd64.zip` / `-linux-arm64.zip` |
+| Container image | `ghcr.io/eyebright/zephyr-hifi-kit-server:0.82` |
 
-The public product name is Zephyr HiFi Kit. **Internal `hifihub` service names, paths, environment variables and APIs remain compatible.** Terminal debs still declare `Package: hifihub-agent`; the `/dl/` distribution set uses `hifihub-agent_0.68_<arch>.deb`. Do not rename existing configuration just to match the new branding.
+The public product name is Zephyr HiFi Kit. **Internal `hifihub` service names, paths, environment variables and APIs remain compatible.** Terminal debs still declare `Package: hifihub-agent`; the `/dl/` distribution set uses `hifihub-agent_0.82_<arch>.deb`. Do not rename existing configuration just to match the new branding.
+
+The agent plugin ships with the matching server release: unpack `Zephyr-HiFi-Kit-mcp-plugin-0.82-<platform>.zip` and place the `hifihub-player` folder inside it into your agent's plugin directory. The packaged `.mcp.json` already points at `bin/hifihub-mcp` for that platform. It connects to `http://127.0.0.1:8080` by default and picks up a local admin session; remote deployments must set `HIFIHUB_BASE_URL` and `HIFIHUB_SESSION_COOKIE`. See the [plugin guide](plugins/hifihub-player/README.md).
 
 ## Quick start
 
@@ -64,8 +69,8 @@ The public product name is Zephyr HiFi Kit. **Internal `hifihub` service names, 
 Extract the ZIP and enter its same-named directory in PowerShell:
 
 ```powershell
-Expand-Archive -LiteralPath .\Zephyr-HiFi-Kit-server-0.68-windows-amd64.zip -DestinationPath .
-Set-Location .\Zephyr-HiFi-Kit-server-0.68-windows-amd64
+Expand-Archive -LiteralPath .\Zephyr-HiFi-Kit-server-0.82-windows-amd64.zip -DestinationPath .
+Set-Location .\Zephyr-HiFi-Kit-server-0.82-windows-amd64
 .\start.ps1
 ```
 
@@ -94,7 +99,7 @@ $env:HIFIHUB_UPDATE_FLEET = 'false'
 
 For LAN access, explicitly set `HIFIHUB_LISTEN` to the desired LAN address and permit only trusted LAN peers through the firewall. TCP 8080 is HTTP/API/downloads; TCP 7800 is ZAT. Changing the bind address does not enable remote administrator login. Read the authentication and reverse-proxy limitations below before exposing a listener.
 
-The Windows distribution set contains management terminal packages. For actual Linux-terminal playback, replace `dist/` with the matching 0.68 audio distribution set: update the installer, audio deb and `SHA256SUMS` together. Do this before enabling fleet convergence; otherwise management packages can replace audio-capable terminals. Keep unrelated architecture files and checksums consistent.
+The Windows distribution set contains management terminal packages. For actual Linux-terminal playback, replace `dist/` with the matching 0.82 audio distribution set: update the installer, audio deb and `SHA256SUMS` together. Do this before enabling fleet convergence; otherwise management packages can replace audio-capable terminals. Keep unrelated architecture files and checksums consistent.
 
 Windows upgrades are manual: stop playback and the server process, back up the complete data directory and configuration, replace the program and distribution files, then restart using the same data path. The package does not promise in-place self-update. Local source paths refer to the server, not the browser's computer; Windows SMB access uses the server account's network session and share permissions.
 
@@ -105,8 +110,8 @@ Install on a trusted network. The Linux template defaults to `0.0.0.0:8080`, so 
 ```sh
 sudo apt-get update
 sudo apt-get install -y gnupg
-tar -xzf Zephyr-HiFi-Kit-server-0.68.tar.gz
-cd Zephyr-HiFi-Kit-server-0.68/server
+tar -xzf Zephyr-HiFi-Kit-server-0.82.tar.gz
+cd Zephyr-HiFi-Kit-server-0.82/server
 sudo ./install.sh
 curl -fsS http://127.0.0.1:8080/api/v1/health
 ```
@@ -131,7 +136,7 @@ Audio Devices shows each terminal's current version, the server target version a
 
 ## Upgrades and security
 
-- **Upgrade from 0.4.3 to 0.68 manually once.** The old updater hard-codes the former asset names; the new release cannot repair asset selection in the old running process.
+- **Upgrade from 0.4.3 to 0.82 manually once.** The old updater hard-codes the former asset names; the new release cannot repair asset selection in the old running process.
 - Windows uses manual process replacement with data preservation. Containers are upgraded by replacing the image while retaining the data volume.
 - Linux self-update and terminal convergence depend on enabled settings, suitable assets, verification, runtime permissions and playback gates; unattended upgrades are not guaranteed in every deployment.
 - Keep `HIFIHUB_SIGNATURE_MODE=enforce` in production. Install GPG and import trusted public keys when signature verification is needed. Keep signing private keys offline or on a controlled signing host; release packages must not contain private keys, passwords or private music libraries.
@@ -144,7 +149,7 @@ Audio Devices shows each terminal's current version, the server target version a
 Use a Go toolchain satisfying `go.mod` (currently `go 1.27.4`). From the repository root:
 
 ```sh
-VERSION=0.68 sh scripts/build-release.sh
+VERSION=0.82 sh scripts/build-release.sh
 go test ./...
 go -C agent test ./...
 node --test internal/web/*.test.cjs

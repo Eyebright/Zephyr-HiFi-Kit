@@ -1,6 +1,6 @@
 # Zephyr HiFi Kit · 和风HiFi音乐播放套件
 
-**版本 0.68 · 发布标签 `v0.68`**
+**版本 0.82 · 发布标签 `v0.82`**
 
 [语言入口](README.md) · [English](README.en.md) · [安装与部署](INSTALL.md) · [版本更新](CHANGELOG.md)
 
@@ -8,13 +8,14 @@ Zephyr HiFi Kit 把音乐文件、曲库和播放终端连接起来：服务端�
 
 服务端支持 Linux amd64/arm64 和 Windows amd64；Linux 播放终端使用 ALSA 音频版，Android 终端使用 AAudio。**Windows 服务端不是 Windows 本地播放器，也不是自动注册的 Windows 系统服务。**
 
-## 0.68 更新要点
+## 0.82 更新要点
 
-- 每设备独立 DSP：16 段图形 EQ、常用参考曲线、最多 8 组 PEQ、前置增益与软限幅；设置按 `node_id::hw` 记忆，MQA/DoP 位完美路径自动绕过 EQ。
-- 安全 DSD 与设备状态：DSD 默认转 PCM，按设备显式选择 DoP，避免不支持 DoP 的 DAC 把标记帧当 PCM 播放产生噪音；队列、顺序、音量和定时关闭也按播放设备隔离。
-- 音频设备中心：设置页内集中管理播放设备，支持激活、命名、DSD 模式、EQ 状态与删除终端；播放栏和控制台只显示播放设备名。
-- 管理与接入：本机 localhost 自动获得管理员会话，不再反复输入密码；远程管理仍需登录。安卓安装令牌改为 6–8 位数字验证码。
-- 曲库与音频修复：补强 ID3/DSF/DFF/AIFF/Ogg/MP4 标签读取、目录兜底及可预览的安全回填；修复高采样率/高位深回环投送噪音与无年份专辑的推送按钮。
+- 扫描与播放互不阻塞：长扫描改为分批提交（每 400 条），扫描期间索引持续可见、进程重启可续跑；修复 UNC 卷根目录尾部分隔符造成的扫描死循环，封面读取移出数据库事务，不再由 SMB 读占住单连接池。
+- 歌词链路：缓存全部结果（含"无歌词"），每个源文件只读一次；内嵌/同名歌词提取设 6 秒硬超时，NAS 卡住不再拖住请求；增强型 LRC 的行内时间标签不再泄漏到显示文本。
+- 安卓终端：AAudio 开流 -898 改为采样率×性能模式×格式协商梯并回退 PCM_FLOAT；高码率断流改为按 DAC 原生时钟开流、终端内重采样并显示真实输出采样率；新增队列切歌、局域网服务端发现、锁屏/通知栏 MediaSession 控制与歌词逐句高亮。
+- 智能体插件：新增 `hifihub-player` MCP 插件（21 个工具），CI 随服务端发布 Windows/Linux 安装包，设置页「关于我们」提供下载与安装说明。
+- 单一版本线：服务端、Linux 终端、APK 与插件包共用一个版本号；三段号标签（如 `v0.82.1`）只发布安卓热修 APK，其余制品沿用上一完整版。
+- 界面：首页收听统计改为全部设备累计，引导语随 1/7/30 天窗口动态切换并与日期切换同行；音频设备列表按终端折叠展开。
 
 ## 当前能力与边界
 
@@ -28,9 +29,10 @@ Zephyr HiFi Kit 把音乐文件、曲库和播放终端连接起来：服务端�
 | 首次使用 | 可跳过的欢迎页与三步引导；称呼和进度持久化；跳过不会创建密码、自动安装终端或绕过权限 |
 | 终端管理 | 一次性注册令牌、SSH 自动安装（主机指纹确认）、在线状态、逐终端授权、DAC 与播放保护配置、Linux 软件安装及系统维护 |
 | 软件与授权 | 签名制品、BOM 期望态、任务与灰度下发、审计；应用目录区分公开应用与自备上传；服务端内置 3 个终端席位，可导入离线签名许可证扩容 |
+| 智能体接入 | `hifihub-player` MCP 插件复用服务端管理 API，提供曲库检索、队列与播放控制、每设备均衡；本机自动取得管理会话，远程部署需自带会话 Cookie；不绕过席位授权与播放门控 |
 | 备份与维护 | 音乐数据导出/恢复、清理；音乐数据导出不是包含密码、节点身份和原音频的整机备份 |
 
-这些是源码能力说明，不是全部平台的验收结论。0.68 由 CI 自动验证（含 Windows 实机任务与音频构建测试），本机生产环境亦持续验证；仍不承诺全部音频格式、任意 DAC、所有 NAS 或多房间同步均已验证。
+这些是源码能力说明，不是全部平台的验收结论。0.82 由 CI 自动验证（含 Windows 实机任务与音频构建测试），本机生产环境亦持续验证；仍不承诺全部音频格式、任意 DAC、所有 NAS 或多房间同步均已验证。
 
 ### 音频版本怎么选
 
@@ -40,22 +42,25 @@ Zephyr HiFi Kit 把音乐文件、曲库和播放终端连接起来：服务端�
 - **Android**：AAudio 优先请求独占模式，失败时可回退共享模式；实际效果取决于设备和系统音频路径。
 - `ffmpeg`、`ffprobe`、GPG 均不随 Windows 包捆绑。其按功能安装的用途与当前解码限制见 [INSTALL.md](INSTALL.md)；不要假定安装外部工具便自动扩展所有播放能力。
 
-## 获取 0.68
+## 获取 0.82
 
-从[现有项目 Releases](https://github.com/Eyebright/Zephyr-HiFi-Kit/releases)选择 `v0.68`。包名与用途如下，下载后核对发布校验和；此表不表示资产已经上传。
+从[现有项目 Releases](https://github.com/Eyebright/Zephyr-HiFi-Kit/releases)选择 `v0.82`。包名与用途如下，下载后核对发布校验和；此表不表示资产已经上传。
 
 | 用途 | 发布资产 |
 |---|---|
-| Linux 多架构服务端管理包 | `Zephyr-HiFi-Kit-server-0.68.tar.gz` |
-| Linux 服务端音频包 | `Zephyr-HiFi-Kit-server-0.68-audio-amd64.tar.gz` / `Zephyr-HiFi-Kit-server-0.68-audio-arm64.tar.gz` |
-| Windows amd64 服务端 | `Zephyr-HiFi-Kit-server-0.68-windows-amd64.zip` |
-| Linux 终端管理 deb | `Zephyr-HiFi-Kit-terminal-0.68-linux-amd64.deb` / `Zephyr-HiFi-Kit-terminal-0.68-linux-arm64.deb` / `Zephyr-HiFi-Kit-terminal-0.68-linux-armhf.deb` |
-| Linux 终端管理合集 | `Zephyr-HiFi-Kit-terminal-0.68-linux.tar.gz` |
-| Linux 音频终端包 | `Zephyr-HiFi-Kit-terminal-0.68-audio-amd64.tar.gz` / `Zephyr-HiFi-Kit-terminal-0.68-audio-arm64.tar.gz` |
-| Android 终端 | `Zephyr-HiFi-Kit-terminal-0.68.apk` |
-| 容器镜像 | `ghcr.io/eyebright/zephyr-hifi-kit-server:0.68` |
+| Linux 多架构服务端管理包 | `Zephyr-HiFi-Kit-server-0.82.tar.gz` |
+| Linux 服务端音频包 | `Zephyr-HiFi-Kit-server-0.82-audio-amd64.tar.gz` / `Zephyr-HiFi-Kit-server-0.82-audio-arm64.tar.gz` |
+| Windows amd64 服务端 | `Zephyr-HiFi-Kit-server-0.82-windows-amd64.zip` |
+| Linux 终端管理 deb | `Zephyr-HiFi-Kit-terminal-0.82-linux-amd64.deb` / `Zephyr-HiFi-Kit-terminal-0.82-linux-arm64.deb` / `Zephyr-HiFi-Kit-terminal-0.82-linux-armhf.deb` |
+| Linux 终端管理合集 | `Zephyr-HiFi-Kit-terminal-0.82-linux.tar.gz` |
+| Linux 音频终端包 | `Zephyr-HiFi-Kit-terminal-0.82-audio-amd64.tar.gz` / `Zephyr-HiFi-Kit-terminal-0.82-audio-arm64.tar.gz` |
+| Android 终端 | `Zephyr-HiFi-Kit-terminal-0.82.apk` |
+| 智能体插件（MCP） | `Zephyr-HiFi-Kit-mcp-plugin-0.82-windows-amd64.zip` / `-linux-amd64.zip` / `-linux-arm64.zip` |
+| 容器镜像 | `ghcr.io/eyebright/zephyr-hifi-kit-server:0.82` |
 
-对外名称统一为 Zephyr HiFi Kit，**内部 `hifihub` 的服务名、目录、环境变量和 API 保持兼容**。终端 deb 的内部 `Package` 仍为 `hifihub-agent`，`/dl/` 分发集仍使用 `hifihub-agent_0.68_<arch>.deb`，不要仅为改名迁移现有配置。
+对外名称统一为 Zephyr HiFi Kit，**内部 `hifihub` 的服务名、目录、环境变量和 API 保持兼容**。终端 deb 的内部 `Package` 仍为 `hifihub-agent`，`/dl/` 分发集仍使用 `hifihub-agent_0.82_<arch>.deb`，不要仅为改名迁移现有配置。
+
+智能体插件与服务端同版本分发：解压对应平台的 `Zephyr-HiFi-Kit-mcp-plugin-0.82-<平台>.zip`，把其中的 `hifihub-player` 目录放入智能体的插件目录；包内 `.mcp.json` 已按平台指向 `bin/hifihub-mcp`。默认连接本机 `http://127.0.0.1:8080` 并自动取得管理会话，远程部署需自行设置 `HIFIHUB_BASE_URL` 与 `HIFIHUB_SESSION_COOKIE`。详见[插件说明](plugins/hifihub-player/README.md)。
 
 ## 快速开始
 
@@ -64,8 +69,8 @@ Zephyr HiFi Kit 把音乐文件、曲库和播放终端连接起来：服务端�
 解压 ZIP，在 PowerShell 中进入解压后的同名目录：
 
 ```powershell
-Expand-Archive -LiteralPath .\Zephyr-HiFi-Kit-server-0.68-windows-amd64.zip -DestinationPath .
-Set-Location .\Zephyr-HiFi-Kit-server-0.68-windows-amd64
+Expand-Archive -LiteralPath .\Zephyr-HiFi-Kit-server-0.82-windows-amd64.zip -DestinationPath .
+Set-Location .\Zephyr-HiFi-Kit-server-0.82-windows-amd64
 .\start.ps1
 ```
 
@@ -80,8 +85,8 @@ Set-Location .\Zephyr-HiFi-Kit-server-0.68-windows-amd64
 ```sh
 sudo apt-get update
 sudo apt-get install -y gnupg
-tar -xzf Zephyr-HiFi-Kit-server-0.68.tar.gz
-cd Zephyr-HiFi-Kit-server-0.68/server
+tar -xzf Zephyr-HiFi-Kit-server-0.82.tar.gz
+cd Zephyr-HiFi-Kit-server-0.82/server
 sudo ./install.sh
 curl -fsS http://127.0.0.1:8080/api/v1/health
 ```
@@ -108,7 +113,7 @@ Windows 包内 `dist/` 是管理版终端分发集。要实际出声，按 [INST
 
 ## 升级与安全
 
-- **从 0.4.3 升到 0.68 必须手动安装一次**：旧自动更新器硬编码旧包名，不能靠新版本修复旧进程的资产选择。
+- **从 0.4.3 升到 0.82 必须手动安装一次**：旧自动更新器硬编码旧包名，不能靠新版本修复旧进程的资产选择。
 - Windows 使用“停止进程 → 完整备份数据和配置 → 替换程序/分发集 → 保留原数据目录启动”的手动升级方式，不承诺自更新。容器通过更换镜像并保留数据卷升级。
 - Linux 自升级与终端版本收敛受启用状态、发布资产、校验、运行权限和播放保护约束，不保证所有安装环境无操作自动升级。
 - 生产保持 `HIFIHUB_SIGNATURE_MODE=enforce`；需要签名校验时安装 GPG 并导入可信公钥。私钥留在离线/受控签名端；发布包不包含私钥、密码或私人曲库。
@@ -121,7 +126,7 @@ Windows 包内 `dist/` 是管理版终端分发集。要实际出声，按 [INST
 使用满足 `go.mod` 的 Go 工具链（当前声明 `go 1.27.4`）。在仓库根目录运行：
 
 ```sh
-VERSION=0.68 sh scripts/build-release.sh
+VERSION=0.82 sh scripts/build-release.sh
 go test ./...
 go -C agent test ./...
 node --test internal/web/*.test.cjs
