@@ -479,11 +479,55 @@ func (s *Service) ScanChanges(ctx context.Context, id string, full bool) (ScanRe
 	return res, err
 }
 
+// upsertTrack inserts or refreshes one track row inside the given transaction.
+func (s *Service) upsertTrack(ctx context.Context, tx *sql.Tx, t Track) error {
+	_, err := tx.ExecContext(ctx, `INSERT INTO tracks
+		(id,mount_id,path,rel_path,title,artist,album,codec,container,rate,channels,bits,
+		 total_samples,duration_ms,decodable,mqa,mqa_checked,size,scanned_at,cover_hash,added_at,genre,
+		 album_artist,composer,year,disc_number,track_number,mtime_ns,cue_start,cue_end)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		ON CONFLICT(id) DO UPDATE SET path=excluded.path,title=excluded.title,artist=excluded.artist,
+		album=excluded.album,codec=excluded.codec,container=excluded.container,rate=excluded.rate,
+		channels=excluded.channels,bits=excluded.bits,total_samples=excluded.total_samples,
+		duration_ms=excluded.duration_ms,decodable=excluded.decodable,mqa=excluded.mqa,
+		mqa_checked=excluded.mqa_checked,size=excluded.size,
+		scanned_at=excluded.scanned_at,cover_hash=excluded.cover_hash,genre=excluded.genre,
+		album_artist=excluded.album_artist,composer=excluded.composer,year=excluded.year,
+		disc_number=excluded.disc_number,track_number=excluded.track_number,mtime_ns=excluded.mtime_ns,
+		cue_start=excluded.cue_start,cue_end=excluded.cue_end`,
+		t.ID, t.MountID, t.Path, t.RelPath, t.Title, t.Artist, t.Album, t.Codec, t.Container,
+		t.Rate, t.Channels, t.Bits, t.TotalSamples, t.DurationMS, boolInt(t.Decodable), boolInt(t.MQA), boolInt(t.MQAChecked), t.Size,
+		t.ScannedAt, t.CoverHash, t.AddedAt, t.Genre, t.AlbumArtist, t.Composer,
+		t.Year, t.DiscNumber, t.TrackNumber, t.MtimeNS, t.CueStart, t.CueEnd)
+	return err
+}
+
+// backfillRead resolves art for an unchanged track without DB access: cached
+// album art first, then sidecar images, then the embedded picture.
+func (s *Service) backfillRead(ctx context.Context, t Track, root string, cache map[string]string) (string, media.Cover, error) {
+	dir := filepath.Dir(t.Path)
+	state := cache[dir]
+	if hash := coverCacheHash(state); hash != "" {
+		return hash, media.Cover{}, nil
+	}
+	if state == "" {
+		if c, cerr := sidecarCover(dir, root); cerr == nil {
+			return "", c, nil
+		}
+		cache[dir] = coverSidecarNone
+	}
+	if cache[dir] != coverEmbeddedNone {
+		if c, cerr := media.ReadEmbeddedCover(t.Path, t.Container); cerr == nil {
+			return "", c, nil
+		}
+		cache[dir] = coverEmbeddedNone
+	}
+	return "", media.Cover{}, nil
+}
+
 func (s *Service) scanChanges(ctx context.Context, id string, full bool) (ScanResult, error) {
 	s.metadataMu.Lock()
 	defer s.metadataMu.Unlock()
-	s.sourceMu.Lock()
-	defer s.sourceMu.Unlock()
 	result := ScanResult{}
 	if err := ctx.Err(); err != nil {
 		return ScanResult{}, err
@@ -532,7 +576,13 @@ func (s *Service) scanChanges(ctx context.Context, id string, full bool) (ScanRe
 	if full {
 		s.clearScanCursor()
 	} else if cm, cr, ok := s.InterruptedScan(); ok && cm == id {
-		resumeRel = cr
+		// A resume assumes the index rows before the cursor still exist; with
+		// an empty index there is nothing to keep, so rebuild from scratch.
+		if len(previous) == 0 {
+			s.clearScanCursor()
+		} else {
+			resumeRel = cr
+		}
 	}
 	walkedSinceSave := 0
 	changed := []Track{}
@@ -540,6 +590,92 @@ func (s *Service) scanChanges(ctx context.Context, id string, full bool) (ScanRe
 	seen := map[string]fs.FileInfo{}
 	cueJobs := []cueJob{}
 	coverCache := map[string]string{}
+	batchChanged := []Track{}
+	batchBackfill := []Track{}
+	// Batched commits keep the index visible and restart-safe during long
+	// walks; the final pass upserts again with cross-track consistency.
+	flushChanged := func(batch []Track) error {
+		type resolved struct {
+			t    Track
+			hash string
+			c    media.Cover
+		}
+		list := make([]resolved, 0, len(batch))
+		for _, t := range batch {
+			h, c, rerr := s.readCover(ctx, t.Path, t.Container, root, coverCache)
+			if rerr != nil {
+				return rerr
+			}
+			list = append(list, resolved{t, h, c})
+		}
+		tx, berr := s.db.BeginTx(ctx, nil)
+		if berr != nil {
+			return berr
+		}
+		defer tx.Rollback()
+		for _, r := range list {
+			hash := r.hash
+			if hash == "" && len(r.c.Data) > 0 {
+				h, cerr := s.commitCover(ctx, tx, r.c, filepath.Dir(r.t.Path), coverCache, now)
+				if cerr != nil {
+					return cerr
+				}
+				hash = h
+			}
+			r.t.CoverHash = hash
+			if ierr := s.upsertTrack(ctx, tx, r.t); ierr != nil {
+				return ierr
+			}
+		}
+		return tx.Commit()
+	}
+	flushBackfill := func(batch []Track) error {
+		type resolved struct {
+			t    Track
+			hash string
+			c    media.Cover
+		}
+		list := make([]resolved, 0, len(batch))
+		for _, t := range batch {
+			h, c, rerr := s.backfillRead(ctx, t, root, coverCache)
+			if rerr != nil {
+				return rerr
+			}
+			list = append(list, resolved{t, h, c})
+		}
+		tx, berr := s.db.BeginTx(ctx, nil)
+		if berr != nil {
+			return berr
+		}
+		defer tx.Rollback()
+		filled := 0
+		for _, r := range list {
+			hash := r.hash
+			if hash == "" && len(r.c.Data) == 0 {
+				hash = coverCacheHash(coverCache[filepath.Dir(r.t.Path)])
+			}
+			if hash == "" && len(r.c.Data) > 0 {
+				h, cerr := s.commitCover(ctx, tx, r.c, filepath.Dir(r.t.Path), coverCache, now)
+				if cerr != nil {
+					return cerr
+				}
+				hash = h
+			}
+			if hash == "" {
+				continue
+			}
+			if _, uerr := tx.ExecContext(ctx, `UPDATE tracks SET cover_hash=? WHERE id=?`, hash, r.t.ID); uerr != nil {
+				return uerr
+			}
+			filled++
+		}
+		if cerr := tx.Commit(); cerr != nil {
+			return cerr
+		}
+		result.CoversFilled += filled
+		s.progUpdate(func(p *ScanProgress) { p.CoversFilled += filled })
+		return nil
+	}
 	err = filepath.WalkDir(root, func(p string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -560,7 +696,33 @@ func (s *Service) scanChanges(ctx context.Context, id string, full bool) (ScanRe
 			}
 			return nil
 		}
-		if d.IsDir() || !d.Type().IsRegular() {
+		if d.IsDir() {
+			// While resuming, whole directories lexically before the cursor
+			// cannot contain unprocessed files: skip them instead of walking
+			// every entry over the network mount.
+			if resumeRel != "" {
+				dirRel, derr := filepath.Rel(root, p)
+				if derr == nil {
+					dirRel = filepath.ToSlash(dirRel)
+					if dirRel != "" && dirRel != "." && !strings.HasPrefix(resumeRel, dirRel+"/") && dirRel+"/" < resumeRel {
+						// Keep their index rows: skipped files are unchanged, not
+						// removed. Drop them from the removal set and count them.
+						n := 0
+						for rel := range remaining {
+							if strings.HasPrefix(rel, dirRel+"/") {
+								delete(remaining, rel)
+								n++
+							}
+						}
+						result.Unchanged += n
+						s.progUpdate(func(p *ScanProgress) { p.Walked += n })
+						return filepath.SkipDir
+					}
+				}
+			}
+			return nil
+		}
+		if !d.Type().IsRegular() {
 			return nil
 		}
 		if strings.EqualFold(filepath.Ext(d.Name()), ".cue") {
@@ -610,6 +772,13 @@ func (s *Service) scanChanges(ctx context.Context, id string, full bool) (ScanRe
 			result.Unchanged++
 			if oldTrack.CoverHash == "" {
 				backfill = append(backfill, oldTrack)
+				batchBackfill = append(batchBackfill, oldTrack)
+				if len(batchBackfill) >= 400 {
+					if ferr := flushBackfill(batchBackfill); ferr != nil {
+						return ferr
+					}
+					batchBackfill = batchBackfill[:0]
+				}
 			}
 			return nil
 		}
@@ -653,6 +822,13 @@ func (s *Service) scanChanges(ctx context.Context, id string, full bool) (ScanRe
 			Bits: pr.Bits, TotalSamples: pr.TotalSamples, DurationMS: pr.DurationMS,
 			Decodable: pr.Decodable, MQA: pr.MQA, MQAChecked: mqaChecked, Size: info.Size(), MtimeNS: info.ModTime().UnixNano(), ScannedAt: now,
 		})
+		batchChanged = append(batchChanged, changed[len(changed)-1])
+		if len(batchChanged) >= 400 {
+			if ferr := flushChanged(batchChanged); ferr != nil {
+				return ferr
+			}
+			batchChanged = batchChanged[:0]
+		}
 		if live {
 			result.Updated++
 		} else {
@@ -679,6 +855,33 @@ func (s *Service) scanChanges(ctx context.Context, id string, full bool) (ScanRe
 	for i := range changed {
 		resolver.apply(&changed[i])
 	}
+	// The walk above is read-only over the source; only the commit phase needs
+	// exclusivity against mount lifecycle changes, so pushes and mount ops are
+	// not blocked for the whole scan.
+	s.sourceMu.Lock()
+	defer s.sourceMu.Unlock()
+	// Resolve all cover art over the network BEFORE opening the transaction:
+	// the single-connection pool must not be held hostage by SMB reads.
+	type resolvedCover struct {
+		hash string
+		c    media.Cover
+	}
+	changedCovers := make([]resolvedCover, len(changed))
+	for i, t := range changed {
+		h, c, rerr := s.readCover(ctx, t.Path, t.Container, root, coverCache)
+		if rerr != nil {
+			return ScanResult{}, rerr
+		}
+		changedCovers[i] = resolvedCover{h, c}
+	}
+	backfillCovers := make([]resolvedCover, len(backfill))
+	for i, t := range backfill {
+		h, c, rerr := s.backfillRead(ctx, t, root, coverCache)
+		if rerr != nil {
+			return ScanResult{}, rerr
+		}
+		backfillCovers[i] = resolvedCover{h, c}
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return ScanResult{}, err
@@ -692,29 +895,16 @@ func (s *Service) scanChanges(ctx context.Context, id string, full bool) (ScanRe
 			return ScanResult{}, err
 		}
 	}
-	for _, t := range changed {
-		t.CoverHash, err = s.storeCover(ctx, tx, t.Path, t.Container, root, coverCache, now)
-		if err != nil {
-			return ScanResult{}, err
+	for i, t := range changed {
+		hash := changedCovers[i].hash
+		if hash == "" && len(changedCovers[i].c.Data) > 0 {
+			hash, err = s.commitCover(ctx, tx, changedCovers[i].c, filepath.Dir(t.Path), coverCache, now)
+			if err != nil {
+				return ScanResult{}, err
+			}
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO tracks
-			(id,mount_id,path,rel_path,title,artist,album,codec,container,rate,channels,bits,
-			 total_samples,duration_ms,decodable,mqa,mqa_checked,size,scanned_at,cover_hash,added_at,genre,
-			 album_artist,composer,year,disc_number,track_number,mtime_ns,cue_start,cue_end)
-			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-			ON CONFLICT(id) DO UPDATE SET path=excluded.path,title=excluded.title,artist=excluded.artist,
-			album=excluded.album,codec=excluded.codec,container=excluded.container,rate=excluded.rate,
-			channels=excluded.channels,bits=excluded.bits,total_samples=excluded.total_samples,
-			duration_ms=excluded.duration_ms,decodable=excluded.decodable,mqa=excluded.mqa,
-			mqa_checked=excluded.mqa_checked,size=excluded.size,
-			scanned_at=excluded.scanned_at,cover_hash=excluded.cover_hash,genre=excluded.genre,
-			album_artist=excluded.album_artist,composer=excluded.composer,year=excluded.year,
-			disc_number=excluded.disc_number,track_number=excluded.track_number,mtime_ns=excluded.mtime_ns,
-			cue_start=excluded.cue_start,cue_end=excluded.cue_end`,
-			t.ID, t.MountID, t.Path, t.RelPath, t.Title, t.Artist, t.Album, t.Codec, t.Container,
-			t.Rate, t.Channels, t.Bits, t.TotalSamples, t.DurationMS, boolInt(t.Decodable), boolInt(t.MQA), boolInt(t.MQAChecked), t.Size,
-			t.ScannedAt, t.CoverHash, t.AddedAt, t.Genre, t.AlbumArtist, t.Composer,
-			t.Year, t.DiscNumber, t.TrackNumber, t.MtimeNS, t.CueStart, t.CueEnd); err != nil {
+		t.CoverHash = hash
+		if err := s.upsertTrack(ctx, tx, t); err != nil {
 			return ScanResult{}, err
 		}
 	}
@@ -737,30 +927,15 @@ func (s *Service) scanChanges(ctx context.Context, id string, full bool) (ScanRe
 	// Unchanged tracks keep their tags, but art may have appeared (or become
 	// readable) since the last scan; fill only empty covers. Sidecar first
 	// (cheap directory listing), then the container's embedded picture.
-	for _, t := range backfill {
-		dir := filepath.Dir(t.Path)
-		state := coverCache[dir]
-		hash := coverCacheHash(state)
-		if hash == "" && state == "" {
-			if c, cerr := sidecarCover(dir, root); cerr == nil {
-				hash, err = coverBytes(ctx, tx, c, now)
-				if err != nil {
-					return ScanResult{}, err
-				}
-				coverCache[dir] = hash
-			} else {
-				coverCache[dir] = coverSidecarNone
-			}
+	for i, t := range backfill {
+		hash := backfillCovers[i].hash
+		if hash == "" && len(backfillCovers[i].c.Data) == 0 {
+			hash = coverCacheHash(coverCache[filepath.Dir(t.Path)])
 		}
-		if hash == "" && coverCache[dir] != coverEmbeddedNone {
-			if c, cerr := media.ReadEmbeddedCover(t.Path, t.Container); cerr == nil {
-				hash, err = coverBytes(ctx, tx, c, now)
-				if err != nil {
-					return ScanResult{}, err
-				}
-				coverCache[dir] = hash
-			} else {
-				coverCache[dir] = coverEmbeddedNone
+		if hash == "" && len(backfillCovers[i].c.Data) > 0 {
+			hash, err = s.commitCover(ctx, tx, backfillCovers[i].c, filepath.Dir(t.Path), coverCache, now)
+			if err != nil {
+				return ScanResult{}, err
 			}
 		}
 		if hash == "" {
@@ -876,13 +1051,16 @@ func coverCacheHash(state string) string {
 	return state
 }
 
-func (s *Service) storeCover(ctx context.Context, tx *sql.Tx, p, container, root string, cache map[string]string, now int64) (string, error) {
+// readCover resolves album art without touching the database: cached hash
+// first, then the embedded picture, then sidecar images. Network reads must
+// stay outside DB transactions because the pool holds a single connection.
+func (s *Service) readCover(ctx context.Context, p, container, root string, cache map[string]string) (string, media.Cover, error) {
 	if err := ctx.Err(); err != nil {
-		return "", err
+		return "", media.Cover{}, err
 	}
 	dir := filepath.Dir(p)
 	if hash := coverCacheHash(cache[dir]); hash != "" {
-		return hash, nil
+		return hash, media.Cover{}, nil
 	}
 	state := cache[dir]
 	// Embedded art wins. A miss leaves the directory uncached so later siblings
@@ -890,30 +1068,31 @@ func (s *Service) storeCover(ctx context.Context, tx *sql.Tx, p, container, root
 	if state != coverEmbeddedNone {
 		c, err := media.ReadEmbeddedCover(p, container)
 		if err == nil {
-			hash, err := coverBytes(ctx, tx, c, now)
-			if err != nil {
-				return "", err
-			}
-			cache[dir] = hash
-			return hash, nil
+			return "", c, nil
 		}
 		if !errors.Is(err, media.ErrNoCover) {
-			return "", err
+			return "", media.Cover{}, err
 		}
 	}
 	if state != coverSidecarNone {
 		c, err := sidecarCover(dir, root)
 		if err == nil {
-			hash, err := coverBytes(ctx, tx, c, now)
-			if err != nil {
-				return "", err
-			}
-			cache[dir] = hash
-			return hash, nil
+			return "", c, nil
 		}
 		cache[dir] = coverSidecarNone
 	}
-	return "", nil
+	return "", media.Cover{}, nil
+}
+
+// commitCover stores resolved art inside the given transaction and caches the
+// hash by directory.
+func (s *Service) commitCover(ctx context.Context, tx *sql.Tx, c media.Cover, dir string, cache map[string]string, now int64) (string, error) {
+	hash, err := coverBytes(ctx, tx, c, now)
+	if err != nil {
+		return "", err
+	}
+	cache[dir] = hash
+	return hash, nil
 }
 
 // sidecarCover checks the track's folder and, for multi-disc layouts, its
@@ -922,13 +1101,25 @@ func sidecarCover(dir, root string) (media.Cover, error) {
 	if c, err := media.ReadSidecarCover(dir); err == nil {
 		return c, nil
 	}
-	parent := filepath.Dir(dir)
-	if parent != dir {
-		if rel, err := filepath.Rel(root, parent); err == nil && rel != "." && !strings.HasPrefix(rel, "..") {
-			return media.ReadSidecarCover(parent)
-		}
+	if parent := sidecarParent(dir, root); parent != "" {
+		return media.ReadSidecarCover(parent)
 	}
 	return media.Cover{}, media.ErrNoCover
+}
+
+// sidecarParent returns dir's immediate parent when it lies strictly inside
+// root. filepath.Dir keeps a trailing separator on UNC volume roots, and
+// filepath.Rel on Windows never terminates on that form, so strip it first.
+func sidecarParent(dir, root string) string {
+	parent := strings.TrimRight(filepath.Dir(dir), `\/`)
+	if parent == dir || parent == root {
+		return ""
+	}
+	rel, err := filepath.Rel(root, parent)
+	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
+		return ""
+	}
+	return parent
 }
 
 func coverBytes(ctx context.Context, tx *sql.Tx, c media.Cover, now int64) (string, error) {
@@ -1043,9 +1234,10 @@ func mqaRate(rate int) bool {
 // then rechecks filesystem containment. Call immediately before every decoder
 // open/reopen; cached Track.Path is not a playback authorization. This guards
 // changed symlinks, not concurrent filesystem replacement after this check.
+// PlaybackPath is a pure read (track + mount rows and path math); it must not
+// take sourceMu, which the scan holds for its whole walk — pushes would queue
+// behind a forty-minute scan otherwise.
 func (s *Service) PlaybackPath(trackID string) (string, error) {
-	s.sourceMu.Lock()
-	defer s.sourceMu.Unlock()
 	return s.playbackPath(trackID)
 }
 

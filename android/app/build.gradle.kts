@@ -14,10 +14,10 @@ val keystoreProps = Properties().apply {
     if (hasKeystore) load(FileInputStream(keystorePropsFile))
 }
 
-val releaseVersion = providers.gradleProperty("zephyrVersion").orElse("0.68").get()
+val releaseVersion = providers.gradleProperty("zephyrVersion").orElse("0.82").get()
 val versionParts = releaseVersion.split('.').map { it.toInt() }
 require(versionParts.size in 2..3 && versionParts.all { it in 0..99 })
-val releaseVersionCode = versionParts[0] * 10000 + versionParts[1] * 100 + versionParts.getOrElse(2) { 0 }
+val releaseVersionCode = versionParts[0] * 1000 + versionParts[1] * 100 + versionParts.getOrElse(2) { 0 }
 
 android {
     namespace = "hk.zephyr.terminal"
@@ -26,7 +26,7 @@ android {
 
     defaultConfig {
         applicationId = "hk.zephyr.terminal"
-        minSdk = 26
+        minSdk = 30
         targetSdk = 34
         versionCode = releaseVersionCode
         versionName = releaseVersion

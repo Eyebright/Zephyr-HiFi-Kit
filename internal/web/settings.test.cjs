@@ -33,11 +33,6 @@ function harness() {
     __view: view => {
       vm.runInContext(`S.view=${JSON.stringify(view)}`, context);
       elements.clear();
-      if (view === "maintenance") {
-        h.html = vm.runInContext("shellMaintenanceView()", context);
-        for (const match of h.html.matchAll(/\bid="([^"]+)"/g)) elements.set("#" + match[1], element());
-        return;
-      }
       if (view !== "settings") return;
       h.html = vm.runInContext("shellSettings()", context);
       for (const match of h.html.matchAll(/\bid="([^"]+)"/g)) elements.set("#" + match[1], element());
@@ -97,7 +92,7 @@ test("settings section jump is repeated after async layout and explicit anchors 
 });
 
 test("metadata organization preview is read-only and allows an explicit unavailable-source skip", async () => {
-  const h = harness(); h.run("setView('maintenance')");
+  const h = harness(); h.open("maintenance");
   h.run("SETTINGS.session={authenticated:true}");
   const preview = { count: 2, estimated_albums: 1, unidentified: 1, unavailable: 1, tag_errors: 1, preview_token: "unavailable-token", formats: { wav: 2 }, favorite_risks: [{ action: "keep" }], samples: [{ rel_path: "<script>bad</script>.wav", new_artist: "Artist", new_album: "Album" }] };
   h.fetchHandler = route => { assert.equal(route, "/api/v1/settings/maintenance/metadata-preview"); return response(preview); };
@@ -114,7 +109,7 @@ test("metadata organization preview is read-only and allows an explicit unavaila
 });
 
 test("metadata organization apply requires a usable preview, confirmation and idle endpoints", async () => {
-  const h = harness(); h.run("setView('maintenance')");
+  const h = harness(); h.open("maintenance");
   h.run("SETTINGS.session={authenticated:true};toast=()=>{};refreshSettings=async()=>{}");
   await h.run("ACT['metadata-apply']()");
   assert.equal(h.calls.length, 0);
@@ -147,7 +142,7 @@ test("metadata organization apply requires a usable preview, confirmation and id
 });
 
 test("metadata organization does not write while an endpoint is playing", async () => {
-  const h = harness(); h.run("setView('maintenance')");
+  const h = harness(); h.open("maintenance");
   h.run("SETTINGS.session={authenticated:true};SETTINGS.metadataPreview={count:2,estimated_albums:1,unavailable:0,preview_token:'preview-token'};toast=()=>{};confirmDlg=async()=>true;refreshSettings=async()=>{}");
   h.fetchHandler = route => { assert.equal(route, "/api/v1/nodes"); return response([{ playing: true }]); };
   await h.run("ACT['metadata-apply']()");
@@ -157,7 +152,7 @@ test("metadata organization does not write while an endpoint is playing", async 
 });
 
 test("metadata organization rejects an incomplete preview token", async () => {
-  const h = harness(); h.run("setView('maintenance')");
+  const h = harness(); h.open("maintenance");
   h.run("SETTINGS.session={authenticated:true};toast=()=>{}");
   h.fetchHandler = () => response({ count: 2, estimated_albums: 1, unavailable: 0 });
   await h.run("ACT['metadata-preview']()");
@@ -168,7 +163,7 @@ test("metadata organization rejects an incomplete preview token", async () => {
 
 test("late metadata preview cannot restore data after logout, session loss or view changes", async () => {
   for (const change of ["logout", "session", "view"]) {
-    const h = harness(); h.run("setView('maintenance')");
+    const h = harness(); h.open("maintenance");
     h.run("SETTINGS.session={authenticated:true};toast=()=>{}");
     const started = deferred(), pending = deferred();
     h.fetchHandler = route => {
@@ -181,7 +176,7 @@ test("late metadata preview cannot restore data after logout, session loss or vi
     await started.promise;
     if (change === "logout") await h.run("settingsLogout()");
     else if (change === "session") await h.run("settingsRefreshSession()");
-    else { h.run("setView('overview')"); h.run("setView('maintenance')"); }
+    else { h.run("setView('overview')"); h.open("maintenance"); }
     pending.resolve(response({ count: 2, estimated_albums: 1, unavailable: 0, preview_token: "stale-token" }));
     await old;
     assert.equal(h.run("SETTINGS.metadataPreview"), null, change);
@@ -190,7 +185,7 @@ test("late metadata preview cannot restore data after logout, session loss or vi
 });
 
 test("metadata preview mismatch clears the apply token and requires a new preview", async () => {
-  const h = harness(); h.run("setView('maintenance')");
+  const h = harness(); h.open("maintenance");
   h.run("SETTINGS.session={authenticated:true};SETTINGS.metadataPreview={count:2,estimated_albums:1,unavailable:0,preview_token:'old-token'};toast=()=>{};confirmDlg=async()=>true;refreshSettings=async()=>{}");
   h.fetchHandler = route => route === "/api/v1/nodes" ? response([]) : errorResponse(409, "metadata_preview_mismatch");
   await h.run("ACT['metadata-apply']()");
@@ -202,7 +197,7 @@ test("metadata preview mismatch clears the apply token and requires a new previe
 test("about is last and removed account/protocol sections fall back safely", () => {
   const h = harness();
   const sections = JSON.parse(h.run("JSON.stringify(SETTINGS_SECTIONS.map(s => s[0]))"));
-  assert.deepEqual(sections, ["profile", "authorization", "folders", "devices", "packages", "about"]);
+  assert.deepEqual(sections, ["profile", "authorization", "folders", "devices", "packages", "maintenance", "about"]);
   assert.equal(h.run("typeof settingsAccountsShell"), "undefined");
   assert.equal(h.run("typeof settingsProtocolsShell"), "undefined");
   for (const section of ["accounts", "protocols"]) {

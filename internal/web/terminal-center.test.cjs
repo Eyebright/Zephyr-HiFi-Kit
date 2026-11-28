@@ -295,6 +295,10 @@ test("maintenance drawer no longer offers raw ALSA or DAC pickers", () => {
 test("terminal rows render playback devices as a headerless table with activate and naming", () => {
   const h = harness();
   h.run(`TC.admin=true; S.nodeDevs.a=[{hw:"hw:3,0",name:"客厅 DAC",reported_name:"AUDIO",enabled:true,present:true,online:true},{hw:"hw:2,0",name:"",reported_name:"Headphones",enabled:false,present:false,online:false}]`);
+  const collapsed = h.run("nodeRow({node_id:'a',alias:'moode',status:'online'})");
+  assert.doesNotMatch(collapsed, /tc-dev-row/);
+  assert.match(collapsed, /data-act="tc-dev-expand" data-id="a" aria-expanded="false"/);
+  h.run("TC.expanded.add('a')");
   const html = h.run("nodeRow({node_id:'a',alias:'moode',status:'online'})");
   assert.match(html, /tc-dev-row/);
   assert.match(html, /<table class="tbl tc-device-table"><tbody>/);
@@ -321,7 +325,7 @@ test("device rename draft survives periodic table repaint with focus and caret",
   const h = harness(), table = h.elements.get("#nd-table");
   h.run(`TC.admin=true; TC.loading=false; S.nodes=[{node_id:'a',alias:'moode',status:'online',authorized:true}];
     S.nodeDevs.a=[{hw:'hw:1,0',name:'旧名称',reported_name:'AUDIO',enabled:true,present:true,online:true}];
-    TC.devEdit={id:'a',hw:'hw:1,0',value:''};`);
+    TC.devEdit={id:'a',hw:'hw:1,0',value:''}; TC.expanded.add('a');`);
   const active = {
     classList: { contains: cls => cls === "tc-dev-input" },
     dataset: { id: "a", hw: "hw:1,0" }, value: "新名称", selectionStart: 2, selectionEnd: 2, selectionDirection: "none"

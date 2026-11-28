@@ -28,7 +28,7 @@ import (
 )
 
 // Version is the Android terminal agent version (kept in step with the release).
-var Version = "0.68"
+var Version = "0.82"
 
 // Config is the JSON configuration handed over by the Kotlin shell at startup.
 type Config struct {
@@ -56,6 +56,9 @@ type Core struct {
 
 	policyMu sync.RWMutex
 	policy   serverclient.Policy
+
+	lyricsMu    sync.Mutex
+	lyricsCache map[string]serverclient.Lyrics
 }
 
 // New builds the Android core from the shell-supplied configuration.
@@ -300,6 +303,33 @@ func (c *Core) PlaybackQueue(ctx context.Context) (serverclient.QueueState, erro
 		return serverclient.QueueState{}, fmt.Errorf("终端未注册，无服务端播放列表")
 	}
 	return c.client.Queue(ctx, s.NodeID)
+}
+
+// PlaybackLyrics returns the lyrics for the current ZAT track. Results are
+// cached per track in-process so repeated console polls (and page reloads) do
+// not refetch; the server additionally caches extraction across sessions.
+func (c *Core) PlaybackLyrics(ctx context.Context) (serverclient.Lyrics, error) {
+	p := c.Playback()
+	if p.TrackID == "" {
+		return serverclient.Lyrics{Source: "none", Lines: []serverclient.LyricsLine{}}, nil
+	}
+	c.lyricsMu.Lock()
+	if l, ok := c.lyricsCache[p.TrackID]; ok {
+		c.lyricsMu.Unlock()
+		return l, nil
+	}
+	c.lyricsMu.Unlock()
+	l, err := c.client.TrackLyrics(ctx, p.TrackID)
+	if err != nil {
+		return serverclient.Lyrics{}, err
+	}
+	c.lyricsMu.Lock()
+	if c.lyricsCache == nil || len(c.lyricsCache) > 512 {
+		c.lyricsCache = make(map[string]serverclient.Lyrics)
+	}
+	c.lyricsCache[p.TrackID] = l
+	c.lyricsMu.Unlock()
+	return l, nil
 }
 
 // PlaybackNext advances the server queue and starts the next track.

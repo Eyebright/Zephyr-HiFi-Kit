@@ -56,6 +56,15 @@
 .tc-dev-empty { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px; border: 1px dashed var(--line); border-radius: var(--r-sm); background: rgba(var(--panel-rgb),.35); }
 .tc-dev-empty .lbl { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
 .tc-device-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r-sm); background: rgba(var(--panel-rgb),.35); }
+/* Inline variant: device rows read as part of the terminal table, not a card. */
+.tc-device-table-wrap.inline { border: 0; border-radius: 0; background: transparent; }
+.tc-device-table-wrap.inline .tc-device-table { min-width: 0; }
+.tc-device-table-wrap.inline .tc-device-table td { border-top: 1px solid var(--line); padding: 6px 10px 6px 26px; }
+.tc-device-table-wrap.inline .tc-device-table tbody tr:first-child td { border-top: 0; }
+.tc-dev-toggle { display: inline-flex; align-items: center; gap: 5px; margin-top: 4px; padding: 2px 6px; border: 0; background: none; color: var(--muted); font: inherit; font-size: 11.5px; cursor: pointer; border-radius: 6px; }
+.tc-dev-toggle:hover { color: var(--text); background: rgba(var(--white-rgb),.06); }
+.tc-dev-toggle svg { transition: transform .15s; }
+.tc-dev-toggle[aria-expanded="true"] svg { transform: rotate(90deg); }
 .tc-device-table { min-width: 620px; }
 .tc-device-table td { padding: 8px 10px; font-size: 12.5px; }
 .tc-device-table tbody tr:last-child td { border-bottom: 0; }

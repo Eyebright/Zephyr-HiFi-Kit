@@ -6,6 +6,7 @@ import (
 	"image/color"
 	"image/jpeg"
 	"image/png"
+	"path/filepath"
 	"testing"
 )
 
@@ -80,5 +81,22 @@ func TestGetCoverVariantIsCached(t *testing.T) {
 	s.pruneCovers()
 	if err := st.DB.QueryRow(`SELECT COUNT(*) FROM cover_variants`).Scan(&n); err != nil || n != 0 {
 		t.Fatalf("variants not pruned: %d %v", n, err)
+	}
+}
+
+func TestSidecarParent(t *testing.T) {
+	root := filepath.FromSlash("//nas/music")
+	cases := []struct{ dir, want string }{
+		{filepath.Join(root, "Album"), ""},
+		{filepath.Join(root, "Album", "Disc 1"), filepath.Join(root, "Album")},
+		{filepath.Join(root, "Album", "Disc 1", "CD2"), filepath.Join(root, "Album", "Disc 1")},
+		{root + string(filepath.Separator), ""},
+		{filepath.FromSlash("//nas/other/Album"), ""},
+		{filepath.FromSlash("D:/music/Album"), ""},
+	}
+	for _, c := range cases {
+		if got := sidecarParent(c.dir, root); got != c.want {
+			t.Errorf("sidecarParent(%q) = %q, want %q", c.dir, got, c.want)
+		}
 	}
 }

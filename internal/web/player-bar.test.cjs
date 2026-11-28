@@ -234,12 +234,12 @@ test("language changes preserve live playback controls, pending work and selecte
 
 test("asynchronous server language updates translate the already mounted home without navigation", async t => {
   const h = harness(t); await h.live(); h.run("setView('overview')");
-  const view = h.el("view"), filter = h.el("ov-stat-node"), root = h.el("player-bar");
+  const view = h.el("view"), root = h.el("player-bar");
   const epoch = h.run("OV.epoch"), count = h.calls.length, timer = h.run("polls.get('view:main')");
   h.run("I18n.setDefault('en'); appLanguageChanged()");
-  assert.equal(h.el("view"), view); assert.equal(h.el("ov-stat-node"), filter); assert.equal(h.el("player-bar"), root);
+  assert.equal(h.el("view"), view); assert.equal(h.el("player-bar"), root);
   assert.equal(h.el("ov-greeting").textContent, "Home");
-  assert.equal(h.document.querySelector(".ov-scope").textContent, "ZAT pushes only · Listening across terminals");
+  assert.equal(h.document.querySelector(".ov-scope"), null);
   assert.equal(h.run("OV.epoch"), epoch); assert.equal(h.calls.length, count);
   assert.equal(h.run("polls.get('view:main')"), timer);
 });
@@ -312,17 +312,19 @@ test("real navigation preserves dock DOM, target, focus, drag context and pendin
   }
 });
 
-test("statistical terminal/date filters and playback target are independent in both directions", async t => {
+test("date filter and playback target are independent; listening stats always aggregate all devices", async t => {
   const h = harness(t); await h.live();
   h.run("setView('overview')"); await flush();
-  await h.run("CHG['ov-stat-node']({value:'stats-only'})");
+  assert.equal(h.el("ov-stat-node"), null);
+  const filters = h.document.querySelector(".ov-filters-below");
+  assert.equal(h.el("ov-stat-note").parentElement, filters);
   h.run("ACT['ov-days']({days:'30'})"); await flush();
   assert.equal(h.run("PB.deviceKey"), deviceKey("a")); assert.equal(h.run("PB.seq"), 0);
-  assert.ok(h.calls.some(c => c.route === "/listening?days=30&node_id=stats-only"));
-  const data = h.json("OV.data"), before = h.count("/listening?days=30&node_id=stats-only");
+  assert.ok(h.calls.some(c => c.route === "/listening?days=30"));
+  const data = h.json("OV.data"), before = h.count("/listening?days=30");
   await h.run("ACT['pb-device-pick']({deviceKey:'b::hw:1'})");
-  assert.equal(h.run("OV.node"), "stats-only"); assert.equal(h.run("OV.days"), 30); assert.deepEqual(h.json("OV.data"), data);
-  assert.equal(h.count("/listening?days=30&node_id=stats-only"), before);
+  assert.equal(h.run("OV.days"), 30); assert.deepEqual(h.json("OV.data"), data);
+  assert.equal(h.count("/listening?days=30"), before);
   h.run("S.nodes=[{node_id:'stats-list'}]; cleanupOverview()"); await h.run("refreshPlayerBar()");
   assert.equal(h.run("PB.deviceKey"), deviceKey("b")); assert.deepEqual(h.json("S.nodes"), [{ node_id: "stats-list" }]);
   assert.deepEqual(h.json("PB.nodes.map(n=>n.node_id)"), ["a", "b"]);
@@ -951,5 +953,5 @@ test("per-device EQ panel loads, edits, saves and bypasses bit-perfect independe
   assert.equal(h.run("PLY.eq.cfg.enabled"), true);
   assert.ok(h.el("ply-eq").innerHTML.includes("位完美"), "bypass banner shown");
   assert.equal(h.el("ply-eq-toggle").disabled, true, "bit-perfect session disables EQ switch");
-  assert.equal(h.el("ply-eq-toggle").getAttribute("aria-checked"), "true");
+  assert.match(h.el("ply-eq").innerHTML, /data-change="ply-eq-enabled" checked/);
 });

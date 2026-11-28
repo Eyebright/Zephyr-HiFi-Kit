@@ -173,12 +173,7 @@ test("settings is one pinned nav item and renders every section on a single page
   assert.match(after, /class="nav-item active" data-act="settings-open"/);
   const shell = h.run("shellSettings()");
   assert.match(shell, /settings-anchors/);
-  for (const id of ["profile", "authorization", "folders", "packages", "about"]) assert.ok(shell.includes("settings-block-" + id), id);
-  assert.ok(!shell.includes("settings-block-maintenance"), "maintenance lives in its own view");
-  assert.match(html, /data-view="maintenance"/);
-  const maintShell = h.run("shellMaintenanceView()");
-  assert.ok(maintShell.includes("settings-block-maintenance") && maintShell.includes("settings-content-maintenance"));
-  assert.ok(!maintShell.includes("settings-anchors"));
+  for (const id of ["profile", "authorization", "folders", "packages", "maintenance", "about"]) assert.ok(shell.includes("settings-block-" + id), id);
   assert.equal(h.run("SETTINGS_SECTIONS.at(-1)[0]"), "about");
   assert.doesNotMatch(after, /data-section="(?:accounts|protocols)"|音乐服务账号|协议说明/);
   h.run("openSettings('about')");
@@ -1424,7 +1419,7 @@ function languageTree(selector, children = []) {
 test("settings translation retains embedded async roots and repaints cached authorization, packages and maintenance", async t => {
   for (const section of ["authorization", "packages", "maintenance"]) await t.test(section, async () => {
     const h = harness();
-    h.run(`S.view=${JSON.stringify(section === "maintenance" ? "maintenance" : "settings")}; SETTINGS.section=${JSON.stringify(section)}; SETTINGS.epoch=11; SETTINGS.refreshSeq=4;
+    h.run(`S.view='settings'; SETTINGS.section=${JSON.stringify(section)}; SETTINGS.epoch=11; SETTINGS.refreshSeq=4;
       SETTINGS.session={authenticated:true}; SETTINGS.busy.add('maintenance');
       S.license={status:'none',builtin_seats:3}; S.keys=[]; S.apps=[]; S.boms=[];
       S.upd.server={state:'idle',current:'1.2.3',latest:'1.2.4'};
@@ -1433,7 +1428,7 @@ test("settings translation retains embedded async roots and repaints cached auth
       const content = section === "authorization" ? [languageTree("note"), languageTree("grid", [languageTree("#lic-card"), languageTree("#gpg-card")]), languageTree("banner")]
         : section === "packages" ? [languageTree("note"), languageTree("sources"), languageTree("apps", [languageTree(".sec-head"), languageTree("#cat-apps")]), languageTree("#bom-report"), languageTree("boms", [languageTree(".sec-head"), languageTree("#cat-boms")])]
           : [languageTree("update", [languageTree("#upd-body", [languageTree("#upd-server")])]), languageTree("#settings-maintenance-counts")];
-      return languageTree("#settings-page", section === "maintenance" ? [languageTree(".page-head"), languageTree("#settings-admin"), languageTree("#settings-content-" + section, content)] : [languageTree(".page-head"), languageTree("#settings-admin"), languageTree(".settings-anchors"), languageTree(".settings-section-heading"), languageTree("#settings-content-" + section, content)]);
+      return languageTree("#settings-page", [languageTree(".page-head"), languageTree("#settings-admin"), languageTree(".settings-anchors"), languageTree(".settings-section-heading"), languageTree("#settings-content-" + section, content)]);
     };
     const page = fixture(), query = h.document.querySelector, queryAll = h.document.querySelectorAll;
     const strip = selector => selector.startsWith("#settings-page ") ? selector.slice("#settings-page ".length) : null;
@@ -1451,16 +1446,16 @@ test("settings translation retains embedded async roots and repaints cached auth
       h.run(`I18n.setPreference(${JSON.stringify(locale)})`);
       assert.ok(next.innerHTML.includes(h.run("settingsT('刷新状态')")), "real shell is generated in the selected language");
       assert.notEqual(page.querySelector(".page-head"), oldHeading);
-      if (section !== "maintenance") assert.notEqual(page.querySelector(".settings-section-heading"), oldSectionHeading);
+      assert.notEqual(page.querySelector(".settings-section-heading"), oldSectionHeading);
       assert.equal(page.querySelector("#settings-content-" + section), content);
       assert.equal(page.querySelector("#settings-admin"), admin);
       assert.equal(admin["aria-label"], h.run("settingsT('管理员解锁')"));
       for (const [index, id] of retainedIDs.entries()) assert.equal(page.querySelector(id), retained[index], id + " must survive a language repaint");
       for (const [index, old] of oldPackageHeads.entries()) assert.notEqual(retained[index].parentElement.querySelector(".sec-head"), old);
       const painted = section === "maintenance" ? page.querySelector("#settings-maintenance-counts").innerHTML : retained[0].innerHTML;
-      const label = section === "maintenance" ? h.run("settingsT('曲目')") : h.run(section === "authorization" ? "appT('m430')" : "appT('m375')");
+      const label = section === "maintenance" ? h.run("settingsT('音乐源')") : h.run(section === "authorization" ? "appT('m430')" : "appT('m375')");
       assert.ok(painted.includes(label), "cached content must be painted, not just the headings");
-      if (section === "maintenance") { assert.match(painted, />17</); assert.match(page.querySelector("#upd-server").innerHTML, /1\.2\.3/); }
+      if (section === "maintenance") { assert.match(painted, />2</); assert.doesNotMatch(painted, />17</); assert.match(page.querySelector("#upd-server").innerHTML, /1\.2\.3/); }
       assert.equal(h.run("JSON.stringify([S,SETTINGS.epoch,SETTINGS.refreshSeq,SETTINGS.session,Array.from(SETTINGS.busy),SETTINGS.maintenance])"), snapshot);
       assert.deepEqual(h.calls, []); assert.deepEqual(h.actions, []);
     }
@@ -1480,7 +1475,7 @@ test("assets order keeps experience between settings and terminal-center", () =>
   assert.match(html, /id="onboarding-root"/); assert.match(html, /aria-controls="sidebar" aria-expanded="false"/);
 });
 
-test("new albums sort by the latest added track, cache groups and cap at 50", () => {
+test("new albums sort by the latest added track, cache groups and cap at 45", () => {
   const h = harness();
   h.run(`S.tracks = [
     { artist: 'A', album: 'Old', added_at: 5, duration_ms: 1 },
@@ -1494,5 +1489,5 @@ test("new albums sort by the latest added track, cache groups and cap at 50", ()
   assert.equal(order, JSON.stringify([["Newest", 200], ["Mixed", 150], ["Old", 100]]));
   assert.equal(h.run("albumGroups() === albumGroups()"), true, "album grouping must be cached");
   assert.equal(h.run("ovAddedAlbums(albumGroups()) === ovAddedAlbums(albumGroups())"), true, "added ordering must be cached");
-  assert.equal(h.run("NEW_ALBUM_LIMIT"), 50);
+  assert.equal(h.run("NEW_ALBUM_LIMIT"), 45);
 });

@@ -1076,14 +1076,14 @@
     ta.remove();
   }
   var DEBS = {
-    amd64: ["Zephyr-HiFi-Kit-terminal-0.70-linux-amd64.deb", T("Management build · x86_64 PC · no ALSA playback", "管理版 · x86_64 PC · 不含 ALSA 播放")],
-    arm64: ["Zephyr-HiFi-Kit-terminal-0.70-linux-arm64.deb", T("Management build · Raspberry Pi 3/4/5 · 64-bit · no ALSA playback", "管理版 · 树莓派 3/4/5 · 64 位 · 不含 ALSA 播放")],
-    armhf: ["Zephyr-HiFi-Kit-terminal-0.70-linux-armhf.deb", T("Management build · Raspberry Pi 2/3/4 · 32-bit · no ALSA playback", "管理版 · 树莓派 2/3/4 · 32 位 · 不含 ALSA 播放")]
+    amd64: ["Zephyr-HiFi-Kit-terminal-0.82-linux-amd64.deb", T("Management build · x86_64 PC · no ALSA playback", "管理版 · x86_64 PC · 不含 ALSA 播放")],
+    arm64: ["Zephyr-HiFi-Kit-terminal-0.82-linux-arm64.deb", T("Management build · Raspberry Pi 3/4/5 · 64-bit · no ALSA playback", "管理版 · 树莓派 3/4/5 · 64 位 · 不含 ALSA 播放")],
+    armhf: ["Zephyr-HiFi-Kit-terminal-0.82-linux-armhf.deb", T("Management build · Raspberry Pi 2/3/4 · 32-bit · no ALSA playback", "管理版 · 树莓派 2/3/4 · 32 位 · 不含 ALSA 播放")]
   };
   var archSel = $("#dl-arch");
   if (archSel) archSel.addEventListener("change", function () {
     var d = DEBS[archSel.value], link = $("#dl-deb");
-    if (link) link.href = "https://github.com/Eyebright/Zephyr-HiFi-Kit/releases/download/v0.70/" + d[0];
+    if (link) link.href = "https://github.com/Eyebright/Zephyr-HiFi-Kit/releases/download/v0.82/" + d[0];
     var n = $("#dl-deb-name"), m = $("#dl-deb-meta");
     if (n) n.textContent = d[0]; if (m) m.textContent = d[1];
     Audio2.blip(560, .08, "sine", .08);

@@ -4,7 +4,7 @@ const tcT = (key, params) => I18n.t("features." + key, params);
 const TC = {
   tab: "nodes", epoch: 0, busy: null, admin: false, loading: true,
   errors: [], commands: [], nodeErrors: {}, taskNode: "", taskType: "all", taskState: "all", page: 1,
-  detail: null, detailTab: "overview", fleetError: "", devEdit: null
+  detail: null, detailTab: "overview", fleetError: "", devEdit: null, expanded: new Set()
 };
 function tcTime(value) {
   const time = ts(value);
@@ -185,11 +185,11 @@ function tcNodeIndicator(n) {
 function nodeRow(n) {
   const id = n.node_id;
   return `<tr class="${S.sel.has(id) ? "selected" : ""}"><td><label class="check"><input type="checkbox" data-change="node-sel" data-id="${esc(id)}" aria-label="${esc(tcT("tcSelectNode", { name: n.alias || id }))}" ${S.sel.has(id) ? "checked" : ""}><span class="box"></span></label></td>
-    <td><button class="tc-name" data-act="node-open" data-id="${esc(id)}">${esc(n.alias || shortId(id))}</button><div class="sub mono">${esc(n.ip || tcT("tcIPNotReported"))}</div><div class="sub">${esc([n.distro, n.arch].filter(Boolean).join(" · "))}</div></td>
+    <td><button class="tc-name" data-act="node-open" data-id="${esc(id)}">${esc(n.alias || shortId(id))}</button><div class="sub mono">${esc(n.ip || tcT("tcIPNotReported"))}</div><div class="sub">${esc([n.distro, n.arch].filter(Boolean).join(" · "))}</div><button class="tc-dev-toggle" data-act="tc-dev-expand" data-id="${esc(id)}" aria-expanded="${TC.expanded.has(id)}">${icon("chevR", 12)} ${esc(tcT("tcPlayDevices"))}${Array.isArray(S.nodeDevs[id]) ? " · " + I18n.number(S.nodeDevs[id].length) : ""}</button></td>
     <td>${statusBadge(n.status)}<div class="sub">${n.status === "online" ? n.playing ? esc(tcT("playing")) + (n.active_proto ? " · " + esc(n.active_proto) : "") : esc(tcT("tcIdle")) : esc(tcT("tcPlaybackUnknown"))}</div></td>
     <td><div class="mono">${esc(n.agent_version || tcT("unknown"))}</div>${tcOutdated(n) ? `<div class="sub">→ ${esc(tcTargetVersion())}</div>` : `<div class="sub">${esc(tcT("tcUpToDate"))}</div>`}<div class="sub">${esc(tcFlavorLabel(n))}</div></td>
     <td class="tc-service-cell">${tcServiceSummary(n)}</td><td>${tcNodeIndicator(n)}<div class="sub">${esc(tcT(n.authorized ? "authorized" : "unauthorized"))}</div></td>
-    <td><div class="acts">${tcUpgradeButton(n, "xs")}<button class="btn ghost xs" data-act="tc-install" data-id="${esc(id)}">${esc(tcT("installUpdate"))}</button><button class="btn ghost xs" data-act="node-open" data-id="${esc(id)}">${esc(tcT("details"))}</button><button class="btn ghost danger xs" data-act="node-delete" data-id="${esc(id)}" title="${esc(tcT("tcDelete"))}">${icon("trash", 12)} ${esc(tcT("tcDelete"))}</button></div></td></tr>${tcDevStrip(n)}`;
+    <td><div class="acts">${tcUpgradeButton(n, "xs")}<button class="btn ghost xs" data-act="tc-install" data-id="${esc(id)}">${esc(tcT("installUpdate"))}</button><button class="btn ghost xs" data-act="node-open" data-id="${esc(id)}">${esc(tcT("details"))}</button><button class="btn ghost danger xs" data-act="node-delete" data-id="${esc(id)}" title="${esc(tcT("tcDelete"))}">${icon("trash", 12)} ${esc(tcT("tcDelete"))}</button></div></td></tr>${TC.expanded.has(id) ? tcDevStrip(n) : ""}`;
 }
 function tcDeviceName(d) {
   return d.name || d.reported_name || (d.hw === "default" ? appT("m262") : d.hw || "—");
@@ -217,13 +217,13 @@ function tcDeviceTable(n, devices, opts = {}) {
     const playCell = editable ? "" : `<td>${playable ? terminalPlaySummary(opts.playStates?.[deviceKey]) : ""}</td>`;
     return `<tr class="tc-device-row ${d.enabled ? "on" : ""} ${d.present ? "" : "absent"}">${activateCell}<td>${nameCell}</td><td class="mono tc-dev-key">${esc(deviceKey)}</td><td><div class="tc-dev-states">${states.join("")}</div>${editable && TC.admin ? `<select class="inp xs tc-dev-dsd" data-change="tc-dev-dsd" data-id="${esc(id)}" data-hw="${esc(d.hw)}" aria-label="${esc(tcT("tcDsdMode"))}" title="${esc(tcT("tcDsdMode"))}"><option value="pcm" ${d.dsd_mode !== "dop" ? "selected" : ""}>${esc(tcT("tcDsdPcm"))}</option><option value="dop" ${d.dsd_mode === "dop" ? "selected" : ""}>${esc(tcT("tcDsdDop"))}</option></select>` : ""}</td>${playCell}</tr>`;
   }).join("");
-  return `<div class="tc-device-table-wrap"><table class="tbl tc-device-table"><tbody>${rows}</tbody></table></div>`;
+  return `<div class="tc-device-table-wrap${opts.inline ? " inline" : ""}"><table class="tbl tc-device-table"><tbody>${rows}</tbody></table></div>`;
 }
 function tcDevStrip(n) {
   const id = n.node_id, devs = S.nodeDevs[id];
   if (!Array.isArray(devs)) return `<tr class="tc-dev-row"><td colspan="7"><div class="tc-dev-empty"><span class="lbl">${esc(tcT("tcPlayDevices"))}</span><span class="sub">${esc(tcT("tcDevsNotLoaded"))}</span></div></td></tr>`;
   if (!devs.length) return `<tr class="tc-dev-row"><td colspan="7"><div class="tc-dev-empty"><span class="lbl">${esc(tcT("tcPlayDevices"))}</span><span class="sub">${esc(tcT("tcNoDevs"))}</span></div></td></tr>`;
-  return `<tr class="tc-dev-row"><td colspan="7">${tcDeviceTable(n, devs, { editable: true })}</td></tr>`;
+  return `<tr class="tc-dev-row"><td colspan="7">${tcDeviceTable(n, devs, { editable: true, inline: true })}</td></tr>`;
 }
 function paintNodeTable() {
   const el = $("#nd-table"); if (!el) return;
@@ -468,6 +468,7 @@ async function tcOpenTerminalPlayer(id, preferredKey = "") {
   await openPlayer(preferredKey);
 }
 Object.assign(ACT, {
+  "tc-dev-expand": ds => { const id = ds.id; if (TC.expanded.has(id)) TC.expanded.delete(id); else TC.expanded.add(id); paintNodeTable(); },
   "tc-goto": () => { TC.tab = "nodes"; setView("nodes"); },
   "tc-login": () => openSettings("authorization"),
   "tc-packages": () => openSettings("packages"),

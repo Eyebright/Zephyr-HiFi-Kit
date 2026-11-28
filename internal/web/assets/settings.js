@@ -56,6 +56,7 @@ const SETTINGS_SECTIONS = settingsTranslatedList([
   ["folders", "音乐文件夹", "folder", "服务端本地目录与 NAS 音乐源"],
   ["devices", "音频设备", "speaker", "播放终端与每台设备的激活、命名、DSD 输出与均衡"],
   ["packages", "软件包与源", "box", "应用版本、软件包、签名与安装源；安装执行见音频设备"],
+  ["maintenance", "备份与维护", "database", "服务端自升级、音乐数据备份、恢复与操作日志清理"],
   ["about", "关于我们", "info", "产品介绍、服务端版本、许可与第三方实现来源"]
 ], [1, 3]);
 const SETTINGS_LEGACY_MANAGE = new Set([
@@ -71,7 +72,7 @@ const SETTINGS_LEGACY_MANAGE = new Set([
 function settingsAdmin() { return SETTINGS.session?.authenticated === true; }
 // Settings renders every section on one page; any section guard only requires
 // the page to be mounted.
-function settingsHere() { return (S.view === "settings" || S.view === "maintenance") && !!$("#settings-page"); }
+function settingsHere() { return S.view === "settings" && !!$("#settings-page"); }
 function settingsNote(text, kind = "info") { return settingsHTML`<div class="settings-note ${esc(kind)}">${icon(kind === "err" || kind === "warn" ? "alert" : "info", 16)}<span data-settings-message="${esc(encodeURIComponent(text))}">${esc(settingsT(text))}</span></div>`; }
 function settingsError(id, message) { const el = $("#" + id); if (el) el.innerHTML = message ? settingsNote(message, "err") : ""; }
 function settingsButton(action, label, opts = {}) {
@@ -187,6 +188,7 @@ function settingsSectionShell(id = SETTINGS.section) {
     case "profile": return typeof experienceProfileShell === "function" ? experienceProfileShell() : settingsNote("管理员资料界面尚未加载，请刷新页面。", "warn");
     case "authorization": return settingsNote("服务端内置 3 台终端席位，日常无需许可证；席位扩容已收进高级项。此处公钥仅用于验证第三方签名的应用包，不生成、上传或导出签发私钥。") + shellKeys();
     case "packages": return settingsNote("这里只维护应用版本、软件包、签名与安装源；安装执行请前往「音频设备」。当前交付支持 Linux DEB、APT 与受支持的 Linux 归档包，架构相同不代表操作系统兼容：Windows/macOS 文件不能当作 Linux 可安装包。") + settingsHTML`<section class="card"><div class="settings-card-head"><h3>${icon("globe", 17)} 安装源管理</h3>${settingsButton("apt-sources", "安装源管理", { icon: "globe" })}</div><p>可只读浏览 APT 安装源，添加或删除源需解锁管理员。应用名仍打开原版本与入库流程；BOM 高级管理保留在下方，不在这里执行终端安装。</p></section>` + shellCatalog();
+    case "maintenance": return settingsMaintenanceShell();
     case "about": return settingsAboutShell();
     case "devices": return typeof shellNodes === "function" ? shellNodes() : settingsNote("音频设备界面尚未加载，请刷新页面。", "warn");
     default: return settingsFoldersShell();
@@ -544,18 +546,6 @@ function settingsMaintenanceShell() {
     <section class="card"><h3>清理音乐数据</h3><div class="settings-maintenance-row"><div><strong>孤立封面</strong><p>清理不再被曲库或播放历史引用的封面缓存，不删除原音频。</p></div>${settingsButton("settings-cleanup", "清理孤立封面…", { admin: true, task: "maintenance", kind: "orphan-covers" })}</div><div class="settings-maintenance-row"><div><strong>曲库索引</strong><p>清空曲库索引，不删除原音频、播放历史或播放列表。列表中的曲目可能显示缺失，需重扫源。播放中拒绝清理。</p></div>${settingsButton("settings-cleanup", "清空曲库索引…", { admin: true, task: "maintenance", kind: "catalog", className: "danger sm" })}</div></section>
     <section class="card"><h3>${icon("audit", 17)} 操作日志清理</h3><p>仅清理所选日期之前的数据库操作日志，不清理进程文件日志。截止日期必须早于今天；截止点为浏览器本地时区该日 00:00，服务端会再次校验。</p><fieldset data-settings-admin data-settings-task="maintenance" ${settingsAdmin() ? "" : "disabled"}><label class="field settings-date-field" for="settings-audit-before"><span>保留此日期及之后的操作日志</span><input id="settings-audit-before" class="inp" type="date" required></label>${settingsButton("settings-cleanup", "按日期清理操作日志…", { admin: true, task: "maintenance", kind: "audit", className: "danger sm" })}</fieldset></section>`;
 }
-// shellMaintenanceView renders backup & maintenance as a top-level view,
-// reusing the settings page chrome (admin unlock, refresh, access gating).
-function shellMaintenanceView(languageOnly = false) {
-  if (!languageOnly) { SETTINGS.epoch++; settingsInvalidateMetadata(false); }
-  SETTINGS.section = "maintenance";
-  return settingsHTML`<div id="settings-page" class="settings-page">
-    <header class="page-head"><div><span class="settings-eyebrow">Zephyr HiFi Kit / ${esc(settingsT("备份与维护"))}</span><h1>${esc(settingsT("备份与维护"))}</h1><p class="ph-sub">${esc(settingsT("服务端自升级、音乐数据备份、恢复与操作日志清理"))}</p></div><div class="ph-actions">${settingsButton("settings-refresh", "刷新状态", { icon: "refresh" })}</div></header>
-    <div class="settings-layout"><div class="settings-main"><section id="settings-admin" class="card settings-admin" aria-label="管理员解锁">${settingsNote("正在检查管理员会话…")}</section>
-      <div id="settings-section-error" role="status" aria-live="polite"></div>
-      <section class="settings-block" id="settings-block-maintenance"><div id="settings-content-maintenance">${settingsMaintenanceShell()}</div></section>
-    </div></div></div>`;
-}
 async function settingsRefreshMaintenance(current) {
   if (!settingsAdmin()) {
     SETTINGS.maintenance = null; settingsInvalidateMetadata(false);
@@ -587,7 +577,7 @@ function settingsPaintMaintenance() {
   }
   const counts = result?.counts || result, el = $("#settings-maintenance-counts"); if (!el) return;
   const mb = n => (Number(n) / 1048576).toFixed(1) + " MB";
-  const tiles = [["tracks", "曲目"], ["mounts", "音乐源"], ["playlists", "播放列表"], ["history", "历史记录"], ["covers", "封面"], ["audit", "操作日志"], ["albums", "专辑"], ["covers_bytes", "封面占用", mb], ["covers_orphan", "孤立封面"], ["lyrics", "歌词缓存"], ["lyrics_bytes", "歌词占用", mb], ["lyrics_synced", "同步歌词"]];
+  const tiles = [["mounts", "音乐源"], ["history", "历史记录"], ["covers", "封面"], ["audit", "操作日志"], ["covers_bytes", "封面占用", mb], ["covers_orphan", "孤立封面"], ["lyrics", "歌词缓存"], ["lyrics_bytes", "歌词占用", mb], ["lyrics_synced", "同步歌词"]];
   el.innerHTML = tiles.map(([key, label, fmt]) => settingsHTML`<div class="settings-count"><span>${esc(settingsT(label))}</span><strong>${typeof counts?.[key] === "number" && Number.isFinite(counts[key]) && counts[key] >= 0 ? esc(fmt ? fmt(counts[key]) : settingsNumber(counts[key])) : "—"}</strong></div>`).join("");
 }
 async function settingsEnsureIdle() {
@@ -768,8 +758,7 @@ async function settingsCleanup(kind) {
 // Preserve embedded controls and use cached state without replaying requests.
 function settingsLanguageChanged() {
   if (!settingsHere()) return;
-  const maintenanceView = S.view === "maintenance";
-  const next = document.createElement("div"); next.innerHTML = maintenanceView ? shellMaintenanceView(true) : shellSettings(true);
+  const next = document.createElement("div"); next.innerHTML = shellSettings(true);
   const swap = (selector) => {
     const olds = Array.from(document.querySelectorAll("#settings-page " + selector));
     const fresh = Array.from(next.querySelectorAll(selector));
@@ -778,17 +767,6 @@ function settingsLanguageChanged() {
   [".page-head", ".settings-section-heading", ".settings-anchors"].forEach(swap);
   const admin = $("#settings-admin");
   if (admin) { admin.setAttribute("aria-label", settingsT("管理员解锁")); delete admin.dataset.signature; settingsPaintSession(); }
-  if (maintenanceView) {
-    const old = $("#settings-content-maintenance"), fresh = next.querySelector("#settings-content-maintenance");
-    if (old && fresh) {
-      const update = $("#upd-body");
-      old.replaceChildren(...fresh.childNodes);
-      if (update) $("#upd-body")?.replaceWith(update);
-      paintUpdateServer(); settingsPaintMaintenance(); settingsPaintMetadataOrganization();
-    }
-    settingsObserve();
-    return;
-  }
   for (const [id] of SETTINGS_SECTIONS) {
     const old = $("#settings-content-" + id), fresh = next.querySelector("#settings-content-" + id);
     if (!old || !fresh) continue;
@@ -808,6 +786,11 @@ function settingsLanguageChanged() {
         }
         paintApps(); paintBoms();
       }
+    } else if (id === "maintenance") {
+      const update = $("#upd-body");
+      old.replaceChildren(...fresh.childNodes);
+      if (update) $("#upd-body")?.replaceWith(update);
+      paintUpdateServer(); settingsPaintMaintenance(); settingsPaintMetadataOrganization();
     } else if (id === "folders") {
       const editor = $("#settings-folder-editor [data-settings-form='settings-mount-save']")?.dataset.id;
       const countNote = $("#settings-count-note");

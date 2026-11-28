@@ -1198,3 +1198,31 @@ func TestScanResumesFromPersistedCursor(t *testing.T) {
 		t.Fatal("cursor must be cleared after a successful scan")
 	}
 }
+
+func TestPlaybackPathNotBlockedByScanLock(t *testing.T) {
+	s, _ := newService(t, &fakeRunner{}, t.TempDir())
+	target := t.TempDir()
+	m := addMountedLocalSource(t, s, target)
+	buildWAV(t, filepath.Join(target, "a.wav"))
+	if _, err := s.ScanChanges(context.Background(), m.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	tracks, err := s.ListTracks(m.ID)
+	if err != nil || len(tracks) != 1 {
+		t.Fatalf("tracks: %v %v", tracks, err)
+	}
+	// Simulate a long scan holding sourceMu: playback path resolution must
+	// still answer immediately instead of queueing behind the walk.
+	s.sourceMu.Lock()
+	done := make(chan error, 1)
+	go func() { _, err := s.PlaybackPath(tracks[0].ID); done <- err }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("PlaybackPath blocked behind sourceMu")
+	}
+	s.sourceMu.Unlock()
+}

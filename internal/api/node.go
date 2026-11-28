@@ -52,6 +52,20 @@ func (a *API) registerNode(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "register_failed", err.Error(), "")
 		return
 	}
+	// Android terminals pair with a short numeric code and have no operator
+	// console step, so registration grants a seat automatically while seats
+	// remain. Seat-full nodes stay unauthorized and can be granted manually.
+	if req.Arch == "android" {
+		a.seatMu.Lock()
+		if seats, _, lerr := a.lic.SeatLimit(); lerr == nil {
+			if used, uerr := a.nodes.AuthorizedCount(); uerr == nil && used < seats {
+				if serr := a.nodes.SetAuthorized(n.NodeID, true); serr == nil {
+					n.Authorized = true
+				}
+			}
+		}
+		a.seatMu.Unlock()
+	}
 	// The one-time console secret is returned only here; node JSON never
 	// carries it afterwards.
 	writeJSON(w, http.StatusCreated, struct {

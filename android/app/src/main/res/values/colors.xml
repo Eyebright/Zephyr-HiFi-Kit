@@ -1,4 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#0B1020</color>
+    <color name="usb_background">#0B1020</color>
+    <color name="usb_panel">#141D36</color>
+    <color name="usb_text">#E8ECFF</color>
+    <color name="usb_muted">#9AA6D6</color>
+    <color name="usb_idle">#7382B8</color>
+    <color name="usb_running">#7AB8FF</color>
+    <color name="usb_success">#66E3A4</color>
+    <color name="usb_warning">#FFCF6E</color>
+    <color name="usb_warning_panel">#352B1D</color>
+    <color name="usb_error">#FF8F9B</color>
 </resources>

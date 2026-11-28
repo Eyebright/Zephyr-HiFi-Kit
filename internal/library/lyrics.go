@@ -38,6 +38,11 @@ var (
 	lrcOffsetRe   = regexp.MustCompile(`(?i)\[offset:\s*([+-]?\d+)\s*\]`)
 	lrcMetaRe     = regexp.MustCompile(`(?i)^\[(ti|ar|al|by|re|ve|length|au|lr|offset):[^\]]*\]\s*$`)
 	lrcWordTimeRe = regexp.MustCompile(`<\d{1,3}:\d{1,2}(?:[.:]\d{1,3})?>`)
+	// lrcAnyTimeRe strips every remaining timestamp token from the display text,
+	// including inline square-bracket word tags ([00:18.70]) that enhanced LRC
+	// uses between syllables, not just the angle-bracket form.
+	lrcAnyTimeRe = regexp.MustCompile(`[\[<]\d{1,3}:\d{1,2}(?:[.:]\d{1,3})?[\]>]`)
+	spaceRunRe   = regexp.MustCompile(`\s+`)
 )
 
 // GetLyrics returns cached lyrics, extracting them lazily on first use so an
@@ -62,16 +67,9 @@ func (s *Service) GetLyrics(ctx context.Context, trackID string) (Lyrics, error)
 	if err != nil {
 		return Lyrics{}, err
 	}
-	type candidate struct{ source, text string }
-	var candidates []candidate
-	if text, err := media.ReadEmbeddedLyrics(path, t.Container, m.TextEncoding); err == nil && strings.TrimSpace(text) != "" {
-		candidates = append(candidates, candidate{"embedded", text})
-	}
-	if text, err := media.ReadSidecarLyrics(path, m.TextEncoding); err == nil && strings.TrimSpace(text) != "" {
-		candidates = append(candidates, candidate{"sidecar", text})
-	}
+	candidates := extractLyricsBounded(path, t.Container, m.TextEncoding)
 	out := Lyrics{TrackID: trackID, Source: "none", Lines: []LyricsLine{}, UpdatedAt: time.Now().Unix()}
-	var plain *candidate
+	var plain *lyricCandidate
 	for i := range candidates {
 		lines, synced := parseLyricsText(candidates[i].text)
 		if len(lines) == 0 {
@@ -91,12 +89,38 @@ func (s *Service) GetLyrics(ctx context.Context, trackID string) (Lyrics, error)
 			out.Lines = lines
 		}
 	}
-	if out.Source != "none" {
-		if err := s.storeLyrics(ctx, t, path, out); err != nil {
-			return Lyrics{}, err
-		}
+	// Cache every outcome, including "none", so each track is read from the
+	// source only once. A changed audio file (mtime/size) or a newly added
+	// sidecar invalidates the cached result on the next request.
+	if err := s.storeLyrics(ctx, t, path, out); err != nil {
+		return Lyrics{}, err
 	}
 	return out, nil
+}
+
+type lyricCandidate struct{ source, text string }
+
+// extractLyricsBounded reads embedded and sidecar lyrics off the source mount
+// with a hard deadline so a stalled network share cannot hang the request (and
+// pile up goroutines) indefinitely. A late read is simply discarded.
+func extractLyricsBounded(path, container, encoding string) []lyricCandidate {
+	done := make(chan []lyricCandidate, 1)
+	go func() {
+		var c []lyricCandidate
+		if text, err := media.ReadEmbeddedLyrics(path, container, encoding); err == nil && strings.TrimSpace(text) != "" {
+			c = append(c, lyricCandidate{"embedded", text})
+		}
+		if text, err := media.ReadSidecarLyrics(path, encoding); err == nil && strings.TrimSpace(text) != "" {
+			c = append(c, lyricCandidate{"sidecar", text})
+		}
+		done <- c
+	}()
+	select {
+	case c := <-done:
+		return c
+	case <-time.After(6 * time.Second):
+		return nil
+	}
 }
 
 func (s *Service) loadCachedLyrics(t Track) (Lyrics, bool, error) {
@@ -106,16 +130,23 @@ func (s *Service) loadCachedLyrics(t Track) (Lyrics, bool, error) {
 	err := s.db.QueryRow(`SELECT source,synced,text,lines,source_mtime_ns,source_size,updated_at
 		FROM track_lyrics WHERE track_id=?`, t.ID).
 		Scan(&source, &synced, &text, &linesJSON, &mtime, &size, &updated)
-	if errors.Is(err, sql.ErrNoRows) || source == "none" {
+	if errors.Is(err, sql.ErrNoRows) {
 		return Lyrics{}, false, nil
 	}
 	if err != nil {
 		return Lyrics{}, false, err
 	}
 	switch source {
-	case "embedded":
+	case "embedded", "none":
 		if t.MtimeNS == 0 || t.Size == 0 || mtime != t.MtimeNS || size != t.Size {
 			return Lyrics{}, false, nil
+		}
+		// A cached "no lyrics" result must still yield to a sidecar that was
+		// added after the audio file was last read.
+		if source == "none" {
+			if _, ok := media.SidecarLyricsPath(t.Path); ok {
+				return Lyrics{}, false, nil
+			}
 		}
 	case "sidecar":
 		p, ok := media.SidecarLyricsPath(t.Path)
@@ -204,7 +235,9 @@ func parseLyricsText(raw string) ([]LyricsLine, bool) {
 			}
 			times = append(times, ms)
 		}
-		text := strings.TrimSpace(lrcWordTimeRe.ReplaceAllString(rest, ""))
+		text := lrcWordTimeRe.ReplaceAllString(rest, "")
+		text = lrcAnyTimeRe.ReplaceAllString(text, "")
+		text = strings.TrimSpace(spaceRunRe.ReplaceAllString(text, " "))
 		if len(times) > 0 {
 			for _, ms := range times {
 				timed = append(timed, LyricsLine{TimeMS: ms, Text: text})

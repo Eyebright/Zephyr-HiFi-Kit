@@ -145,6 +145,45 @@ func TestLicenseReceipt(t *testing.T) {
 	}
 }
 
+func TestAndroidRegisterAutoAuthorized(t *testing.T) {
+	base := setup(t, "dev")
+	register := func(alias string) map[string]any {
+		s, b := doJSON(t, "POST", base+"/nodes/token", map[string]any{"ttl_seconds": 1800, "arch": "android"})
+		if s != 201 {
+			t.Fatalf("issue token: %d %s", s, b)
+		}
+		tok := mustJSON(t, b)["token"].(string)
+		s, b = doJSON(t, "POST", base+"/nodes/register", map[string]any{
+			"token": tok, "alias": alias, "arch": "android", "distro": "android", "machine_id": "mid-" + alias,
+		})
+		if s != 201 {
+			t.Fatalf("register %s: %d %s", alias, s, b)
+		}
+		return mustJSON(t, b)
+	}
+	n := register("auto-android")
+	if n["authorized"] != true {
+		t.Fatalf("android register must auto-authorize: %v", n)
+	}
+	// Fill the remaining built-in seats; the next android node stays
+	// unauthorized but can still be granted manually after a revoke.
+	register("auto-android-2")
+	register("auto-android-3")
+	full := register("auto-android-4")
+	if full["authorized"] == true {
+		t.Fatalf("seat-full android register must stay unauthorized: %v", full)
+	}
+	if s, b := doJSON(t, "POST", base+"/nodes/"+full["node_id"].(string)+"/authorize", nil); s != 409 {
+		t.Fatalf("seat full authorize expected 409: %d %s", s, b)
+	}
+	// Linux terminals keep the explicit authorize step.
+	linux := registerNode(t, base, "manual-linux")
+	s, b := doJSON(t, "GET", base+"/nodes/"+linux, nil)
+	if s != 200 || mustJSON(t, b)["authorized"] == true {
+		t.Fatalf("linux register must stay manual: %d %s", s, b)
+	}
+}
+
 func TestLicenseSeatGate(t *testing.T) {
 	base := setup(t, "dev")
 	// Built-in grant: up to 3 terminals can be authorized without any license.

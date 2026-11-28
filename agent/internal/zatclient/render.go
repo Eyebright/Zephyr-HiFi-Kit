@@ -76,6 +76,7 @@ type session struct {
 	frameBytes  int
 	prebufferMS int
 	bitPerfect  bool
+	actualRate  int // real output sample rate reported by the player (0 = use setup)
 
 	// Hotplug reporting state, owned by statusLoop.
 	cardsSig   string
@@ -143,10 +144,14 @@ func (s *session) snapshotLocked() Snapshot {
 	if trackID == "" {
 		trackID = s.setup.TrackID
 	}
+	rate := s.setup.Rate
+	if s.actualRate > 0 {
+		rate = s.actualRate
+	}
 	return Snapshot{
 		Connected: true, State: string(s.state), SessionID: s.sessionID,
 		TrackID: trackID, Title: s.meta.Title, Artist: s.meta.Artist, Album: s.meta.Album,
-		DurationMS: s.meta.DurationMS, Codec: s.meta.Codec, Rate: s.setup.Rate, Channels: s.setup.Channels,
+		DurationMS: s.meta.DurationMS, Codec: s.meta.Codec, Rate: rate, Channels: s.setup.Channels,
 		PTS: s.pts, BufferMS: s.bufferMSLocked(), Volume: s.volume, ALSADevice: s.device,
 		PrefDevice: s.c.PreferredDevice(), MQA: s.setup.MQA, DoP: s.setup.DoP,
 		DSDRate: s.setup.DSDRate, BitPerfect: s.bitPerfect,
@@ -235,6 +240,15 @@ func (s *session) renderLoop() {
 					continue
 				}
 				p = np
+				// Report the rate the output is actually running at. AAudio in
+				// shared mode resamples to the device's native clock (e.g. a DAC
+				// fixed at 768 kHz), so the displayed rate must reflect reality
+				// rather than the requested source rate.
+				if ar, ok := np.(interface{ ActualSampleRate() int }); ok {
+					s.mu.Lock()
+					s.actualRate = ar.ActualSampleRate()
+					s.mu.Unlock()
+				}
 			case cmdStop:
 				if p != nil {
 					_ = p.Drain()
@@ -386,6 +400,7 @@ func (s *session) handleSetup(ctx context.Context, fr zat.Frame) error {
 	s.queuedBytes = 0
 	s.frameBytes = bpf
 	s.bytesPerMS = su.Rate * bpf / 1000
+	s.actualRate = 0
 	s.state = zat.StateReady
 	if su.MQA || su.DoP {
 		s.volume = 100

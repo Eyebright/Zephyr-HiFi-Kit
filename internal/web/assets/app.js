@@ -192,14 +192,24 @@ function setConn(ok) {
   const t = $("#conn-text"); if (t) t.textContent = ok ? appT("m056") : appT("m057");
 }
 async function req(method, path, opt) {
+  const o = opt || {};
+  const timeout = o.timeout === undefined ? 30000 : o.timeout;
+  const ctrl = timeout > 0 && typeof AbortController !== "undefined" ? new AbortController() : null;
+  const timer = ctrl ? setTimeout(() => ctrl.abort(), timeout) : null;
   let r;
-  try { r = await fetch(API_BASE + path, Object.assign({ method }, opt || {})); }
+  try { r = await fetch(API_BASE + path, Object.assign({ method }, o, ctrl ? { signal: ctrl.signal } : {})); }
   catch (e) {
+    if (ctrl && ctrl.signal.aborted) {
+      const err = new Error(appT("requestTimeout"));
+      err.code = "request_timeout"; err.rawMessage = "timeout";
+      throw err;
+    }
     setConn(false);
     const err = new Error(appT("m058"));
     err.data = e.data; err.code = e.code; err.rawMessage = e.message;
     throw err;
   }
+  finally { if (timer) clearTimeout(timer); }
   setConn(true);
   const text = await r.text();
   let data = null;
@@ -216,8 +226,8 @@ async function req(method, path, opt) {
   }
   return data;
 }
-const api = (method, path, body) => req(method, path, method === "GET" || method === "HEAD" ? {} : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body === undefined ? {} : body) });
-const apiForm = (path, fd) => req("POST", path, { body: fd });
+const api = (method, path, body, opt) => req(method, path, Object.assign(method === "GET" || method === "HEAD" ? {} : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body === undefined ? {} : body) }, opt || {}));
+const apiForm = (path, fd, opt) => req("POST", path, Object.assign({ body: fd }, opt || {}));
 async function rootJson(path) {
   const r = await fetch(path);
   if (!r.ok) {
@@ -405,7 +415,6 @@ const NAV = [
   { id: "library", get name() { return appT("m066"); }, icon: "library" },
   { id: "favorites", get name() { return appT("navFavorites"); }, icon: "heart" },
   { id: "playlists", get name() { return appT("navPlaylists"); }, icon: "layers" },
-  { id: "maintenance", get name() { return appT("navMaintenance"); }, icon: "database" },
   { id: "settings", get name() { return appT("m069"); }, icon: "settings" }
 ];
 
@@ -419,8 +428,10 @@ function meter(label, pct, valText, color = "") {
   return `<div class="meter"><div class="m-top"><span>${esc(label)}</span><span class="m-val">${esc(valText)}</span></div><div class="m-track"><div class="m-fill ${color}" style="width:${p}%"></div></div></div>`;
 }
 function kvRow(k, v) { return `<div class="k">${esc(k)}</div><div class="v">${v}</div>`; }
-function kpi(label, num, color, ic, sub = "") {
-  return `<div class="kpi" style="--kc:var(--${color})"><div class="k-top">${icon(ic, 15)}<span class="k-lbl">${esc(label)}</span></div><div class="k-num">${esc(typeof num === "number" ? appN(num) : num)}${sub ? ` <small>${esc(sub)}</small>` : ""}</div></div>`;
+function kpi(label, num, color, ic, sub = "", link = null) {
+  const inner = `<div class="k-top">${icon(ic, 15)}<span class="k-lbl">${esc(label)}</span></div><div class="k-num">${esc(typeof num === "number" ? appN(num) : num)}${sub ? ` <small>${esc(sub)}</small>` : ""}</div>`;
+  if (link) return `<button type="button" class="kpi kpi-link" data-act="${esc(link.act)}" data-tab="${esc(link.tab)}" style="--kc:var(--${color})" title="${esc(label)}">${inner}</button>`;
+  return `<div class="kpi" style="--kc:var(--${color})">${inner}</div>`;
 }
 function hit(...fields) {
   const q = S.search.trim().toLowerCase();
@@ -434,14 +445,13 @@ function viewError(e) {
 /* ---------- routing ---------- */
 function shellFor(v) {
   if (v === "settings") return shellSettings();
-  return ({ overview: shellOverview, library: shellLibrary, nodes: shellNodes, catalog: shellCatalog, keys: shellKeys, audit: shellAudit, maintenance: shellMaintenanceView }[v] || shellOverview)();
+  return ({ overview: shellOverview, library: shellLibrary, nodes: shellNodes, catalog: shellCatalog, keys: shellKeys, audit: shellAudit }[v] || shellOverview)();
 }
 async function refreshFor(v, silent) {
   try {
     if (v === "overview") await refreshOverview();
     else if (v === "library") await refreshLibrary();
     else if (v === "settings") await refreshSettings();
-    else if (v === "maintenance") await refreshSettings();
     else if (v === "nodes") await refreshTerminalCenter();
     else if (v === "catalog") await refreshCatalog();
     else if (v === "keys") await refreshKeys();
@@ -501,7 +511,7 @@ function paintBell() {
 /* ================= OVERVIEW ================= */
 // Listening filters and playback target deliberately have separate state.
 const OV = {
-  days: 7, node: "", data: null, error: "", statsBusy: false, statsSeq: 0,
+  days: 7, data: null, error: "", statsBusy: false, statsSeq: 0,
   epoch: 0, busy: false, loaded: false, tracksError: false, playlistsError: false, nodesError: false,
   recentMore: false, addedMore: false, recentTab: "tracks"
 };
@@ -513,17 +523,13 @@ function cleanupOverview() {
 }
 function shellOverview() {
   return `<header class="ov-head">
-      <div><div class="ov-eyebrow">YOUR LISTENING ROOM</div><h1 id="ov-greeting">${appH("m065")}</h1><p class="ov-scope">${appH("m079")}</p></div>
-      <div class="ov-filters"><div class="chips" aria-label="${appH("m080")}">${[[1, appT("m076")], [7, appT("m077")], [30, appT("m078")]].map(([d, label]) => `<button class="chip ${OV.days === d ? "active" : ""}" data-act="ov-days" data-days="${d}" aria-pressed="${OV.days === d}">${esc(label)}</button>`).join("")}</div>
-        <label class="ov-filter-label">${appH("m081")}<select id="ov-stat-node" class="inp" data-change="ov-stat-node" aria-label="${appH("m081")}"><option value="">${appH("m082")}</option></select></label>
-      </div>
+      <div><div class="ov-eyebrow">YOUR LISTENING ROOM</div><h1 id="ov-greeting">${appH("m065")}</h1></div>
     </header>
-    <div id="ov-stat-note" class="ov-note" role="status"></div>
-    <div class="kpis ov-kpis stagger" style="--i:0" id="ov-kpis"></div>
-    <div class="ov-albums-grid">
-      <section class="card ov-section stagger" style="--i:1" id="ov-recent"></section>
-      <section class="card ov-section stagger" style="--i:2" id="ov-albums"></section>
+    <div class="kpis ov-kpis ov-lib-stats stagger" style="--i:0" id="ov-lib-stats"></div>
+    <section class="card ov-section mt16 stagger" style="--i:1" id="ov-recent"></section>
+    <div class="ov-filters ov-filters-below mt16"><div id="ov-stat-note" class="ov-note" role="status"></div><div class="chips" aria-label="${appH("m080")}">${[[1, appT("m076")], [7, appT("m077")], [30, appT("m078")]].map(([d, label]) => `<button class="chip ${OV.days === d ? "active" : ""}" data-act="ov-days" data-days="${d}" aria-pressed="${OV.days === d}">${esc(label)}</button>`).join("")}</div>
     </div>
+    <div class="kpis ov-kpis stagger" style="--i:2" id="ov-kpis"></div>
     <div class="grid cols-2 mt16 ov-tastes">
       <section class="card stagger" style="--i:3" id="ov-genres"></section>
       <section class="card stagger" style="--i:4" id="ov-artists"></section>
@@ -537,11 +543,16 @@ async function refreshOverview() {
   OV.busy = true;
   const epoch = OV.epoch;
   try {
-    const [nodes, tracks, playlists, metrics, jobs, alerts] = await Promise.all([
+    const [nodes, tracks, playlists, metrics, jobs, alerts, libT, libA, libAr, libG] = await Promise.all([
       api("GET", "/nodes").catch(() => null), api("GET", "/tracks").catch(() => null),
       api("GET", "/playlists").catch(() => null), rootJson("/metrics/server").catch(() => null),
-      api("GET", "/jobs").catch(() => null), api("GET", "/alerts").catch(() => null)
+      api("GET", "/jobs").catch(() => null), api("GET", "/alerts").catch(() => null),
+      api("GET", "/library/browse?category=tracks&page_size=1").catch(() => null),
+      api("GET", "/library/browse?category=albums&page_size=1").catch(() => null),
+      api("GET", "/library/browse?category=artists&page_size=1").catch(() => null),
+      api("GET", "/library/browse?category=genres&page_size=1").catch(() => null)
     ]);
+    OV.lib = { tracks: libT?.total, albums: libA?.total, artists: libAr?.total, genres: libG?.total };
     if (S.view !== "overview" || epoch !== OV.epoch) return;
     OV.nodesError = !Array.isArray(nodes); OV.tracksError = !Array.isArray(tracks); OV.playlistsError = !Array.isArray(playlists);
     if (Array.isArray(nodes)) S.nodes = nodes;
@@ -566,11 +577,11 @@ async function refreshOverview() {
 async function refreshListening(force = false) {
   if (S.view !== "overview" || (OV.statsBusy && !force)) return;
   const seq = ++OV.statsSeq, epoch = OV.epoch;
-  const days = OV.days, node = OV.node;
+  const days = OV.days;
   OV.statsBusy = true;
   if (force) { OV.data = null; OV.error = ""; paintListening(); }
   try {
-    const d = await api("GET", `/listening?days=${days}${node ? "&node_id=" + enc(node) : ""}`);
+    const d = await api("GET", `/listening?days=${days}`);
     if (epoch !== OV.epoch || seq !== OV.statsSeq || S.view !== "overview") return;
     if (!d || !["listen_ms", "track_count", "album_count", "artist_count", "unmeasured_plays"].every(k => typeof d[k] === "number" && Number.isFinite(d[k]) && d[k] >= 0)
       || !["genres", "artists", "recent_albums"].every(k => Array.isArray(d[k]))) throw new Error(appT("m084"));
@@ -588,20 +599,9 @@ function ovSetDays(days) {
   $$("[data-act='ov-days']").forEach(b => { const on = Number(b.dataset.days) === days; b.classList.toggle("active", on); b.setAttribute("aria-pressed", String(on)); });
   refreshListening(true);
 }
-function ovSyncSelect(el, html, value) {
-  if (!el || document.activeElement === el) return;
-  if (el.dataset.options !== html) { el.innerHTML = html; el.dataset.options = html; }
-  if (el.value !== value) el.value = value;
-}
-function ovNodeOptions(selected, all, nodes = S.nodes) {
-  let html = `<option value="">${all ? appH("m082") : appH("m086")}</option>` + nodes.map(n => `<option value="${esc(n.node_id)}">${esc(n.alias || shortId(n.node_id))}${n.status === "online" ? "" : appH("m087")}</option>`).join("");
-  if (selected && !nodes.some(n => n.node_id === selected)) html += `<option value="${esc(selected)}">${appH("m088", { value: shortId(selected) })}</option>`;
-  return html;
-}
-function paintOverview() { paintListening(); paintOvAlbums(); paintOvPlaylists(); paintSysStrip(); if (typeof paintFavoritePreview === "function") paintFavoritePreview(); }
+function paintOverview() { paintLibStats(); paintListening(); paintOvPlaylists(); paintSysStrip(); if (typeof paintFavoritePreview === "function") paintFavoritePreview(); }
 function paintListening() {
   paintOverviewKpis(); paintOvRecent(); paintOvTastes();
-  ovSyncSelect($("#ov-stat-node"), ovNodeOptions(OV.node, true), OV.node);
 }
 function fmtListen(ms) {
   const sec = Math.floor(Math.max(0, Number(ms) || 0) / 1000);
@@ -611,6 +611,15 @@ function fmtListen(ms) {
 }
 function ovRetry(act = "ov-retry") { return `<button class="btn xs ghost" data-act="${act}">${icon("refresh", 12)} ${appH("m072")}</button>`; }
 function ovStatEmpty() { return empty(OV.error ? "alert" : "clock", OV.error ? appT("m093") : appT("m094"), OV.error ? ovRetry() : "", true); }
+function paintLibStats() {
+  const el = $("#ov-lib-stats"); if (!el) return;
+  const L = OV.lib || {};
+  const tile = (key, label, tab, ic) => kpi(label, Number.isFinite(L[key]) ? L[key] : "—", "cyan", ic, "", { act: "xp-lib-tab", tab });
+  el.innerHTML = tile("tracks", appT("ovLibTracks"), "tracks", "music") +
+    tile("albums", appT("ovLibAlbums"), "albums", "disc") +
+    tile("artists", appT("ovLibArtists"), "artists", "music") +
+    tile("genres", appT("ovLibGenres"), "genres", "layers");
+}
 function paintOverviewKpis() {
   const el = $("#ov-kpis"); if (!el) return;
   const d = OV.data;
@@ -620,7 +629,16 @@ function paintOverviewKpis() {
     kpi(appT("m100"), d ? d.artist_count : "—", "amber", "music");
   const note = $("#ov-stat-note");
   if (note) note.innerHTML = OV.error ? `<span class="txt-gold">${appH("m101", { message: OV.error })}</span> ${ovRetry()}` :
-    d ? `${appH("listeningScope", { timezone: d.timezone ? " (" + d.timezone + ")" : "", period: OV.days === 1 ? appT("m076") : appT("listeningDays", { count: OV.days }) })}${d.unmeasured_plays > 0 ? `<span class="ov-unmeasured">${appH("m104", { value: d.unmeasured_plays })}</span>` : ""}` : appH("m094");
+    d ? `${appH(OV.days === 1 ? "listeningLeadToday" : "listeningLeadDays", { count: OV.days })}${d.unmeasured_plays > 0 ? `<span class="ov-unmeasured">${appH("m104", { value: d.unmeasured_plays })}</span>` : ""}` : appH("m094");
+}
+// ovLibAlbumCount mirrors the server's album grouping: distinct album plus
+// album artist, ignoring tracks without an album tag.
+function ovLibAlbumCount(tracks) {
+  const seen = new Set();
+  for (const t of tracks) {
+    if (t.album) seen.add(JSON.stringify([t.album_artist || t.artist || "", t.album]));
+  }
+  return seen.size;
 }
 function paintOvTastes() {
   const genres = $("#ov-genres"), artists = $("#ov-artists"); if (!genres || !artists) return;
@@ -644,7 +662,7 @@ function paintOvTastes() {
 }
 function ovAlbumHead(title, kind, more, count) {
   return secHead(icon(kind === "recent" ? "clock" : "disc", 17) + " " + esc(title),
-    `${count > 8 ? `<button class="btn xs ghost" data-act="ov-more" data-kind="${kind}" aria-expanded="${more}">${more ? appH("m121") : appH("m122")}</button>` : ""}${kind === "recent" ? "" : `<button class="btn xs ghost" data-act="ov-goto" data-tab="albums">${appH("m066")} ${icon("chevR", 12)}</button>`}`);
+    `${count > 8 ? `<button class="btn xs ghost" data-act="ov-more" data-kind="${kind}" aria-expanded="${more}">${more ? appH("m121") : appH("m122")}</button>` : ""}`);
 }
 function ovAlbumCard(g, info = {}) {
   const historical = info.history === true, missing = !g;
@@ -671,25 +689,6 @@ function ovAlbumCard(g, info = {}) {
     <div class="ov-album-foot"><span class="hint truncate" title="${esc(info.time ? fmtTime(info.time) : "")}">${info.time ? ago(info.time) : ""}</span><button class="btn xs ghost" data-act="album-push" data-ak="${key}" ${playable ? "" : "disabled"} title="${missing ? esc(unavailable) : appH("m129")}" aria-label="${appH("m131", { value: album || appT("m128") })}">${icon("send", 12)}</button></div>
   </article>`;
 }
-function paintOvRecent() {
-  const el = $("#ov-recent"); if (!el) return;
-  const tab = OV.recentTab || "tracks";
-  const tracks = OV.data && Array.isArray(OV.data.recent_tracks) ? OV.data.recent_tracks.filter(t => hit(t.title, t.artist, t.album)) : [];
-  const albums = OV.data ? OV.data.recent_albums.filter(g => hit(g.artist, g.album)) : [];
-  const list = tab === "tracks" ? tracks : albums;
-  const head = ovAlbumHead(appT("recentListened"), "recent", OV.recentMore, list.length);
-  const tabs = `<div class="ov-recent-tabs" role="tablist">${[["tracks", appT("recentTracksTab"), tracks.length], ["albums", appT("recentAlbumsTab"), albums.length]].map(([id, label, count]) => `<button class="chip ${tab === id ? "active" : ""}" role="tab" aria-selected="${tab === id}" data-act="ov-recent-tab" data-tab="${id}">${esc(label)}<span class="cnt">${esc(I18n.number(count))}</span></button>`).join("")}</div>`;
-  if (!OV.data) { el.innerHTML = head + tabs + ovStatEmpty(); return; }
-  const note = `<p class="ov-note">${appH("m134")}${OV.tracksError ? appH("m133") + " " + ovRetry("ov-library-retry") : ""}</p>`;
-  if (tab === "tracks") {
-    const rows = tracks.slice(0, OV.recentMore ? 50 : 8).map(t => `<div class="ov-recent-track"><span class="ov-recent-cover">${coverArt(t.album, t.artist, "thumb", 16, t.cover_hash)}</span><span class="ov-recent-info"><strong class="truncate">${esc(t.title || appT("m171"))}</strong><span class="hint truncate">${esc([t.artist, t.album].filter(Boolean).join(" · "))}</span></span><span class="hint nowrap">${t.last_played_at ? ago(t.last_played_at) : ""}</span><button class="btn xs ghost" data-act="ov-track-play" data-id="${esc(t.track_id)}" aria-label="${appH("playTrack")}" title="${appH("playTrack")}">${icon("send", 12)}</button></div>`).join("");
-    el.innerHTML = head + tabs + note + (rows ? `<div class="ov-recent-tracks ${OV.recentMore ? "expanded" : ""}">${rows}</div>` : empty("music", S.search ? appT("noMatchingTracks") : appT("noRecentTracks"), "", true));
-    return;
-  }
-  const groups = new Map(OV.loaded && !OV.tracksError ? albumGroups().map(g => [albumKey(g), g]) : []);
-  if (typeof ensureAlbumFavorites === "function") ensureAlbumFavorites();
-  el.innerHTML = head + tabs + note + (albums.length ? `<div class="ov-album-row ${OV.recentMore ? "expanded" : ""}">${albums.slice(0, OV.recentMore ? 50 : 8).map(a => ovAlbumCard(groups.get(albumKey(a)), Object.assign({}, a, { history: true, time: a.last_played_at }))).join("")}</div>` : empty("disc", S.search ? appT("m135") : appT("m136"), "", true));
-}
 function ovAddedAlbums(groups) {
   const cached = ALBUM_ADDED_CACHE.get(groups);
   if (cached) return cached;
@@ -700,17 +699,32 @@ function ovAddedAlbums(groups) {
   ALBUM_ADDED_CACHE.set(groups, list);
   return list;
 }
-function paintOvAlbums() {
-  const el = $("#ov-albums"); if (!el) return;
+// paintOvRecent renders one merged card with two views: recently listened
+// (tracks and albums interleaved by last play) and newly added albums.
+function paintOvRecent() {
+  const el = $("#ov-recent"); if (!el) return;
+  const tab = OV.recentTab === "added" ? "added" : "recent";
   if (typeof ensureAlbumFavorites === "function") ensureAlbumFavorites();
-  const all = ovAddedAlbums(albumGroups());
-  const unknown = all.filter(a => !a.added).length;
-  const list = all.filter(a => a.added && hit(a.g.artist, a.g.album));
-  const head = ovAlbumHead(appT("m137"), "added", OV.addedMore, list.length);
-  if (!OV.loaded || OV.tracksError) { el.innerHTML = head + empty(OV.tracksError ? "alert" : "disc", OV.tracksError ? appT("m138") : appT("m139"), OV.tracksError ? ovRetry("ov-library-retry") : "", true); return; }
-  const note = `<p class="ov-note">${appH("m141")}${unknown ? appH("m140", { count: unknown }) : ""}</p>`;
-  const shown = list.slice(0, OV.addedMore ? NEW_ALBUM_LIMIT : 8);
-  el.innerHTML = head + note + (shown.length ? `<div class="ov-album-row ${OV.addedMore ? "expanded" : ""}">${shown.map(a => ovAlbumCard(a.g, { time: a.added })).join("")}</div>` : empty("disc", S.search ? appT("m142") : unknown ? appT("m143") : appT("m144"), `<button class="btn xs ghost" data-act="ov-goto" data-tab="albums">${appH("m145")}</button>`, true));
+  const groups = new Map(OV.loaded && !OV.tracksError ? albumGroups().map(g => [albumKey(g), g]) : []);
+  const albums = OV.data && Array.isArray(OV.data.recent_albums) ? OV.data.recent_albums.filter(g => hit(g.artist, g.album)) : [];
+  const items = albums.map(a => ({ time: a.last_played_at || 0, a })).sort((x, y) => y.time - x.time);
+  const addedAll = ovAddedAlbums(albumGroups());
+  const addedUnknown = addedAll.filter(a => !a.added).length;
+  const addedList = addedAll.filter(a => a.added && hit(a.g.artist, a.g.album));
+  const chips = `<div class="ov-recent-tabs" role="tablist">${[["recent", appT("recentListened"), items.length], ["added", appT("m137"), addedList.length]].map(([id, label, count]) => `<button class="chip ${tab === id ? "active" : ""}" role="tab" aria-selected="${tab === id}" data-act="ov-recent-tab" data-tab="${id}">${esc(label)}<span class="cnt">${esc(I18n.number(count))}</span></button>`).join("")}</div>`;
+  if (tab === "added") {
+    const head = ovAlbumHead(appT("m137"), "added", OV.addedMore, addedList.length);
+    if (!OV.loaded || OV.tracksError) { el.innerHTML = head + chips + empty(OV.tracksError ? "alert" : "disc", OV.tracksError ? appT("m138") : appT("m139"), OV.tracksError ? ovRetry("ov-library-retry") : "", true); return; }
+    const note = `<p class="ov-note">${appH("m141")}${addedUnknown ? appH("m140", { count: addedUnknown }) : ""}</p>`;
+    const shown = addedList.slice(0, OV.addedMore ? NEW_ALBUM_LIMIT : 8);
+    el.innerHTML = head + chips + note + (shown.length ? `<div class="ov-album-row ${OV.addedMore ? "expanded" : ""}">${shown.map(a => ovAlbumCard(a.g, { time: a.added })).join("")}</div>` : empty("disc", S.search ? appT("m142") : addedUnknown ? appT("m143") : appT("m144"), `<button class="btn xs ghost" data-act="ov-goto" data-tab="albums">${appH("m145")}</button>`, true));
+    return;
+  }
+  const head = ovAlbumHead(appT("recentListened"), "recent", OV.recentMore, items.length);
+  if (!OV.data) { el.innerHTML = head + chips + ovStatEmpty(); return; }
+  const note = `<p class="ov-note">${appH("m134")}${OV.tracksError ? appH("m133") + " " + ovRetry("ov-library-retry") : ""}</p>`;
+  const shown = items.slice(0, OV.recentMore ? 45 : 8);
+  el.innerHTML = head + chips + note + (shown.length ? `<div class="ov-album-row ${OV.recentMore ? "expanded" : ""}">${shown.map(it => ovAlbumCard(groups.get(albumKey(it.a)), Object.assign({}, it.a, { history: true, time: it.a.last_played_at }))).join("")}</div>` : empty("disc", S.search ? appT("m135") : appT("m136"), "", true));
 }
 function paintOvPlaylists() {
   const el = $("#ov-playlists"); if (!el) return;
@@ -1043,7 +1057,7 @@ function sysDetail() {
 /* ---- album aggregation (shared by overview & library) ---- */
 const ALBUM_GROUPS_CACHE = new WeakMap();
 const ALBUM_ADDED_CACHE = new WeakMap();
-const NEW_ALBUM_LIMIT = 50;
+const NEW_ALBUM_LIMIT = 45;
 function albumGroups() {
   const cached = ALBUM_GROUPS_CACHE.get(S.tracks);
   if (cached) return cached;
@@ -2034,7 +2048,7 @@ async function submitVersion() {
   UP.busy = true;
   const btn = $("#up-btn"); if (btn) { btn.disabled = true; btn.innerHTML = `<span class="spin">${icon("refresh", 15)}</span> ${appH("m453")}`; }
   try {
-    await apiForm(`/apps/${enc(UP.id)}/versions`, fd);
+    await apiForm(`/apps/${enc(UP.id)}/versions`, fd, { timeout: 120000 });
     toast(appT("m454", { version: version, value: arch }), "ok");
     const id = UP.id; UP.busy = false;
     await refreshCatalog(); openAppModal(id);
@@ -2771,7 +2785,7 @@ async function updApply() {
   if (!ok) return;
   S.upd.busy = true;
   try {
-    const r = await api("POST", "/update/apply");
+    const r = await api("POST", "/update/apply", {}, { timeout: 120000 });
     S.upd.server = r;
     toast(r && r.state === "restarting" ? appT("m673") : appT("m674"), "ok");
     paintUpdateServer();
@@ -3851,7 +3865,7 @@ function playerShell() {
       </div>
       <div class="ply-aux">
         ${volumePopoverHtml("ply")}
-        <button class="switch pb-eq-btn ply-eq-pill" id="ply-eq-toggle" data-act="ply-eq-toggle" role="switch" aria-checked="false" title="${appH("eqEnable")}" aria-label="${appH("eqTitle")}"><span class="sw-lbl">EQ</span><span class="track"></span></button>
+        <button class="pb-eq-btn" id="ply-eq-toggle" data-act="ply-eq-toggle" aria-expanded="false" title="${appH("eqTitle")}" aria-label="${appH("eqTitle")}">${icon("sliders", 15)}</button>
         ${pbModeShell("ply")}
         ${sleepPopoverHtml("ply", deviceKey)}
       </div>
@@ -3894,6 +3908,7 @@ function eqPanelHtml() {
     <button class="btn xs ghost" data-act="ply-peq-del" data-index="${i}" title="${appH("eqPeqDel")}">${icon("trash", 12)}</button>
   </div>`).join("");
   return `<div class="sec-head"><div class="sec-title">${icon("sliders", 16)} ${appH("eqTitle")}</div><div class="spacer"></div>
+    <label class="switch sm" title="${appH("eqEnable")}"><input type="checkbox" data-change="ply-eq-enabled" ${cfg.enabled ? "checked" : ""} ${eq.bypass ? "disabled" : ""} aria-label="${appH("eqEnable")}"><span class="track"></span></label>
     <button class="btn xs ghost" data-act="ply-eq-reset">${appH("eqReset")}</button></div>
     ${eq.bypass ? `<div class="banner warn mt8">${appH("eqBypass")}</div>` : ""}
     <div class="eq-row">
@@ -3914,10 +3929,9 @@ function paintPlayerEQ() {
 function paintEqToggle() {
   const b = $("#ply-eq-toggle"); if (!b) return;
   const eq = PLY.eq;
-  const on = !!(eq && eq.cfg.enabled);
-  b.setAttribute("aria-checked", String(on));
+  b.setAttribute("aria-expanded", String(!!PLY.eqOpen));
   b.disabled = !!(eq && eq.bypass);
-  b.title = appT(eq && eq.bypass ? "eqBypass" : on ? (PLY.eqOpen ? "eqCollapseKeep" : "eqDisable") : "eqEnable");
+  b.title = appT(eq && eq.bypass ? "eqBypass" : "eqTitle");
 }
 async function loadPlayerEQ() {
   const deviceKey = PLY.deviceKey; if (!deviceKey) return;
@@ -4360,8 +4374,8 @@ Object.assign(ACT, {
   "ov-days": ds => ovSetDays(Number(ds.days)),
   "ov-retry": () => refreshListening(true),
   "ov-library-retry": () => refreshOverview(),
-  "ov-more": ds => { if (ds.kind === "recent") { OV.recentMore = !OV.recentMore; paintOvRecent(); } else { OV.addedMore = !OV.addedMore; paintOvAlbums(); } },
-  "ov-recent-tab": ds => { OV.recentTab = ds.tab === "albums" ? "albums" : "tracks"; OV.recentMore = false; paintOvRecent(); },
+  "ov-more": ds => { if (ds.kind === "recent") { OV.recentMore = !OV.recentMore; } else { OV.addedMore = !OV.addedMore; } paintOvRecent(); },
+  "ov-recent-tab": ds => { OV.recentTab = ds.tab === "added" ? "added" : "recent"; OV.recentMore = false; OV.addedMore = false; paintOvRecent(); },
   "ov-track-play": ds => openTrackPlay(ds.id),
   "album-open": ds => openAlbumPageFromKey(ds.ak),
   "album-page-back": () => { albumPageReset(); if (S.view === "library") { if (typeof renderSidebarNav === "function") renderSidebarNav(); return refreshLibraryBrowser(); } setView("library"); },
@@ -4451,7 +4465,6 @@ Object.assign(ACT, {
 
 /* ================= CHANGE MAP ================= */
 const CHG = {
-  "ov-stat-node": el => { OV.node = el.value; OV.recentMore = false; return refreshListening(true); },
   "pb-seek": el => playerBarRangeChange(el, false),
   "pb-volume": el => playerBarRangeChange(el, true),
   "node-sel-all": el => { const list = filteredNodes(); list.forEach(n => { if (el.checked) S.sel.add(n.node_id); else S.sel.delete(n.node_id); }); paintNodes(); },
@@ -4530,11 +4543,9 @@ function appLanguageChanged() {
   setConn(appConnOK); paintBell(); paintPlayerBar();
   if (PLY.deviceKey && $("#ply-body")) paintPlayerLive();
   if (S.view === "overview") {
-    text("#ov-greeting", "m065"); text(".ov-scope", "m079");
+    text("#ov-greeting", "m065");
     attr(".ov-filters .chips", "aria-label", "m080");
-    attr("#ov-stat-node", "aria-label", "m081"); attr("#ov-favorites", "aria-label", "m083");
-    const label = $(".ov-filter-label");
-    if (label?.firstChild?.nodeType === 3) label.firstChild.nodeValue = appT("m081");
+    attr("#ov-favorites", "aria-label", "m083");
     for (const [days, key] of [[1, "m076"], [7, "m077"], [30, "m078"]]) text(`[data-act='ov-days'][data-days='${days}']`, key);
     paintOverview();
   }
@@ -4568,25 +4579,8 @@ CHG["album-sel-head"] = el => {
 };
 Object.assign(ACT, {
   "ply-eq-toggle": async () => {
-    if (PLY.eq && PLY.eq.bypass) { toast(appT("eqBypass"), "warn"); return; }
-    if (!PLY.eq) {
-      PLY.eqOpen = true;
-      await loadPlayerEQ();
-      if (PLY.eq && !PLY.eq.bypass && !PLY.eq.cfg.enabled) { PLY.eq.cfg.enabled = true; savePlayerEQ(); }
-      paintEqToggle();
-      return;
-    }
-    if (!PLY.eq.cfg.enabled) {
-      PLY.eq.cfg.enabled = true;
-      PLY.eqOpen = true;
-      savePlayerEQ();
-      paintPlayerEQ();
-      return;
-    }
-    if (PLY.eqOpen) { PLY.eqOpen = false; paintPlayerEQ(); return; }
-    PLY.eq.cfg.enabled = false;
-    savePlayerEQ();
-    paintEqToggle();
+    PLY.eqOpen = !PLY.eqOpen;
+    if (PLY.eqOpen && !PLY.eq) await loadPlayerEQ(); else paintPlayerEQ();
   },
   "ply-eq-reset": () => {
     if (!PLY.eq) return;
@@ -4615,6 +4609,7 @@ Object.assign(ACT, {
   }
 });
 Object.assign(CHG, {
+  "ply-eq-enabled": el => { if (!PLY.eq) return; PLY.eq.cfg.enabled = el.checked; savePlayerEQ(); },
   "ply-eq-mode": el => {
     if (!PLY.eq) return;
     PLY.eq.cfg.mode = el.value === "peq" ? "peq" : "graphic";
