@@ -417,7 +417,7 @@ function settingsPaintSources() {
 }
 // settingsPaintScanProg renders the live scan bar/counters into a source row.
 function settingsPaintScanProg(id, p) {
-  const el = document.getElementById("scan-prog-" + id); if (!el) return;
+  const el = $("#scan-prog-" + id); if (!el) return;
   if (!p || (!p.running && p.phase !== "error")) { el.innerHTML = ""; return; }
   const pct = p.total_estimate > 0 ? Math.min(100, Math.round((p.walked / p.total_estimate) * 100)) : 0;
   const phase = { starting: "扫描准备中", walking: "遍历目录中", writing: "写入索引中", error: "扫描失败" }[p.phase] || p.phase;
@@ -514,7 +514,7 @@ function settingsAboutShell() {
   return settingsHTML`<section class="card"><h3>${icon("music", 17)} Zephyr HiFi Kit</h3><p>和风HiFi音乐播放套件</p><p>让音乐回归聆听，让管理化繁为简。</p><p>面向家庭与小型商用 Hi-Fi 场景的音乐服务与终端推送平台，集中管理本地 / NAS 音乐库、ZAT 音频推流与播放终端。</p>
       <p>服务端版本：<strong id="settings-about-version" class="mono" role="status" aria-live="polite">未获取</strong></p><p class="settings-small">版本由当前服务端报告；未获取时可点击“刷新状态”重试。</p>
       <p><a href="https://www.zephyr.hk" target="_blank" rel="noopener noreferrer">官方网站</a> · <a href="https://github.com/Eyebright/Zephyr-HiFi-Kit" target="_blank" rel="noopener noreferrer">源代码仓库</a></p></section>
-    <section class="card" aria-labelledby="settings-component-title"><h3 id="settings-component-title">${icon("speaker", 17)} 组件来源与获取渠道</h3><p>开源项目、厂商公开发布及自有实现的来源如下，未提供的组件另行注明。</p><dl class="settings-component-list">${components.map(([name, source]) => settingsHTML`<div><dt>${esc(name)}</dt><dd>${esc(settingsT(source))}</dd></div>`).join("")}</dl></section>
+    <section class="card" aria-labelledby="settings-component-title"><h3 id="settings-component-title">${icon("speaker", 17)} 组件来源与获取渠道</h3><p>开源项目、厂商公开发布及自有实现的来源如下，未提供的组件另行注明。</p><dl class="settings-component-list">${components.map(([name, source]) => settingsHTML`<div><dt>${esc(settingsT(name))}</dt><dd>${esc(settingsT(source))}</dd></div>`).join("")}</dl></section>
     <section class="card settings-disclaimer" aria-labelledby="settings-disclaimer-title"><h3 id="settings-disclaimer-title">${icon("info", 17)} 免责声明</h3><ul class="settings-disclaimer-list">
       <li><strong>许可与归属：</strong>本项目采用 <a href="https://github.com/Eyebright/Zephyr-HiFi-Kit/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">MIT 许可</a>，复制或分发时须保留版权声明及许可声明。第三方组件遵循各自许可，项目、产品名、协议名及商标归各自权利人所有。</li>
       <li><strong>非官方关联：</strong>名称引用仅用于说明来源与兼容性，不表示获得 Apple、腾讯、Signalyst 或其他权利人的官方授权、认证、背书或合作。</li>
@@ -546,8 +546,8 @@ function settingsMaintenanceShell() {
 }
 // shellMaintenanceView renders backup & maintenance as a top-level view,
 // reusing the settings page chrome (admin unlock, refresh, access gating).
-function shellMaintenanceView() {
-  SETTINGS.epoch++; settingsInvalidateMetadata(false);
+function shellMaintenanceView(languageOnly = false) {
+  if (!languageOnly) { SETTINGS.epoch++; settingsInvalidateMetadata(false); }
   SETTINGS.section = "maintenance";
   return settingsHTML`<div id="settings-page" class="settings-page">
     <header class="page-head"><div><span class="settings-eyebrow">Zephyr HiFi Kit / ${esc(settingsT("备份与维护"))}</span><h1>${esc(settingsT("备份与维护"))}</h1><p class="ph-sub">${esc(settingsT("服务端自升级、音乐数据备份、恢复与操作日志清理"))}</p></div><div class="ph-actions">${settingsButton("settings-refresh", "刷新状态", { icon: "refresh" })}</div></header>
@@ -757,7 +757,8 @@ async function settingsCleanup(kind) {
 // Preserve embedded controls and use cached state without replaying requests.
 function settingsLanguageChanged() {
   if (!settingsHere()) return;
-  const next = document.createElement("div"); next.innerHTML = shellSettings(true);
+  const maintenanceView = S.view === "maintenance";
+  const next = document.createElement("div"); next.innerHTML = maintenanceView ? shellMaintenanceView(true) : shellSettings(true);
   const swap = (selector) => {
     const olds = Array.from(document.querySelectorAll("#settings-page " + selector));
     const fresh = Array.from(next.querySelectorAll(selector));
@@ -766,6 +767,17 @@ function settingsLanguageChanged() {
   [".page-head", ".settings-section-heading", ".settings-anchors"].forEach(swap);
   const admin = $("#settings-admin");
   if (admin) { admin.setAttribute("aria-label", settingsT("管理员解锁")); delete admin.dataset.signature; settingsPaintSession(); }
+  if (maintenanceView) {
+    const old = $("#settings-content-maintenance"), fresh = next.querySelector("#settings-content-maintenance");
+    if (old && fresh) {
+      const update = $("#upd-body");
+      old.replaceChildren(...fresh.childNodes);
+      if (update) $("#upd-body")?.replaceWith(update);
+      paintUpdateServer(); settingsPaintMaintenance(); settingsPaintMetadataOrganization();
+    }
+    settingsObserve();
+    return;
+  }
   for (const [id] of SETTINGS_SECTIONS) {
     const old = $("#settings-content-" + id), fresh = next.querySelector("#settings-content-" + id);
     if (!old || !fresh) continue;
@@ -785,11 +797,6 @@ function settingsLanguageChanged() {
         }
         paintApps(); paintBoms();
       }
-    } else if (id === "maintenance") {
-      const update = $("#upd-body");
-      old.replaceChildren(...fresh.childNodes);
-      if (update) $("#upd-body")?.replaceWith(update);
-      paintUpdateServer(); settingsPaintMaintenance(); settingsPaintMetadataOrganization();
     } else if (id === "folders") {
       const editor = $("#settings-folder-editor [data-settings-form='settings-mount-save']")?.dataset.id;
       const countNote = $("#settings-count-note");

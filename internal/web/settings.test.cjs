@@ -33,6 +33,11 @@ function harness() {
     __view: view => {
       vm.runInContext(`S.view=${JSON.stringify(view)}`, context);
       elements.clear();
+      if (view === "maintenance") {
+        h.html = vm.runInContext("shellMaintenanceView()", context);
+        for (const match of h.html.matchAll(/id="([^"]+)"/g)) elements.set("#" + match[1], element());
+        return;
+      }
       if (view !== "settings") return;
       h.html = vm.runInContext("shellSettings()", context);
       for (const match of h.html.matchAll(/\bid="([^"]+)"/g)) elements.set("#" + match[1], element());
@@ -92,7 +97,7 @@ test("settings section jump is repeated after async layout and explicit anchors 
 });
 
 test("metadata organization preview is read-only and allows an explicit unavailable-source skip", async () => {
-  const h = harness(); h.open("maintenance");
+  const h = harness(); h.run("setView('maintenance')");
   h.run("SETTINGS.session={authenticated:true}");
   const preview = { count: 2, estimated_albums: 1, unidentified: 1, unavailable: 1, tag_errors: 1, preview_token: "unavailable-token", formats: { wav: 2 }, favorite_risks: [{ action: "keep" }], samples: [{ rel_path: "<script>bad</script>.wav", new_artist: "Artist", new_album: "Album" }] };
   h.fetchHandler = route => { assert.equal(route, "/api/v1/settings/maintenance/metadata-preview"); return response(preview); };
@@ -109,7 +114,7 @@ test("metadata organization preview is read-only and allows an explicit unavaila
 });
 
 test("metadata organization apply requires a usable preview, confirmation and idle endpoints", async () => {
-  const h = harness(); h.open("maintenance");
+  const h = harness(); h.run("setView('maintenance')");
   h.run("SETTINGS.session={authenticated:true};toast=()=>{};refreshSettings=async()=>{}");
   await h.run("ACT['metadata-apply']()");
   assert.equal(h.calls.length, 0);
@@ -142,7 +147,7 @@ test("metadata organization apply requires a usable preview, confirmation and id
 });
 
 test("metadata organization does not write while an endpoint is playing", async () => {
-  const h = harness(); h.open("maintenance");
+  const h = harness(); h.run("setView('maintenance')");
   h.run("SETTINGS.session={authenticated:true};SETTINGS.metadataPreview={count:2,estimated_albums:1,unavailable:0,preview_token:'preview-token'};toast=()=>{};confirmDlg=async()=>true;refreshSettings=async()=>{}");
   h.fetchHandler = route => { assert.equal(route, "/api/v1/nodes"); return response([{ playing: true }]); };
   await h.run("ACT['metadata-apply']()");
@@ -152,7 +157,7 @@ test("metadata organization does not write while an endpoint is playing", async 
 });
 
 test("metadata organization rejects an incomplete preview token", async () => {
-  const h = harness(); h.open("maintenance");
+  const h = harness(); h.run("setView('maintenance')");
   h.run("SETTINGS.session={authenticated:true};toast=()=>{}");
   h.fetchHandler = () => response({ count: 2, estimated_albums: 1, unavailable: 0 });
   await h.run("ACT['metadata-preview']()");
@@ -163,7 +168,7 @@ test("metadata organization rejects an incomplete preview token", async () => {
 
 test("late metadata preview cannot restore data after logout, session loss or view changes", async () => {
   for (const change of ["logout", "session", "view"]) {
-    const h = harness(); h.open("maintenance");
+    const h = harness(); h.run("setView('maintenance')");
     h.run("SETTINGS.session={authenticated:true};toast=()=>{}");
     const started = deferred(), pending = deferred();
     h.fetchHandler = route => {
@@ -176,7 +181,7 @@ test("late metadata preview cannot restore data after logout, session loss or vi
     await started.promise;
     if (change === "logout") await h.run("settingsLogout()");
     else if (change === "session") await h.run("settingsRefreshSession()");
-    else { h.run("setView('overview')"); h.open("maintenance"); }
+    else { h.run("setView('overview')"); h.run("setView('maintenance')"); }
     pending.resolve(response({ count: 2, estimated_albums: 1, unavailable: 0, preview_token: "stale-token" }));
     await old;
     assert.equal(h.run("SETTINGS.metadataPreview"), null, change);
@@ -185,7 +190,7 @@ test("late metadata preview cannot restore data after logout, session loss or vi
 });
 
 test("metadata preview mismatch clears the apply token and requires a new preview", async () => {
-  const h = harness(); h.open("maintenance");
+  const h = harness(); h.run("setView('maintenance')");
   h.run("SETTINGS.session={authenticated:true};SETTINGS.metadataPreview={count:2,estimated_albums:1,unavailable:0,preview_token:'old-token'};toast=()=>{};confirmDlg=async()=>true;refreshSettings=async()=>{}");
   h.fetchHandler = route => route === "/api/v1/nodes" ? response([]) : errorResponse(409, "metadata_preview_mismatch");
   await h.run("ACT['metadata-apply']()");
@@ -197,7 +202,7 @@ test("metadata preview mismatch clears the apply token and requires a new previe
 test("about is last and removed account/protocol sections fall back safely", () => {
   const h = harness();
   const sections = JSON.parse(h.run("JSON.stringify(SETTINGS_SECTIONS.map(s => s[0]))"));
-  assert.deepEqual(sections, ["profile", "authorization", "folders", "devices", "packages", "maintenance", "about"]);
+  assert.deepEqual(sections, ["profile", "authorization", "folders", "devices", "packages", "about"]);
   assert.equal(h.run("typeof settingsAccountsShell"), "undefined");
   assert.equal(h.run("typeof settingsProtocolsShell"), "undefined");
   for (const section of ["accounts", "protocols"]) {
@@ -233,8 +238,9 @@ test("about includes product, existing links, MIT terms and qualified third-part
   assert.match(h.html, /当前尚未提供 QPlay 组件/);
   assert.match(h.html, /Music Player Daemon 开源项目/);
   assert.match(h.html, /shairport-sync \/ nqptp 开源项目/);
-  assert.match(h.html, /upmpdcli、MPD、gmrender 开源项目/);
-  assert.match(h.html, /gmrender 仅用于 UPnP/);
+  assert.match(h.html, /upmpdcli、MPD 开源项目/);
+  assert.match(h.html, /gmrender-resurrect 开源项目/);
+  assert.match(h.html, /需自备预编译包或源码构建/);
   assert.match(h.html, /Signalyst networkaudiod 厂商组件，公开获取渠道为厂商官方发布；非开源/);
   assert.match(h.html, /随本项目源代码公开，采用 MIT 许可/);
   assert.match(h.html, /不表示任何服务已安装或正在运行/);
@@ -244,13 +250,13 @@ test("about includes product, existing links, MIT terms and qualified third-part
   assert.doesNotMatch(h.run("settingsAboutShell()"), /<input|尚未接入|暂无可用授权入口|data-act="tc-goto"/);
 });
 
-test("about groups all six component sources in one list and makes the disclaimer explicit", () => {
+test("about groups all twelve component sources in one list and makes the disclaimer explicit", () => {
   const h = harness();
   const html = h.run("settingsAboutShell()");
   const sources = html.match(/<section[^>]+aria-labelledby="settings-component-title">[\s\S]*?<\/section>/)?.[0];
   assert.ok(sources);
-  assert.deepEqual([...sources.matchAll(/<dt>([^<]+)<\/dt>/g)].map(m => m[1]), ["QPlay", "MPD", "AirPlay", "UPnP / OpenHome", "HQPlayer NAA", "ZAT"]);
-  assert.equal((sources.match(/<dd>/g) || []).length, 6);
+  assert.deepEqual([...sources.matchAll(/<dt>([^<]+)<\/dt>/g)].map(m => m[1]), ["QPlay", "MPD", "AirPlay", "UPnP / OpenHome", "UPnP/DLNA 渲染", "Roon Bridge", "HQPlayer NAA", "Spotify Connect", "LMS / Squeezebox", "多房间同步", "Qobuz Connect", "ZAT"]);
+  assert.equal((sources.match(/<dd>/g) || []).length, 12);
   assert.equal((html.match(/<section /g) || []).length, 3);
   assert.doesNotMatch(html, /<article|settings-capability|协议能力与来源|前往终端中心/);
   const disclaimer = html.match(/<section class="card settings-disclaimer"[^>]+>[\s\S]*?<\/section>/)?.[0];
@@ -370,17 +376,25 @@ test("music sources show retained indexes and scan statistics with gated actions
 
 test("source scan actions use incremental by default and confirm full repair", async () => {
   const h = harness(); h.open("folders");
-  h.fetchHandler = () => response({count:3,added:1,updated:1,unchanged:1,removed:0});
+  h.fetchHandler = (route, opts) => {
+    if ((opts.method || "GET") === "POST") return response({started:true});
+    return response({mount_id:"x",running:false,phase:"done",walked:3,added:1,updated:1,unchanged:1,removed:0,covers_filled:0});
+  };
   h.run(`var notices=[], confirmed=false;
     toast=message=>notices.push(message);refreshCurrent=async()=>{};confirmDlg=async()=>confirmed`);
   await h.run("ACT['lib-scan']({id:'source/id'})");
-  assert.deepEqual(h.calls, [{method:"POST",route:"/api/v1/mounts/source%2Fid/scan"}]);
-  assert.match(h.run("notices[0]"), /新增 1 \/ 更新 1 \/ 未变 1/);
+  await new Promise(r => process.nextTick(r));
+  assert.deepEqual(h.calls.slice(0, 2), [{method:"POST",route:"/api/v1/mounts/source%2Fid/scan"},{method:"GET",route:"/api/v1/mounts/source%2Fid/scan/progress"}]);
+  assert.match(h.run("notices[0]"), /后台开始/);
+  assert.match(h.run("notices[1]"), /新增 1 \/ 更新 1 \/ 未变 1/);
+  const before = h.calls.length;
   await h.run("ACT['lib-scan-full']({id:'a'})");
-  assert.equal(h.calls.length, 1);
+  assert.equal(h.calls.length, before);
   h.run("confirmed=true");
   await h.run("ACT['lib-scan-full']({id:'a'})");
-  assert.equal(h.calls[1].route, "/api/v1/mounts/a/scan?mode=full");
+  await new Promise(r => process.nextTick(r));
+  assert.equal(h.calls[before].route, "/api/v1/mounts/a/scan?mode=full");
+  assert.equal(h.calls[before+1].route, "/api/v1/mounts/a/scan/progress");
 });
 
 test("retaining an index and permanent deletion are separate confirmed requests", async () => {

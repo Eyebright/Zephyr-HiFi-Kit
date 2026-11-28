@@ -193,6 +193,8 @@ const SETTINGS_I18N_ENTRIES = {
   "qbzd 厂商组件，bit-perfect 端点；公开获取渠道为厂商官方发布，非开源，受厂商许可约束；经签名本地包导入安装。": ["qbzd 廠商元件，bit-perfect 端點；公開取得管道為廠商官方發行，非開源，受廠商授權條款約束；經簽章本地套件匯入安裝。", "The vendor component qbzd, a bit-perfect endpoint; publicly available through official vendor releases, not open-source, subject to the vendor license; installed via signed local package import."],
   "Signalyst networkaudiod 厂商组件，公开获取渠道为厂商官方发布；非开源，受厂商许可约束。": ["Signalyst networkaudiod 廠商元件，公開取得管道為廠商官方發行；非開源，受廠商授權條款約束。", "The vendor component Signalyst networkaudiod, publicly available through official vendor releases. It is not open-source and is subject to the vendor license."],
   "Zephyr HiFi Kit 自有音频传输实现，随本项目源代码公开，采用 MIT 许可。": ["Zephyr HiFi Kit 自有音訊傳輸實作，隨本專案原始碼公開，採用 MIT 授權。", "Zephyr HiFi Kit’s own audio transport implementation, published with this project’s source code under the MIT License."],
+  "UPnP/DLNA 渲染": ["UPnP/DLNA 渲染", "UPnP/DLNA renderer"],
+  "多房间同步": ["多房間同步", "Multi-room sync"],
   "扫描准备中": ["掃描準備中", "Preparing scan"],
   "遍历目录中": ["遍歷目錄中", "Walking directories"],
   "写入索引中": ["寫入索引中", "Writing index"],

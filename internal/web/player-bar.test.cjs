@@ -950,6 +950,6 @@ test("per-device EQ panel loads, edits, saves and bypasses bit-perfect independe
   assert.equal(h.run("PLY.eq.cfg.preset"), "bass");
   assert.equal(h.run("PLY.eq.cfg.enabled"), true);
   assert.ok(h.el("ply-eq").innerHTML.includes("位完美"), "bypass banner shown");
-  const toggle = h.el("ply-eq").querySelector('[data-change="ply-eq-enabled"]');
-  assert.equal(toggle.disabled, true, "bit-perfect session disables EQ toggle");
+  assert.equal(h.el("ply-eq-toggle").disabled, true, "bit-perfect session disables EQ switch");
+  assert.equal(h.el("ply-eq-toggle").getAttribute("aria-checked"), "true");
 });

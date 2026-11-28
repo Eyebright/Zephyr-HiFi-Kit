@@ -173,7 +173,12 @@ test("settings is one pinned nav item and renders every section on a single page
   assert.match(after, /class="nav-item active" data-act="settings-open"/);
   const shell = h.run("shellSettings()");
   assert.match(shell, /settings-anchors/);
-  for (const id of ["profile", "authorization", "folders", "packages", "maintenance", "about"]) assert.ok(shell.includes("settings-block-" + id), id);
+  for (const id of ["profile", "authorization", "folders", "packages", "about"]) assert.ok(shell.includes("settings-block-" + id), id);
+  assert.ok(!shell.includes("settings-block-maintenance"), "maintenance lives in its own view");
+  assert.match(html, /data-view="maintenance"/);
+  const maintShell = h.run("shellMaintenanceView()");
+  assert.ok(maintShell.includes("settings-block-maintenance") && maintShell.includes("settings-content-maintenance"));
+  assert.ok(!maintShell.includes("settings-anchors"));
   assert.equal(h.run("SETTINGS_SECTIONS.at(-1)[0]"), "about");
   assert.doesNotMatch(after, /data-section="(?:accounts|protocols)"|音乐服务账号|协议说明/);
   h.run("openSettings('about')");
@@ -1419,7 +1424,7 @@ function languageTree(selector, children = []) {
 test("settings translation retains embedded async roots and repaints cached authorization, packages and maintenance", async t => {
   for (const section of ["authorization", "packages", "maintenance"]) await t.test(section, async () => {
     const h = harness();
-    h.run(`S.view='settings'; SETTINGS.section=${JSON.stringify(section)}; SETTINGS.epoch=11; SETTINGS.refreshSeq=4;
+    h.run(`S.view=${JSON.stringify(section === "maintenance" ? "maintenance" : "settings")}; SETTINGS.section=${JSON.stringify(section)}; SETTINGS.epoch=11; SETTINGS.refreshSeq=4;
       SETTINGS.session={authenticated:true}; SETTINGS.busy.add('maintenance');
       S.license={status:'none',builtin_seats:3}; S.keys=[]; S.apps=[]; S.boms=[];
       S.upd.server={state:'idle',current:'1.2.3',latest:'1.2.4'};
@@ -1428,7 +1433,7 @@ test("settings translation retains embedded async roots and repaints cached auth
       const content = section === "authorization" ? [languageTree("note"), languageTree("grid", [languageTree("#lic-card"), languageTree("#gpg-card")]), languageTree("banner")]
         : section === "packages" ? [languageTree("note"), languageTree("sources"), languageTree("apps", [languageTree(".sec-head"), languageTree("#cat-apps")]), languageTree("#bom-report"), languageTree("boms", [languageTree(".sec-head"), languageTree("#cat-boms")])]
           : [languageTree("update", [languageTree("#upd-body", [languageTree("#upd-server")])]), languageTree("#settings-maintenance-counts")];
-      return languageTree("#settings-page", [languageTree(".page-head"), languageTree("#settings-admin"), languageTree(".settings-anchors"), languageTree(".settings-section-heading"), languageTree("#settings-content-" + section, content)]);
+      return languageTree("#settings-page", section === "maintenance" ? [languageTree(".page-head"), languageTree("#settings-admin"), languageTree("#settings-content-" + section, content)] : [languageTree(".page-head"), languageTree("#settings-admin"), languageTree(".settings-anchors"), languageTree(".settings-section-heading"), languageTree("#settings-content-" + section, content)]);
     };
     const page = fixture(), query = h.document.querySelector, queryAll = h.document.querySelectorAll;
     const strip = selector => selector.startsWith("#settings-page ") ? selector.slice("#settings-page ".length) : null;
@@ -1446,7 +1451,7 @@ test("settings translation retains embedded async roots and repaints cached auth
       h.run(`I18n.setPreference(${JSON.stringify(locale)})`);
       assert.ok(next.innerHTML.includes(h.run("settingsT('刷新状态')")), "real shell is generated in the selected language");
       assert.notEqual(page.querySelector(".page-head"), oldHeading);
-      assert.notEqual(page.querySelector(".settings-section-heading"), oldSectionHeading);
+      if (section !== "maintenance") assert.notEqual(page.querySelector(".settings-section-heading"), oldSectionHeading);
       assert.equal(page.querySelector("#settings-content-" + section), content);
       assert.equal(page.querySelector("#settings-admin"), admin);
       assert.equal(admin["aria-label"], h.run("settingsT('管理员解锁')"));
