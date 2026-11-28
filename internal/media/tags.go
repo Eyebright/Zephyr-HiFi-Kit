@@ -19,6 +19,7 @@ type Tags struct {
 	Genre       string
 	AlbumArtist string
 	Composer    string
+	Lyrics      string
 	Year        int
 	DiscNumber  int
 	TrackNumber int
@@ -158,17 +159,24 @@ func parseVorbisTags(b []byte, encoding string) (Tags, error) {
 		if !ok {
 			return tags, errInvalidTags
 		}
+		rawKey, rawValue, ok := bytes.Cut(entry, []byte("="))
+		if !ok {
+			continue
+		}
+		key := strings.ToUpper(string(rawKey))
+		if !utf8.ValidString(key) {
+			continue
+		}
+		if isLyricsKey(key) {
+			if len(rawValue) <= maxLyricsBytes {
+				tags.setLyrics(decodeTagText(rawValue, encoding))
+			}
+			continue
+		}
 		if len(entry) > maxTagValueBytes+32 {
 			continue
 		}
-		rawKey, rawValue, ok := bytes.Cut(entry, []byte("="))
-		if ok {
-			key := strings.ToUpper(string(rawKey))
-			if !utf8.ValidString(key) {
-				continue
-			}
-			tags.set(key, decodeTagText(rawValue, encoding))
-		}
+		tags.set(key, decodeTagText(rawValue, encoding))
 	}
 	return tags, nil
 }

@@ -405,6 +405,7 @@ const NAV = [
   { id: "library", get name() { return appT("m066"); }, icon: "library" },
   { id: "favorites", get name() { return appT("navFavorites"); }, icon: "heart" },
   { id: "playlists", get name() { return appT("navPlaylists"); }, icon: "layers" },
+  { id: "maintenance", get name() { return appT("navMaintenance"); }, icon: "database" },
   { id: "settings", get name() { return appT("m069"); }, icon: "settings" }
 ];
 
@@ -433,13 +434,14 @@ function viewError(e) {
 /* ---------- routing ---------- */
 function shellFor(v) {
   if (v === "settings") return shellSettings();
-  return ({ overview: shellOverview, library: shellLibrary, nodes: shellNodes, catalog: shellCatalog, keys: shellKeys, audit: shellAudit }[v] || shellOverview)();
+  return ({ overview: shellOverview, library: shellLibrary, nodes: shellNodes, catalog: shellCatalog, keys: shellKeys, audit: shellAudit, maintenance: shellMaintenanceView }[v] || shellOverview)();
 }
 async function refreshFor(v, silent) {
   try {
     if (v === "overview") await refreshOverview();
     else if (v === "library") await refreshLibrary();
     else if (v === "settings") await refreshSettings();
+    else if (v === "maintenance") await refreshSettings();
     else if (v === "nodes") await refreshTerminalCenter();
     else if (v === "catalog") await refreshCatalog();
     else if (v === "keys") await refreshKeys();
@@ -828,9 +830,9 @@ function playerBarShell() {
       ${devicePopoverHtml()}
       <div class="pb-aux-right">
         ${volumePopoverHtml()}
+        <button class="pb-eq-btn" id="pb-eq" data-act="pb-eq" title="${appH("eqTitle")}" aria-label="${appH("eqTitle")}">${icon("sliders", 15)}</button>
         ${pbModeShell()}
         ${sleepPopoverHtml("pb", "")}
-        <button class="btn ghost sm" id="pb-eq" data-act="pb-eq" title="${appH("eqTitle")}" aria-label="${appH("eqTitle")}">${icon("sliders", 15)}</button>
       </div>
     </div>
     <div class="pb-fav">${typeof favoritePlayerShell === "function" ? favoritePlayerShell() : ""}</div>
@@ -1848,7 +1850,7 @@ function appOriginBadge(origin) {
 }
 function paintApps() {
   const el = $("#cat-apps"); if (!el) return;
-  const list = S.apps.filter(a => hit(a.app_id, a.name, a.category, a.upstream, a.license));
+  const list = S.apps.filter(a => hit(a.app_id, a.name, a.category, a.upstream, a.license, a.role, a.archs, a.notes));
   if (!list.length) {
     el.innerHTML = empty("box", S.apps.length ? appT("m374") : appT("m375"),
       S.apps.length ? "" : `<button class="btn primary" data-act="app-create">${icon("plus", 15)} ${appH("m370")}</button>`);
@@ -1857,8 +1859,11 @@ function paintApps() {
   const card = (a, i) => `
     <div class="card lift app-card stagger" style="--i:${i % 9}" data-act="app-open" data-id="${esc(a.app_id)}" role="button" tabindex="0">
       <div class="app-top"><span class="app-name">${esc(a.name || a.app_id)}</span>${catBadge(a.category)}</div>
+      ${a.role ? `<div class="app-meta mt8">${esc(a.role)}</div>` : ""}
       <div class="app-meta"><span class="tag-mono">${esc(a.app_id)}</span>${appOriginBadge(a.origin)}${a.self_build_required ? badge(appT("m376"), "warn") : ""}${a.maintainer_state === "inactive" ? badge(appT("m377"), "err") : ""}</div>
+      ${a.archs ? `<div class="app-meta mt8">${icon("cpu", 13)} <span class="mono">${esc(a.archs)}</span></div>` : ""}
       <div class="app-meta mt8">${icon("globe", 13)} ${esc(a.upstream || "—")} · ${esc(a.license || "—")}</div>
+      ${a.notes ? `<div class="app-meta mt8 txt-faint">${esc(a.notes)}</div>` : ""}
       <div class="app-meta mt8">${appH("m378")} <span class="mono">${esc(a.default_channel || "stable")}</span><div class="spacer"></div><span class="txt-faint">${appH("m379")} ${icon("chevR", 13)}</span></div>
     </div>`;
   const pub = list.filter(a => a.origin === "distro" || a.origin === "vendor");
@@ -1963,7 +1968,10 @@ function openCreateApp() {
       <div class="field"><label>${appH("m388")}</label><select id="ap-channel" class="inp"><option value="stable">stable</option><option value="beta">beta</option><option value="nightly">nightly</option></select></div>
     </div>
     <div class="field"><label>${appH("m429")}</label><input id="ap-up" class="inp mono" placeholder="https://…"></div>
-    <div class="field"><label>${appH("m430")}</label><input id="ap-lic" class="inp" placeholder="${appH("m431")}"></div>`,
+    <div class="field"><label>${appH("m430")}</label><input id="ap-lic" class="inp" placeholder="${appH("m431")}"></div>
+    <div class="field"><label>${appH("compRole")}</label><input id="ap-role" class="inp" maxlength="120" placeholder="${appH("compRole")}"></div>
+    <div class="field"><label>${appH("compArchs")}</label><input id="ap-archs" class="inp mono" maxlength="120" placeholder="x86_64 / arm64 / armhf"></div>
+    <div class="field"><label>${appH("compNotes")}</label><input id="ap-notes" class="inp" maxlength="200"></div>`,
     `<button class="btn ghost" data-act="modal-close">${appH("m063")}</button><div class="spacer"></div><button class="btn primary" data-act="app-create-submit">${icon("check", 15)} ${appH("m432")}</button>`, { narrow: true });
 }
 async function submitCreateApp() {
@@ -1973,7 +1981,7 @@ async function submitCreateApp() {
   if (!/^[a-z0-9][a-z0-9._-]{0,63}$/.test(id)) return fail(appT("m433"));
   if (!name) return fail(appT("m434"));
   try {
-    await api("POST", "/apps", { app_id: id, name, category: val("ap-cat"), origin: val("ap-origin"), upstream: val("ap-up").trim(), license: val("ap-lic").trim(), default_channel: val("ap-channel"), maintainer_state: "active" });
+    await api("POST", "/apps", { app_id: id, name, category: val("ap-cat"), origin: val("ap-origin"), upstream: val("ap-up").trim(), license: val("ap-lic").trim(), default_channel: val("ap-channel"), maintainer_state: "active", role: val("ap-role").trim(), archs: val("ap-archs").trim(), notes: val("ap-notes").trim() });
     toast(appT("m435", { id: id }), "ok");
     await refreshCatalog(); openAppModal(id);
   } catch (e) { fail(e.message); toast(e.message, "err"); }
@@ -3211,8 +3219,9 @@ async function libMountAct(id, act) {
   try {
     if (act === "scan" || act === "scan-full") {
       if (act === "scan-full" && !await confirmDlg({ title: appT("m790"), message: appT("m791"), okText: appT("m792") })) return;
-      const r = await api("POST", `/mounts/${enc(id)}/scan${act === "scan-full" ? "?mode=full" : ""}`);
-      toast(appT("m793", { count: r.count ?? 0, value: r.added ?? 0, value2: r.updated ?? 0, value3: r.unchanged ?? 0, value4: r.removed ?? 0 }), "ok");
+      await api("POST", `/mounts/${enc(id)}/scan${act === "scan-full" ? "?mode=full" : ""}`);
+      toast(appT("mScanStarted"), "ok");
+      watchScan(id);
     } else {
       const r = await api("POST", `/mounts/${enc(id)}/${act}`);
       if (r && r.status === "error") {
@@ -3223,6 +3232,30 @@ async function libMountAct(id, act) {
     }
     await refreshCurrent();
   } catch (e) { toast(e.message, "err"); await refreshCurrent(); }
+}
+// watchScan polls the server-side scan counters until the run finishes; the
+// scan itself runs in a server goroutine, so closing the page does not stop it.
+async function watchScan(id) {
+  if (SETTINGS.scanWatch === id) return;
+  SETTINGS.scanWatch = id;
+  try {
+    for (;;) {
+      const p = await api("GET", `/mounts/${enc(id)}/scan/progress`);
+      SETTINGS.scanProgress = p;
+      if (typeof settingsPaintScanProg === "function") settingsPaintScanProg(id, p);
+      if (!p.running) {
+        if (p.phase === "error") toast(appT("mScanFailed", { message: p.error || appT("m071") }), "err");
+        else toast(appT("m793", { count: p.walked ?? 0, value: p.added ?? 0, value2: p.updated ?? 0, value3: p.unchanged ?? 0, value4: p.removed ?? 0 }), "ok");
+        break;
+      }
+      await new Promise(r => setTimeout(r, 800));
+    }
+  } catch (e) { toast(e.message, "err"); }
+  finally {
+    SETTINGS.scanWatch = ""; SETTINGS.scanProgress = null;
+    if (typeof settingsPaintScanProg === "function") settingsPaintScanProg(id, null);
+    await refreshCurrent();
+  }
 }
 async function libArchive(id) {
   const ok = await confirmDlg({ title: appT("m799"), message: appT("m800"), okText: appT("m801") });
@@ -3818,9 +3851,9 @@ function playerShell() {
       </div>
       <div class="ply-aux">
         ${volumePopoverHtml("ply")}
+        <button class="switch pb-eq-btn ply-eq-pill" id="ply-eq-toggle" data-act="ply-eq-toggle" role="switch" aria-checked="false" title="${appH("eqEnable")}" aria-label="${appH("eqTitle")}"><span class="sw-lbl">EQ</span><span class="track"></span></button>
         ${pbModeShell("ply")}
         ${sleepPopoverHtml("ply", deviceKey)}
-        <button class="btn ghost sm" id="ply-eq-toggle" data-act="ply-eq-toggle" title="${appH("eqTitle")}" aria-label="${appH("eqTitle")}">${icon("sliders", 15)} ${appH("eqTitle")}</button>
       </div>
     </div>
     <div id="ply-eq" class="ply-eq hidden"></div>
@@ -3861,7 +3894,6 @@ function eqPanelHtml() {
     <button class="btn xs ghost" data-act="ply-peq-del" data-index="${i}" title="${appH("eqPeqDel")}">${icon("trash", 12)}</button>
   </div>`).join("");
   return `<div class="sec-head"><div class="sec-title">${icon("sliders", 16)} ${appH("eqTitle")}</div><div class="spacer"></div>
-    <label class="switch sm" title="${appH("eqEnable")}"><input type="checkbox" data-change="ply-eq-enabled" ${cfg.enabled ? "checked" : ""} ${eq.bypass ? "disabled" : ""} aria-label="${appH("eqEnable")}"><span class="track"></span></label>
     <button class="btn xs ghost" data-act="ply-eq-reset">${appH("eqReset")}</button></div>
     ${eq.bypass ? `<div class="banner warn mt8">${appH("eqBypass")}</div>` : ""}
     <div class="eq-row">
@@ -3873,9 +3905,19 @@ function eqPanelHtml() {
 }
 function paintPlayerEQ() {
   const el = $("#ply-eq"); if (!el) return;
-  if (!PLY.eqOpen) { el.classList.add("hidden"); el.innerHTML = ""; return; }
-  el.classList.remove("hidden");
-  el.innerHTML = eqPanelHtml();
+  if (!PLY.eqOpen) { el.classList.add("hidden"); el.innerHTML = ""; }
+  else { el.classList.remove("hidden"); el.innerHTML = eqPanelHtml(); }
+  paintEqToggle();
+}
+// The toolbar button is the EQ switch: enabling opens the panel, collapsing
+// keeps EQ on, and clicking again while collapsed turns it off.
+function paintEqToggle() {
+  const b = $("#ply-eq-toggle"); if (!b) return;
+  const eq = PLY.eq;
+  const on = !!(eq && eq.cfg.enabled);
+  b.setAttribute("aria-checked", String(on));
+  b.disabled = !!(eq && eq.bypass);
+  b.title = appT(eq && eq.bypass ? "eqBypass" : on ? (PLY.eqOpen ? "eqCollapseKeep" : "eqDisable") : "eqEnable");
 }
 async function loadPlayerEQ() {
   const deviceKey = PLY.deviceKey; if (!deviceKey) return;
@@ -3978,6 +4020,7 @@ function paintPlayerLive() {
   if (typeof paintPlayerFavorite === "function") paintPlayerFavorite(hasTrack ? (p.track_id || "") : "");
   const cnt = $("#ply-qcnt"); if (cnt) cnt.textContent = `(${appN(tracks.length)})`;
   set("#ply-qlist", playerQueueList(deviceKey, q, connected));
+  paintEqToggle();
 }
 /* ---- sleep timer ---- */
 const SLEEP_LABELS = { 15: "m943", 30: "m944", 60: "m945", 120: "m946" };
@@ -4524,7 +4567,27 @@ CHG["album-sel-head"] = el => {
   paintAlbumSelection();
 };
 Object.assign(ACT, {
-  "ply-eq-toggle": () => { PLY.eqOpen = !PLY.eqOpen; if (PLY.eqOpen && !PLY.eq) loadPlayerEQ(); else paintPlayerEQ(); },
+  "ply-eq-toggle": async () => {
+    if (PLY.eq && PLY.eq.bypass) { toast(appT("eqBypass"), "warn"); return; }
+    if (!PLY.eq) {
+      PLY.eqOpen = true;
+      await loadPlayerEQ();
+      if (PLY.eq && !PLY.eq.bypass && !PLY.eq.cfg.enabled) { PLY.eq.cfg.enabled = true; savePlayerEQ(); }
+      paintEqToggle();
+      return;
+    }
+    if (!PLY.eq.cfg.enabled) {
+      PLY.eq.cfg.enabled = true;
+      PLY.eqOpen = true;
+      savePlayerEQ();
+      paintPlayerEQ();
+      return;
+    }
+    if (PLY.eqOpen) { PLY.eqOpen = false; paintPlayerEQ(); return; }
+    PLY.eq.cfg.enabled = false;
+    savePlayerEQ();
+    paintEqToggle();
+  },
   "ply-eq-reset": () => {
     if (!PLY.eq) return;
     PLY.eq.cfg = { enabled: PLY.eq.cfg.enabled, preset: "flat", preamp: 0, bands: new Array(EQ_FREQ.length).fill(0), mode: PLY.eq.cfg.mode, peq: PLY.eq.cfg.mode === "peq" ? [] : PLY.eq.cfg.peq };
@@ -4546,11 +4609,12 @@ Object.assign(ACT, {
     if (!PB.deviceKey) { toast(appT("m174"), "warn"); return; }
     PLY.eqOpen = true;
     await openPlayer(PB.deviceKey);
-    if (!PLY.eq) await loadPlayerEQ(); else paintPlayerEQ();
+    if (!PLY.eq) await loadPlayerEQ();
+    if (PLY.eq && !PLY.eq.bypass && !PLY.eq.cfg.enabled) { PLY.eq.cfg.enabled = true; savePlayerEQ(); }
+    paintPlayerEQ();
   }
 });
 Object.assign(CHG, {
-  "ply-eq-enabled": el => { if (!PLY.eq) return; PLY.eq.cfg.enabled = el.checked; savePlayerEQ(); },
   "ply-eq-mode": el => {
     if (!PLY.eq) return;
     PLY.eq.cfg.mode = el.value === "peq" ? "peq" : "graphic";

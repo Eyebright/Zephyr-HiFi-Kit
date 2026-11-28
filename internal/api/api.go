@@ -277,6 +277,7 @@ func (a *API) routes() {
 	a.route("POST /api/v1/mounts/{id}/mount", a.mountShare)
 	a.route("POST /api/v1/mounts/{id}/unmount", a.unmountShare)
 	a.route("POST /api/v1/mounts/{id}/scan", a.scanMount)
+	a.route("GET /api/v1/mounts/{id}/scan/progress", a.scanProgress)
 	a.route("POST /api/v1/mounts/{id}/archive", a.archiveMount)
 	a.route("GET /api/v1/library/browse", a.browseLibrary)
 	a.route("GET /api/v1/library/related", a.relatedAlbums)
@@ -284,6 +285,7 @@ func (a *API) routes() {
 	a.route("GET /api/v1/library/artist-index", a.artistIndex)
 	a.route("GET /api/v1/tracks", a.listTracks)
 	a.route("GET /api/v1/tracks/{id}", a.getTrack)
+	a.route("GET /api/v1/tracks/{id}/lyrics", a.getTrackLyrics)
 	a.route("GET /api/v1/covers/{hash}", a.getCover)
 	a.route("GET /api/v1/covers/{hash}/{size}", a.getCoverSized)
 

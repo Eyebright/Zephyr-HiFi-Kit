@@ -359,7 +359,7 @@ function nodeDrawerBody(n, apps) {
   }
   if (TC.detailTab === "maintenance") {
     return html + `<div class="d-sec"><span class="lbl">${esc(tcT("tcDevicesProtection"))}</span><div class="kv">${kvRow(tcT("tcDACHolder"), n.dac_holder_pid ? `PID ${Number(n.dac_holder_pid)}` : esc(tcT("tcNoHolder")))}${kvRow(tcT("tcProtection"), n.play_protect ? badge(tcT("tcEnabled"), "ok") : badge(tcT("tcDisabled"), "warn"))}</div><p class="hint">${esc(tcT("tcDevsManagedNote"))}</p><button class="btn ghost sm" data-act="node-config" data-id="${esc(id)}">${esc(tcT("tcEditConfig"))}</button></div>
-      <div class="d-sec"><span class="lbl">${esc(tcT("tcSystemMaintenance"))}</span><div class="kv">${kvRow(tcT("tcAutoOSUpdate"), esc(tcT(n.auto_os_update ? "tcOn" : "tcOff")))}${kvRow(tcT("tcOSWindow"), esc(n.os_window || tcT("tcNotSet")))}${kvRow(tcT("tcAgentVersion"), esc(n.agent_version || tcT("unknown")))}${kvRow(tcT("tcTargetVersion"), esc(tcTargetVersion() || tcT("unknown")))}${kvRow(tcT("tcBuildFlavor"), esc(tcFlavorLabel(n)))}</div><p class="hint">${esc(tcT("tcUpdatesNote"))}</p><div class="acts">${tcUpgradeButton(n, "sm")}<button class="btn ghost sm" data-act="node-os" data-id="${esc(id)}">${esc(tcT("tcOSPackages"))}</button><button class="btn ghost sm" data-act="node-net" data-id="${esc(id)}">${esc(tcT("tcNetwork"))}</button></div></div>
+      <div class="d-sec"><span class="lbl">${esc(tcT("tcSystemMaintenance"))}</span><div class="kv">${kvRow(tcT("tcAutoOSUpdate"), esc(tcT(n.auto_os_update ? "tcOn" : "tcOff")))}${kvRow(tcT("tcOSWindow"), esc(n.os_window || tcT("tcNotSet")))}${kvRow(tcT("tcAgentVersion"), esc(n.agent_version || tcT("unknown")))}${kvRow(tcT("tcTargetVersion"), esc(tcTargetVersion() || tcT("unknown")))}${kvRow(tcT("tcBuildFlavor"), esc(tcFlavorLabel(n)))}</div><p class="hint">${esc(tcT("tcUpdatesNote"))}</p><div class="acts">${tcUpgradeButton(n, "sm")}<button class="btn ghost sm" data-act="node-os" data-id="${esc(id)}">${esc(tcT("tcOSPackages"))}</button><button class="btn ghost sm" data-act="node-net" data-id="${esc(id)}">${esc(tcT("tcNetwork"))}</button>${tcPowerButtons(n)}</div></div>
       <details class="tc-advanced-details"><summary>${esc(tcT("tcAdvancedActions"))}</summary><p class="hint">${esc(tcT("tcNativeNote"))}</p><div class="acts"><button class="btn ghost sm" data-act="node-console" data-id="${esc(id)}">${esc(tcT("tcNativeConsole"))}</button><button class="btn ghost sm" data-act="${n.authorized ? "node-revoke" : "node-auth"}" data-id="${esc(id)}">${esc(tcT(n.authorized ? "tcRevoke" : "tcAuthorize"))}</button></div></details>`;
   }
   const fleet = tcFleetNode(n), target = tcTargetVersion(), outdated = tcOutdated(n);
@@ -368,6 +368,31 @@ function nodeDrawerBody(n, apps) {
     <div class="d-sec"><span class="lbl">${esc(tcT("tcResources"))}</span><div class="tc-resources"><div><span>CPU</span><strong>${esc(n.cpu == null ? tcT("unknown") : I18n.number(Number(n.cpu) / 100, { style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 1 }))}</strong></div><div><span>${esc(tcT("tcMemory"))}</span><strong>${esc(n.mem_mb == null ? tcT("unknown") : I18n.number(Number(n.mem_mb), { maximumFractionDigits: 0 }) + " MB")}</strong></div><div><span>${esc(tcT("tcTemperature"))}</span><strong>${esc(n.temp_c ? I18n.number(Number(n.temp_c), { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + " °C" : tcT("notReported"))}</strong></div></div></div>`;
 }
 function tcSourceBadge(source) { return source === "system" ? badge(tcT("sourceSystem"), "info") : ["server", "managed"].includes(source) ? badge(tcT("sourceServer"), "ok") : badge(source || tcT("sourceUnknown"), "muted"); }
+function tcPowerButtons(n) {
+  if (n.status !== "online" || !TC.admin || n.arch === "android") return "";
+  const id = esc(n.node_id);
+  return `<button class="btn ghost sm" data-act="node-reboot" data-id="${id}">${esc(tcT("tcReboot"))}</button><button class="btn danger sm" data-act="node-shutdown" data-id="${id}">${esc(tcT("tcShutdown"))}</button>`;
+}
+async function nodePower(id, action) {
+  if (!await terminalRequireAdmin()) return;
+  const n = S.nodes.find(x => x.node_id === id) || TC.detail;
+  const name = n?.alias || shortId(id);
+  const reboot = action === "reboot";
+  const ok = await confirmDlg({
+    title: tcT(reboot ? "tcReboot" : "tcShutdown"),
+    message: tcT(reboot ? "tcRebootConfirm" : "tcShutdownConfirm", { name }),
+    okText: tcT(reboot ? "tcReboot" : "tcShutdown"),
+    danger: !reboot
+  });
+  if (!ok) return;
+  try {
+    await api("POST", `/nodes/${enc(id)}/local/api/power`, { action });
+    toast(tcT(reboot ? "tcRebootSent" : "tcShutdownSent", { name }), "ok");
+  } catch (e) {
+    toast(tcT("tcPowerFailed", { message: e.message }), "err");
+  }
+  await refreshTerminalCenter();
+}
 function terminalPlaySummary(p) {
   if (!p) return `<span class="hint">${esc(tcT("tcPlaybackFailed"))}</span>`;
   return `<span>${esc(p.connected ? p.title ? p.title : tcT(p.state === "paused" ? "tcPaused" : "tcZATNoTrack") : tcT("tcZATDisconnected"))}</span><span class="hint">${esc([p.artist, p.album].filter(Boolean).join(" · "))}</span>`;
@@ -449,6 +474,8 @@ Object.assign(ACT, {
   "tc-tab": ds => setTerminalTab(ds.tab),
   "tc-install": ds => openTerminalInstall(ds.id ? [ds.id] : Array.from(S.sel)),
   "node-upgrade": ds => upgradeTerminalNodes([ds.id]),
+  "node-reboot": ds => nodePower(ds.id, "reboot"),
+  "node-shutdown": ds => nodePower(ds.id, "shutdown"),
   "node-upgrade-selected": () => upgradeTerminalNodes(Array.from(S.sel)),
   "node-upgrade-all": () => upgradeTerminalNodes(S.nodes.filter(n => tcOutdated(n) && n.status === "online" && n.authorized !== false).map(n => n.node_id)),
   "node-delete": async ds => {

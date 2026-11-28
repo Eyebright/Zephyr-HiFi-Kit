@@ -113,7 +113,7 @@ func (a *API) nodeUpgrade(w http.ResponseWriter, r *http.Request) {
 		writeErrorCode(w, http.StatusServiceUnavailable, "update_unavailable", "更新服务未启用")
 		return
 	}
-	st, err := a.upd.UpgradeNode(r.PathValue("id"))
+	st, err := a.upd.UpgradeNode(r.Context(), r.PathValue("id"))
 	if err != nil {
 		status := http.StatusConflict
 		switch {

@@ -39,10 +39,10 @@ func (s *Service) CreateApp(a domain.App) (domain.App, error) {
 		a.Origin = domain.OriginSelf
 	}
 	_, err := s.db.Exec(`INSERT INTO apps
-		(app_id,name,category,origin,upstream,license,maintainer_state,self_build_required,default_channel,created_at)
-		VALUES(?,?,?,?,?,?,?,?,?,?)`,
+		(app_id,name,category,origin,upstream,license,maintainer_state,self_build_required,default_channel,role,archs,notes,created_at)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		a.AppID, a.Name, string(a.Category), string(a.Origin), a.Upstream, a.License, a.MaintainerState,
-		boolInt(a.SelfBuildRequired), a.DefaultChannel, a.CreatedAt)
+		boolInt(a.SelfBuildRequired), a.DefaultChannel, a.Role, a.Archs, a.Notes, a.CreatedAt)
 	if err != nil {
 		return a, fmt.Errorf("insert app: %w", err)
 	}
@@ -55,10 +55,10 @@ func (s *Service) GetApp(id string) (domain.App, error) {
 	var selfBuild int
 	var origin string
 	err := s.db.QueryRow(`SELECT app_id,name,category,COALESCE(origin,'self'),COALESCE(upstream,''),COALESCE(license,''),
-		COALESCE(maintainer_state,''),self_build_required,COALESCE(default_channel,''),created_at
+		COALESCE(maintainer_state,''),self_build_required,COALESCE(default_channel,''),COALESCE(role,''),COALESCE(archs,''),COALESCE(notes,''),created_at
 		FROM apps WHERE app_id=?`, id).
 		Scan(&a.AppID, &a.Name, &a.Category, &origin, &a.Upstream, &a.License, &a.MaintainerState,
-			&selfBuild, &a.DefaultChannel, &a.CreatedAt)
+			&selfBuild, &a.DefaultChannel, &a.Role, &a.Archs, &a.Notes, &a.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return a, ErrNotFound
 	}
@@ -88,7 +88,7 @@ func (s *Service) SetAppOrigin(id string, origin domain.AppOrigin) (domain.App, 
 // ListApps returns all apps ordered by id.
 func (s *Service) ListApps() ([]domain.App, error) {
 	rows, err := s.db.Query(`SELECT app_id,name,category,COALESCE(origin,'self'),COALESCE(upstream,''),COALESCE(license,''),
-		COALESCE(maintainer_state,''),self_build_required,COALESCE(default_channel,''),created_at
+		COALESCE(maintainer_state,''),self_build_required,COALESCE(default_channel,''),COALESCE(role,''),COALESCE(archs,''),COALESCE(notes,''),created_at
 		FROM apps ORDER BY app_id`)
 	if err != nil {
 		return nil, err
@@ -100,7 +100,7 @@ func (s *Service) ListApps() ([]domain.App, error) {
 		var selfBuild int
 		var origin string
 		if err := rows.Scan(&a.AppID, &a.Name, &a.Category, &origin, &a.Upstream, &a.License,
-			&a.MaintainerState, &selfBuild, &a.DefaultChannel, &a.CreatedAt); err != nil {
+			&a.MaintainerState, &selfBuild, &a.DefaultChannel, &a.Role, &a.Archs, &a.Notes, &a.CreatedAt); err != nil {
 			return nil, err
 		}
 		a.SelfBuildRequired = selfBuild == 1
@@ -358,6 +358,97 @@ func (s *Service) SeedCommercialApps() error {
 		}
 	}
 	_, err = s.db.Exec(`INSERT INTO server_state(key,value) VALUES('seed_commercial_apps_v1','1')
+		ON CONFLICT(key) DO UPDATE SET value='1'`)
+	return err
+}
+
+// SeedComponentLibrary registers the reference component list (protocol
+// endpoints and renderers) with role/architecture/install-strategy metadata.
+// Existing entries keep their origin and versions; only descriptive metadata
+// is refreshed so admin reclassifications survive re-seeding.
+func (s *Service) SeedComponentLibrary() error {
+	var done string
+	err := s.db.QueryRow(`SELECT value FROM server_state WHERE key='seed_component_lib_v1'`).Scan(&done)
+	if err == nil && done == "1" {
+		return nil
+	}
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	seed := []struct {
+		app  domain.App
+		pkg  string
+		unit string
+	}{
+		{domain.App{AppID: "roonbridge", Name: "Roon Bridge", Category: domain.CategoryRenderer, Origin: domain.OriginSelf,
+			Upstream: "https://roonlabs.com", License: "Commercial",
+			Role:  "RAAT 端点，把本机 DAC 暴露给 Roon Core",
+			Archs: "x86_64 / arm64 / armhf（Win/Mac 不在托管范围）",
+			Notes: "轻量只做输出，专为专用/半专用设备优化；经签名本地包导入安装"}, "", ""},
+		{domain.App{AppID: "networkaudiod", Name: "HQPlayer NAA", Category: domain.CategoryRenderer, Origin: domain.OriginVendor,
+			Upstream: "https://signalyst.com", License: "Commercial",
+			Role:  "NAA 网络音频适配器，远端收 HQPlayer 流",
+			Archs: "x86_64 / arm64 / armhf",
+			Notes: "需另一台机器跑 HQPlayer 核心；经厂商签名本地包导入安装"}, "", ""},
+		{domain.App{AppID: "shairport-sync", Name: "AirPlay 1 接收器 (shairport-sync)", Category: domain.CategoryRenderer, Origin: domain.OriginDistro,
+			Upstream: "https://github.com/mikebrady/shairport-sync", License: "MIT",
+			Role:  "AirPlay 1 / AirPlay 2 接收端（RAOP）",
+			Archs: "x86_64 / arm64 / armhf（Linux/BSD）",
+			Notes: "经典无损 16/44.1 ALAC，新协议栈可做 AirPlay 2；发行版 APT 安装"}, "shairport-sync", "shairport-sync.service"},
+		{domain.App{AppID: "gmediarender", Name: "gmrender-resurrect (gmediarender)", Category: domain.CategoryRenderer, Origin: domain.OriginSelf,
+			Upstream: "https://github.com/hzeller/gmrender-resurrect", License: "GPL-2.0", SelfBuildRequired: true,
+			Role:  "UPnP/DLNA 渲染端",
+			Archs: "x86_64 / arm64 / armhf",
+			Notes: "支持到 24/192 hi-res；bookworm 无现成包，需自备预编译 tar.bz2 或源码构建"}, "", ""},
+		{domain.App{AppID: "librespot", Name: "librespot", Category: domain.CategoryRenderer, Origin: domain.OriginDistro,
+			Upstream: "https://github.com/librespot-org/librespot", License: "MIT",
+			Role:  "Spotify Connect 接收端",
+			Archs: "x86_64 / arm64 / armhf（Linux/BSD）",
+			Notes: "开源，跑在 SBC/NAS 上即可被 Spotify App 发现；包由 moode 源提供，纯 Debian 需自备构建"}, "librespot", ""},
+		{domain.App{AppID: "squeezelite", Name: "Squeezelite", Category: domain.CategoryRenderer, Origin: domain.OriginDistro,
+			Upstream: "https://github.com/ralph-irving/squeezelite", License: "GPL-3.0",
+			Role:  "LMS/Squeezebox 软解端点",
+			Archs: "x86_64 / arm64 / armhf",
+			Notes: "LMS 生态的标准软解播放器；发行版 APT 安装"}, "squeezelite", "squeezelite.service"},
+		{domain.App{AppID: "snapclient", Name: "Snapcast client", Category: domain.CategoryRenderer, Origin: domain.OriginDistro,
+			Upstream: "https://github.com/badaix/snapcast", License: "GPL-3.0",
+			Role:  "多房间同步渲染端",
+			Archs: "x86_64 / arm64 / armhf（Linux/macOS/Win/Android，托管范围 Linux）",
+			Notes: "与 snapserver 时间同步、组播同曲；发行版 APT 安装"}, "snapclient", "snapclient.service"},
+		{domain.App{AppID: "qbzd", Name: "qbzd（Qobuz Connect 守护进程）", Category: domain.CategoryRenderer, Origin: domain.OriginSelf,
+			Upstream: "https://www.qobuz.com", License: "Commercial",
+			Role:  "Qobuz Connect 端点，bit-perfect",
+			Archs: "x86_64 / arm64",
+			Notes: "~25MB 单二进制；systemd/OpenRC/runit 服务、MPRIS、SSH 下浏览器登录；自备签名本地包导入"}, "", ""},
+	}
+	for _, sd := range seed {
+		if _, err := s.GetApp(sd.app.AppID); err != nil {
+			if _, err := s.CreateApp(sd.app); err != nil {
+				return err
+			}
+		} else if _, err := s.db.Exec(`UPDATE apps SET role=?, archs=?, notes=? WHERE app_id=?`,
+			sd.app.Role, sd.app.Archs, sd.app.Notes, sd.app.AppID); err != nil {
+			return err
+		}
+		if sd.pkg == "" {
+			continue
+		}
+		if _, err := s.GetVersion(sd.app.AppID, "apt", "all"); err != nil {
+			v := domain.AppVersion{
+				AppID: sd.app.AppID, Version: "apt", Arch: "all", Format: "apt",
+				AptPackage: sd.pkg, Units: []string{sd.unit},
+				DistroSupport: []string{"bookworm", "trixie", "bullseye"},
+				Signed:        true, // distro repository signature, not artifact chain
+			}
+			if sd.unit == "" {
+				v.Units = nil
+			}
+			if _, err := s.AddVersion(v); err != nil {
+				return err
+			}
+		}
+	}
+	_, err = s.db.Exec(`INSERT INTO server_state(key,value) VALUES('seed_component_lib_v1','1')
 		ON CONFLICT(key) DO UPDATE SET value='1'`)
 	return err
 }

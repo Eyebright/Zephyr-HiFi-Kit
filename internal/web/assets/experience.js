@@ -50,7 +50,8 @@ function renderSidebarNav(languageOnly = false) {
   const settings = NAV.find(n => n.id === "settings");
   const settingsActive = S.view === "settings";
   const settingsGroup = settingsHTML`<div class="nav-bottom"><button type="button" class="nav-item${settingsActive ? " active" : ""}" data-act="settings-open" data-section="profile"${settingsActive ? ' aria-current="page"' : ""}>${icon(settings.icon, 17)}<span>${esc(settings.name)}</span></button></div>`;
-  nav.innerHTML = [item(NAV[0]), library, aux("favorites", appT("navFavorites"), "heart"), playlists, settingsGroup].join("");
+  const maintenance = NAV.find(n => n.id === "maintenance");
+  nav.innerHTML = [item(NAV[0]), library, aux("favorites", appT("navFavorites"), "heart"), playlists, maintenance ? item(maintenance) : "", settingsGroup].join("");
   const audit = $("#top-audit");
   if (audit) {
     const auditOpen = S.view === "audit" || (typeof drawerCtx !== "undefined" && drawerCtx && drawerCtx.kind === "audit");

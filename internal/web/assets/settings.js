@@ -56,7 +56,6 @@ const SETTINGS_SECTIONS = settingsTranslatedList([
   ["folders", "音乐文件夹", "folder", "服务端本地目录与 NAS 音乐源"],
   ["devices", "音频设备", "speaker", "播放终端与每台设备的激活、命名、DSD 输出与均衡"],
   ["packages", "软件包与源", "box", "应用版本、软件包、签名与安装源；安装执行见音频设备"],
-  ["maintenance", "备份与维护", "database", "服务端自升级、音乐数据备份、恢复与操作日志清理"],
   ["about", "关于我们", "info", "产品介绍、服务端版本、许可与第三方实现来源"]
 ], [1, 3]);
 const SETTINGS_LEGACY_MANAGE = new Set([
@@ -65,14 +64,14 @@ const SETTINGS_LEGACY_MANAGE = new Set([
   "bom-new", "bom-edit", "bom-import", "bom-import-submit", "bom-publish", "bom-rollback", "bom-save-ed", "bom-publish-ed",
   "bom-validate", "bom-validate-ed", "apt-src-add", "apt-src-del",
   "upd-check", "upd-apply", "upd-auto",
-  "node-config", "node-os", "node-net", "node-console", "cfg-save", "cfg-delete", "cfg-auth", "cfg-revoke",
+  "node-config", "node-os", "node-net", "node-console", "node-reboot", "node-shutdown", "cfg-save", "cfg-delete", "cfg-auth", "cfg-revoke",
   "play-stop", "play-pause", "queue-prev", "queue-next", "queue-jump", "queue-remove", "queue-clear", "track-enqueue-go"
 ]);
 
 function settingsAdmin() { return SETTINGS.session?.authenticated === true; }
 // Settings renders every section on one page; any section guard only requires
 // the page to be mounted.
-function settingsHere() { return S.view === "settings" && !!$("#settings-page"); }
+function settingsHere() { return (S.view === "settings" || S.view === "maintenance") && !!$("#settings-page"); }
 function settingsNote(text, kind = "info") { return settingsHTML`<div class="settings-note ${esc(kind)}">${icon(kind === "err" || kind === "warn" ? "alert" : "info", 16)}<span data-settings-message="${esc(encodeURIComponent(text))}">${esc(settingsT(text))}</span></div>`; }
 function settingsError(id, message) { const el = $("#" + id); if (el) el.innerHTML = message ? settingsNote(message, "err") : ""; }
 function settingsButton(action, label, opts = {}) {
@@ -189,7 +188,6 @@ function settingsSectionShell(id = SETTINGS.section) {
     case "authorization": return settingsNote("服务端内置 3 台终端席位，日常无需许可证；席位扩容已收进高级项。此处公钥仅用于验证第三方签名的应用包，不生成、上传或导出签发私钥。") + shellKeys();
     case "packages": return settingsNote("这里只维护应用版本、软件包、签名与安装源；安装执行请前往「音频设备」。当前交付支持 Linux DEB、APT 与受支持的 Linux 归档包，架构相同不代表操作系统兼容：Windows/macOS 文件不能当作 Linux 可安装包。") + settingsHTML`<section class="card"><div class="settings-card-head"><h3>${icon("globe", 17)} 安装源管理</h3>${settingsButton("apt-sources", "安装源管理", { icon: "globe" })}</div><p>可只读浏览 APT 安装源，添加或删除源需解锁管理员。应用名仍打开原版本与入库流程；BOM 高级管理保留在下方，不在这里执行终端安装。</p></section>` + shellCatalog();
     case "about": return settingsAboutShell();
-    case "maintenance": return settingsMaintenanceShell();
     case "devices": return typeof shellNodes === "function" ? shellNodes() : settingsNote("音频设备界面尚未加载，请刷新页面。", "warn");
     default: return settingsFoldersShell();
   }
@@ -334,7 +332,7 @@ async function refreshSettings() {
     () => refreshCatalog(),
     () => settingsRefreshAbout(current),
     () => settingsRefreshFolders(current),
-    () => Promise.all([settingsRefreshMaintenance(current), refreshUpdate()]),
+    () => $("#settings-content-maintenance") ? Promise.all([settingsRefreshMaintenance(current), refreshUpdate()]) : null,
     () => typeof refreshTerminalCenter === "function" ? refreshTerminalCenter() : null
   ];
   const results = await Promise.allSettled(loaders.map(async run => run()));
@@ -397,7 +395,7 @@ function settingsPaintSources() {
   if (!SETTINGS.mounts.length) { el.innerHTML = settingsNote("还没有音乐源。先添加本地目录或 NAS 共享，然后更新扫描。"); return; }
   el.innerHTML = settingsHTML`<div class="settings-source-list">${SETTINGS.mounts.map(m => {
     const local = settingsMountKind(m) === "local", mounted = m.status === "mounted", archived = m.status === "archived";
-    const task = "mount:" + m.id, scanning = m.status === "scanning", busy = SETTINGS.busy.has(task) || scanning;
+    const task = "mount:" + m.id, scanning = m.status === "scanning" || SETTINGS.scanWatch === m.id, busy = SETTINGS.busy.has(task) || scanning;
     const options = { id: m.id, admin: true, task, blocked: scanning };
     const status = scanning ? "扫描中" : archived ? "已移除 · 索引保留" : mounted ? local ? "可用" : "已挂载" : m.status === "unmounted" ? local ? "已停用" : "未挂载" : m.status === "error" ? "连接异常" : m.status || "未知";
     const scan = m.scan_result || {};
@@ -412,9 +410,19 @@ function settingsPaintSources() {
         ${settingsButton("settings-mount-action", archived ? "重新连接" : mounted ? local ? "停用目录" : "卸载共享" : local ? "启用目录" : "挂载共享", { ...options, legacy: mounted ? "lib-unmount" : "lib-mount" })}
         ${settingsButton("settings-mount-test", "连接检测", { ...options, blocked: scanning || (!local && !mounted) })}${settingsButton("settings-mount-edit", "编辑源", { ...options, icon: "edit" })}
         ${archived ? "" : settingsButton("settings-mount-action", "移除并保留索引…", { ...options, legacy: "lib-archive" })}
-        ${settingsButton("settings-mount-action", "彻底删除索引…", { ...options, legacy: "lib-delete", className: "danger sm" })}</div><div class="settings-test-result" data-settings-test-result="${esc(m.id)}" role="status"></div></article>`;
+        ${settingsButton("settings-mount-action", "彻底删除索引…", { ...options, legacy: "lib-delete", className: "danger sm" })}</div><div id="scan-prog-${esc(m.id)}" class="settings-scan-prog" role="status"></div><div class="settings-test-result" data-settings-test-result="${esc(m.id)}" role="status"></div></article>`;
   }).join("")}</div>`;
+  if (SETTINGS.scanWatch && SETTINGS.scanProgress) settingsPaintScanProg(SETTINGS.scanWatch, SETTINGS.scanProgress);
   settingsApplyAccess();
+}
+// settingsPaintScanProg renders the live scan bar/counters into a source row.
+function settingsPaintScanProg(id, p) {
+  const el = document.getElementById("scan-prog-" + id); if (!el) return;
+  if (!p || (!p.running && p.phase !== "error")) { el.innerHTML = ""; return; }
+  const pct = p.total_estimate > 0 ? Math.min(100, Math.round((p.walked / p.total_estimate) * 100)) : 0;
+  const phase = { starting: "扫描准备中", walking: "遍历目录中", writing: "写入索引中", error: "扫描失败" }[p.phase] || p.phase;
+  el.innerHTML = settingsHTML`<div class="scan-bar${p.total_estimate > 0 ? "" : " indet"}"><span style="width:${pct}%"></span></div>
+    <p class="settings-small">${esc(settingsT(phase))} · ${esc(settingsT("已处理 {walked} / 约 {total}", { walked: settingsNumber(p.walked), total: settingsNumber(p.total_estimate) }))} · ${esc(settingsT("新增 {a} · 更新 {b} · 封面回填 {c}", { a: settingsNumber(p.added), b: settingsNumber(p.updated), c: settingsNumber(p.covers_filled) }))}${p.phase === "error" ? " · " + esc(p.error || "") : ""}</p>`;
 }
 function settingsAbsolutePath(path) { return /^(?:\/(?!\/)|[a-z]:[\\/]|\\\\[^\\]+\\[^\\]+)/i.test(path); }
 async function settingsLocalAdd() {
@@ -492,9 +500,15 @@ function settingsAboutShell() {
   const components = [
     ["QPlay", "当前尚未提供 QPlay 组件，不包含腾讯官方实现。"],
     ["MPD", "Music Player Daemon 开源项目，可从项目公开发布或 Linux APT 软件源获取。"],
-    ["AirPlay", "shairport-sync / nqptp 开源项目，可从项目公开发布或支持的软件源获取。"],
-    ["UPnP / OpenHome", "upmpdcli、MPD、gmrender 开源项目，可从项目公开发布或 Linux APT 软件源获取；gmrender 仅用于 UPnP。"],
+    ["AirPlay", "shairport-sync / nqptp 开源项目，AirPlay 1 / AirPlay 2 接收端（RAOP），可从项目公开发布或支持的软件源获取。"],
+    ["UPnP / OpenHome", "upmpdcli、MPD 开源项目，可从项目公开发布或 Linux APT 软件源获取。"],
+    ["UPnP/DLNA 渲染", "gmrender-resurrect 开源项目，支持到 24/192 hi-res；bookworm 无现成包，需自备预编译包或源码构建。"],
+    ["Roon Bridge", "Roon Labs 厂商组件，RAAT 端点；公开获取渠道为厂商官方发布，非开源，受厂商许可约束；经签名本地包导入安装。"],
     ["HQPlayer NAA", "Signalyst networkaudiod 厂商组件，公开获取渠道为厂商官方发布；非开源，受厂商许可约束。"],
+    ["Spotify Connect", "librespot 开源项目，可由 moode 软件源或自备构建获取；运行后可被 Spotify App 发现。"],
+    ["LMS / Squeezebox", "Squeezelite 开源项目，可从 Linux APT 软件源获取。"],
+    ["多房间同步", "Snapcast（snapclient）开源项目，可从 Linux APT 软件源获取；与 snapserver 时间同步。"],
+    ["Qobuz Connect", "qbzd 厂商组件，bit-perfect 端点；公开获取渠道为厂商官方发布，非开源，受厂商许可约束；经签名本地包导入安装。"],
     ["ZAT", "Zephyr HiFi Kit 自有音频传输实现，随本项目源代码公开，采用 MIT 许可。"]
   ];
   return settingsHTML`<section class="card"><h3>${icon("music", 17)} Zephyr HiFi Kit</h3><p>和风HiFi音乐播放套件</p><p>让音乐回归聆听，让管理化繁为简。</p><p>面向家庭与小型商用 Hi-Fi 场景的音乐服务与终端推送平台，集中管理本地 / NAS 音乐库、ZAT 音频推流与播放终端。</p>
@@ -530,6 +544,18 @@ function settingsMaintenanceShell() {
     <section class="card"><h3>清理音乐数据</h3><div class="settings-maintenance-row"><div><strong>孤立封面</strong><p>清理不再被曲库或播放历史引用的封面缓存，不删除原音频。</p></div>${settingsButton("settings-cleanup", "清理孤立封面…", { admin: true, task: "maintenance", kind: "orphan-covers" })}</div><div class="settings-maintenance-row"><div><strong>曲库索引</strong><p>清空曲库索引，不删除原音频、播放历史或播放列表。列表中的曲目可能显示缺失，需重扫源。播放中拒绝清理。</p></div>${settingsButton("settings-cleanup", "清空曲库索引…", { admin: true, task: "maintenance", kind: "catalog", className: "danger sm" })}</div></section>
     <section class="card"><h3>${icon("audit", 17)} 操作日志清理</h3><p>仅清理所选日期之前的数据库操作日志，不清理进程文件日志。截止日期必须早于今天；截止点为浏览器本地时区该日 00:00，服务端会再次校验。</p><fieldset data-settings-admin data-settings-task="maintenance" ${settingsAdmin() ? "" : "disabled"}><label class="field settings-date-field" for="settings-audit-before"><span>保留此日期及之后的操作日志</span><input id="settings-audit-before" class="inp" type="date" required></label>${settingsButton("settings-cleanup", "按日期清理操作日志…", { admin: true, task: "maintenance", kind: "audit", className: "danger sm" })}</fieldset></section>`;
 }
+// shellMaintenanceView renders backup & maintenance as a top-level view,
+// reusing the settings page chrome (admin unlock, refresh, access gating).
+function shellMaintenanceView() {
+  SETTINGS.epoch++; settingsInvalidateMetadata(false);
+  SETTINGS.section = "maintenance";
+  return settingsHTML`<div id="settings-page" class="settings-page">
+    <header class="page-head"><div><span class="settings-eyebrow">Zephyr HiFi Kit / ${esc(settingsT("备份与维护"))}</span><h1>${esc(settingsT("备份与维护"))}</h1><p class="ph-sub">${esc(settingsT("服务端自升级、音乐数据备份、恢复与操作日志清理"))}</p></div><div class="ph-actions">${settingsButton("settings-refresh", "刷新状态", { icon: "refresh" })}</div></header>
+    <div class="settings-layout"><div class="settings-main"><section id="settings-admin" class="card settings-admin" aria-label="管理员解锁">${settingsNote("正在检查管理员会话…")}</section>
+      <div id="settings-section-error" role="status" aria-live="polite"></div>
+      <section class="settings-block" id="settings-block-maintenance"><div id="settings-content-maintenance">${settingsMaintenanceShell()}</div></section>
+    </div></div></div>`;
+}
 async function settingsRefreshMaintenance(current) {
   if (!settingsAdmin()) {
     SETTINGS.maintenance = null; settingsInvalidateMetadata(false);
@@ -549,7 +575,9 @@ function settingsPaintMaintenance() {
     return;
   }
   const counts = result?.counts || result, el = $("#settings-maintenance-counts"); if (!el) return;
-  el.innerHTML = [["tracks", "曲目"], ["mounts", "音乐源"], ["playlists", "播放列表"], ["history", "历史记录"], ["covers", "封面"], ["audit", "操作日志"]].map(([key, label]) => settingsHTML`<div class="settings-count"><span>${esc(settingsT(label))}</span><strong>${typeof counts?.[key] === "number" && Number.isFinite(counts[key]) && counts[key] >= 0 ? esc(settingsNumber(counts[key])) : "—"}</strong></div>`).join("");
+  const mb = n => (Number(n) / 1048576).toFixed(1) + " MB";
+  const tiles = [["tracks", "曲目"], ["mounts", "音乐源"], ["playlists", "播放列表"], ["history", "历史记录"], ["covers", "封面"], ["audit", "操作日志"], ["albums", "专辑"], ["covers_bytes", "封面占用", mb], ["covers_orphan", "孤立封面"], ["lyrics", "歌词缓存"], ["lyrics_bytes", "歌词占用", mb], ["lyrics_synced", "同步歌词"]];
+  el.innerHTML = tiles.map(([key, label, fmt]) => settingsHTML`<div class="settings-count"><span>${esc(settingsT(label))}</span><strong>${typeof counts?.[key] === "number" && Number.isFinite(counts[key]) && counts[key] >= 0 ? esc(fmt ? fmt(counts[key]) : settingsNumber(counts[key])) : "—"}</strong></div>`).join("");
 }
 async function settingsEnsureIdle() {
   const nodes = await api("GET", "/nodes");

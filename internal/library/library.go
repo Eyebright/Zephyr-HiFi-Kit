@@ -128,6 +128,50 @@ type Service struct {
 	db         *sql.DB
 	mounts     mount.Backend
 	mountRoot  string
+	progMu     sync.Mutex
+	prog       ScanProgress
+}
+
+// ScanProgress is the live counter of the single running (or last finished)
+// scan. It lives in memory only: a restart drops it along with the scan.
+type ScanProgress struct {
+	MountID       string `json:"mount_id"`
+	Running       bool   `json:"running"`
+	Phase         string `json:"phase"` // starting|walking|writing|done|error
+	Walked        int    `json:"walked"`
+	TotalEstimate int    `json:"total_estimate"`
+	Added         int    `json:"added"`
+	Updated       int    `json:"updated"`
+	Unchanged     int    `json:"unchanged"`
+	Removed       int    `json:"removed"`
+	CoversFilled  int    `json:"covers_filled"`
+	StartedAt     int64  `json:"started_at"`
+	FinishedAt    int64  `json:"finished_at"`
+	Error         string `json:"error"`
+}
+
+// MarkScanStarted claims the single scan slot; false means a scan is running.
+func (s *Service) MarkScanStarted(id string) bool {
+	s.progMu.Lock()
+	defer s.progMu.Unlock()
+	if s.prog.Running {
+		return false
+	}
+	s.prog = ScanProgress{MountID: id, Running: true, Phase: "starting", StartedAt: time.Now().Unix()}
+	return true
+}
+
+// ScanProgress returns a copy of the live scan counters.
+func (s *Service) ScanProgress() ScanProgress {
+	s.progMu.Lock()
+	defer s.progMu.Unlock()
+	return s.prog
+}
+
+func (s *Service) progUpdate(fn func(p *ScanProgress)) {
+	s.progMu.Lock()
+	fn(&s.prog)
+	s.progMu.Unlock()
 }
 
 // New builds a library service. mountRoot is the parent directory under which
@@ -396,7 +440,24 @@ func (s *Service) Scan(ctx context.Context, id string) (int, error) {
 	return result.Count, err
 }
 
+// ScanChanges runs a scan and finalizes the live progress counters.
 func (s *Service) ScanChanges(ctx context.Context, id string, full bool) (ScanResult, error) {
+	res, err := s.scanChanges(ctx, id, full)
+	s.progUpdate(func(p *ScanProgress) {
+		p.Running = false
+		p.FinishedAt = time.Now().Unix()
+		if err != nil {
+			p.Phase, p.Error = "error", err.Error()
+		} else {
+			p.Phase, p.Error = "done", ""
+			p.Added, p.Updated, p.Unchanged, p.Removed = res.Added, res.Updated, res.Unchanged, res.Removed
+			p.CoversFilled = res.CoversFilled
+		}
+	})
+	return res, err
+}
+
+func (s *Service) scanChanges(ctx context.Context, id string, full bool) (ScanResult, error) {
 	s.metadataMu.Lock()
 	defer s.metadataMu.Unlock()
 	s.sourceMu.Lock()
@@ -439,6 +500,11 @@ func (s *Service) ScanChanges(ctx context.Context, id string, full bool) (ScanRe
 		remaining[t.RelPath] = t
 		prevByRel[t.RelPath] = t
 	}
+	s.progUpdate(func(p *ScanProgress) {
+		p.MountID, p.Running, p.Phase = id, true, "walking"
+		p.TotalEstimate, p.StartedAt = len(previous), time.Now().Unix()
+		p.Walked, p.Added, p.Updated, p.Unchanged, p.Removed, p.CoversFilled, p.Error = 0, 0, 0, 0, 0, 0, ""
+	})
 	now := time.Now().Unix()
 	changed := []Track{}
 	backfill := []Track{}
@@ -494,6 +560,7 @@ func (s *Service) ScanChanges(ctx context.Context, id string, full bool) (ScanRe
 		delete(remaining, rel)
 		seen[p] = info
 		result.Count++
+		s.progUpdate(func(p *ScanProgress) { p.Walked++ })
 		if !full && live && oldTrack.MtimeNS != 0 && oldTrack.MtimeNS == info.ModTime().UnixNano() && oldTrack.Size == info.Size() {
 			result.Unchanged++
 			if oldTrack.CoverHash == "" {
@@ -559,6 +626,10 @@ func (s *Service) ScanChanges(ctx context.Context, id string, full bool) (ScanRe
 	result.Updated = max(0, result.Updated+cueStats.updated-cueStats.droppedUpdated)
 	result.Unchanged += cueStats.unchanged
 	result.Removed = len(remaining)
+	s.progUpdate(func(p *ScanProgress) {
+		p.Phase = "writing"
+		p.Added, p.Updated, p.Removed = result.Added, result.Updated, result.Removed
+	})
 	resolver := metadataScanResolver(previous, changed, remaining)
 	for i := range changed {
 		resolver.apply(&changed[i])
@@ -616,10 +687,11 @@ func (s *Service) ScanChanges(ctx context.Context, id string, full bool) (ScanRe
 			return ScanResult{}, err
 		}
 		result.CoversFilled++
+		s.progUpdate(func(p *ScanProgress) { p.CoversFilled++ })
 	}
 	// Unchanged tracks keep their tags, but art may have appeared (or become
-	// readable) since the last scan; fill only empty covers, sidecar-only so a
-	// routine sync never reopens every FLAC to re-check embedded pictures.
+	// readable) since the last scan; fill only empty covers. Sidecar first
+	// (cheap directory listing), then the container's embedded picture.
 	for _, t := range backfill {
 		dir := filepath.Dir(t.Path)
 		state := coverCache[dir]
@@ -635,6 +707,17 @@ func (s *Service) ScanChanges(ctx context.Context, id string, full bool) (ScanRe
 				coverCache[dir] = coverSidecarNone
 			}
 		}
+		if hash == "" && coverCache[dir] != coverEmbeddedNone {
+			if c, cerr := media.ReadEmbeddedCover(t.Path, t.Container); cerr == nil {
+				hash, err = coverBytes(ctx, tx, c, now)
+				if err != nil {
+					return ScanResult{}, err
+				}
+				coverCache[dir] = hash
+			} else {
+				coverCache[dir] = coverEmbeddedNone
+			}
+		}
 		if hash == "" {
 			continue
 		}
@@ -642,6 +725,7 @@ func (s *Service) ScanChanges(ctx context.Context, id string, full bool) (ScanRe
 			return ScanResult{}, err
 		}
 		result.CoversFilled++
+		s.progUpdate(func(p *ScanProgress) { p.CoversFilled++ })
 	}
 	// Stock tracks written by lossy taggers keep '?'; the fallback only needs
 	// stored paths, so no file is reopened here.
@@ -755,10 +839,10 @@ func (s *Service) storeCover(ctx context.Context, tx *sql.Tx, p, container, root
 		return hash, nil
 	}
 	state := cache[dir]
-	// Embedded art wins, but only the first FLAC in a directory is opened;
-	// every sibling reuses the album-level result.
-	if container == "flac" && state != coverEmbeddedNone {
-		c, err := media.ReadFLACCover(p)
+	// Embedded art wins. A miss leaves the directory uncached so later siblings
+	// are still opened: track 1 often carries no picture while track 2 does.
+	if state != coverEmbeddedNone {
+		c, err := media.ReadEmbeddedCover(p, container)
 		if err == nil {
 			hash, err := coverBytes(ctx, tx, c, now)
 			if err != nil {
@@ -770,8 +854,6 @@ func (s *Service) storeCover(ctx context.Context, tx *sql.Tx, p, container, root
 		if !errors.Is(err, media.ErrNoCover) {
 			return "", err
 		}
-		state = coverEmbeddedNone
-		cache[dir] = state
 	}
 	if state != coverSidecarNone {
 		c, err := sidecarCover(dir, root)
@@ -783,11 +865,7 @@ func (s *Service) storeCover(ctx context.Context, tx *sql.Tx, p, container, root
 			cache[dir] = hash
 			return hash, nil
 		}
-		if state == coverEmbeddedNone {
-			cache[dir] = coverEmbeddedNone
-		} else {
-			cache[dir] = coverSidecarNone
-		}
+		cache[dir] = coverSidecarNone
 	}
 	return "", nil
 }

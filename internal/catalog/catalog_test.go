@@ -101,3 +101,38 @@ func TestAppOriginSeedAndReclassify(t *testing.T) {
 		t.Fatalf("default origin: %+v %v", app, err)
 	}
 }
+
+func TestSeedComponentLibrary(t *testing.T) {
+	s := newSvc(t)
+	if err := s.SeedComponentLibrary(); err != nil {
+		t.Fatal(err)
+	}
+	ids := []string{"roonbridge", "networkaudiod", "shairport-sync", "gmediarender", "librespot", "squeezelite", "snapclient", "qbzd"}
+	for _, id := range ids {
+		a, err := s.GetApp(id)
+		if err != nil {
+			t.Fatalf("%s: %v", id, err)
+		}
+		if a.Role == "" || a.Archs == "" || a.Notes == "" {
+			t.Fatalf("%s: missing component metadata %+v", id, a)
+		}
+	}
+	for _, id := range []string{"squeezelite", "snapclient", "librespot"} {
+		if _, err := s.GetVersion(id, "apt", "all"); err != nil {
+			t.Fatalf("%s apt version: %v", id, err)
+		}
+	}
+	if a, _ := s.GetApp("gmediarender"); !a.SelfBuildRequired {
+		t.Fatal("gmediarender should require self-supplied build")
+	}
+	// Re-seed refreshes metadata but preserves admin reclassification.
+	if _, err := s.SetAppOrigin("qbzd", domain.OriginVendor); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SeedComponentLibrary(); err != nil {
+		t.Fatal(err)
+	}
+	if a, _ := s.GetApp("qbzd"); a.Origin != domain.OriginVendor {
+		t.Fatal("re-seed must preserve origin reclassification")
+	}
+}

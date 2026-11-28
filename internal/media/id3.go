@@ -155,6 +155,8 @@ func id3Field(version byte, id string) string {
 			return "DISCNUMBER"
 		case "TCO":
 			return "GENRE"
+		case "ULT", "SLT":
+			return "LYRICS"
 		}
 		return ""
 	}
@@ -177,21 +179,44 @@ func id3Field(version byte, id string) string {
 		return "DISCNUMBER"
 	case "TCON":
 		return "GENRE"
+	case "USLT", "SYLT":
+		return "LYRICS"
 	}
 	return ""
 }
 
 func parseID3v2(r io.ReaderAt, offset, available int64, encoding string) (Tags, error) {
 	var tags Tags
+	err := walkID3v2(r, offset, available, func(version byte, id string, data []byte) {
+		field := id3Field(version, id)
+		if field == "LYRICS" {
+			if s, ok := parseID3LyricsFrame(id, data, encoding); ok {
+				tags.setLyrics(s)
+			}
+			return
+		}
+		if field != "" && len(data) <= maxTagValueBytes+1 {
+			for _, value := range id3TextValues(data, version, encoding) {
+				tags.set(field, value)
+			}
+		}
+	})
+	return tags, err
+}
+
+// walkID3v2 iterates the frames of an ID3v2 tag, handing each decoded frame
+// payload to visit. Text and picture readers share it so frame quirks (stray
+// DSF byte, unsynchronisation, v2.2 sizes) are handled in one place.
+func walkID3v2(r io.ReaderAt, offset, available int64, visit func(version byte, id string, data []byte)) error {
 	if available < 10 {
-		return tags, errInvalidTags
+		return errInvalidTags
 	}
 	var h [10]byte
 	if _, err := r.ReadAt(h[:], offset); err != nil {
-		return tags, err
+		return err
 	}
 	if string(h[:3]) != "ID3" || (h[3] != 2 && h[3] != 3 && h[3] != 4) {
-		return tags, errInvalidTags
+		return errInvalidTags
 	}
 	version := h[3]
 	n, ok := synchsafeSize(h[6:10])
@@ -200,12 +225,12 @@ func parseID3v2(r io.ReaderAt, offset, available int64, encoding string) (Tags, 
 		footer = 10
 	}
 	if !ok || n > maxTagBytes || n > available-10-footer {
-		return tags, errInvalidTags
+		return errInvalidTags
 	}
 	body := make([]byte, int(n))
 	if n > 0 {
 		if _, err := r.ReadAt(body, offset+10); err != nil {
-			return tags, err
+			return err
 		}
 	}
 	if version == 3 && h[5]&0x80 != 0 {
@@ -215,24 +240,24 @@ func parseID3v2(r io.ReaderAt, offset, available int64, encoding string) (Tags, 
 		switch version {
 		case 3:
 			if len(body) < 4 {
-				return tags, errInvalidTags
+				return errInvalidTags
 			}
 			ext := int64(binary.BigEndian.Uint32(body[:4]))
 			if ext < 4 || ext > int64(len(body)-4) {
-				return tags, errInvalidTags
+				return errInvalidTags
 			}
 			body = body[4+ext:]
 		case 4:
 			if len(body) < 4 {
-				return tags, errInvalidTags
+				return errInvalidTags
 			}
 			ext, valid := synchsafeSize(body[:4])
 			if !valid || ext < 4 || ext > int64(len(body)) {
-				return tags, errInvalidTags
+				return errInvalidTags
 			}
 			body = body[ext:]
 		default:
-			return tags, errInvalidTags
+			return errInvalidTags
 		}
 	}
 	headerSize := 10
@@ -249,7 +274,7 @@ func parseID3v2(r io.ReaderAt, offset, available int64, encoding string) (Tags, 
 	}
 	for i := 0; i < maxTagEntries && len(body) > 0; i++ {
 		if len(body) < headerSize {
-			return tags, errInvalidTags
+			return errInvalidTags
 		}
 		padding := true
 		for _, c := range body {
@@ -267,7 +292,7 @@ func parseID3v2(r io.ReaderAt, offset, available int64, encoding string) (Tags, 
 		}
 		for _, c := range []byte(id) {
 			if (c < 'A' || c > 'Z') && (c < '0' || c > '9') {
-				return tags, errInvalidTags
+				return errInvalidTags
 			}
 		}
 		var frameLen int64
@@ -281,13 +306,13 @@ func parseID3v2(r io.ReaderAt, offset, available int64, encoding string) (Tags, 
 			var valid bool
 			frameLen, valid = synchsafeSize(body[4:8])
 			if !valid {
-				return tags, errInvalidTags
+				return errInvalidTags
 			}
 			flags = binary.BigEndian.Uint16(body[8:10])
 		}
 		body = body[headerSize:]
 		if frameLen > int64(len(body)) {
-			return tags, errInvalidTags
+			return errInvalidTags
 		}
 		data := body[:int(frameLen)]
 		body = body[int(frameLen):]
@@ -300,30 +325,26 @@ func parseID3v2(r io.ReaderAt, offset, available int64, encoding string) (Tags, 
 			}
 			if flags&0x0040 != 0 {
 				if len(data) < 1 {
-					return tags, errInvalidTags
+					return errInvalidTags
 				}
 				data = data[1:]
 			}
 			if flags&0x0001 != 0 {
 				if len(data) < 4 {
-					return tags, errInvalidTags
+					return errInvalidTags
 				}
 				dl, valid := synchsafeSize(data[:4])
 				if !valid || dl > int64(len(data)-4) {
-					return tags, errInvalidTags
+					return errInvalidTags
 				}
 				data = data[4 : 4+int(dl)]
 			}
 		} else if flags&0x0020 != 0 && len(data) > 0 {
 			data = data[1:]
 		}
-		if field := id3Field(version, id); field != "" && len(data) <= maxTagValueBytes+1 {
-			for _, value := range id3TextValues(data, version, encoding) {
-				tags.set(field, value)
-			}
-		}
+		visit(version, id, data)
 	}
-	return tags, nil
+	return nil
 }
 
 func readID3v1(r io.ReaderAt, size int64, encoding string) Tags {

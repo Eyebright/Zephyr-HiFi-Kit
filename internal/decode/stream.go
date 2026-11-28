@@ -46,8 +46,14 @@ func StreamFramesFrom(sink FrameSink, d Decoder, trackID string, seq uint32, sta
 			pos = startSample
 		}
 	}
+	// carry holds the trailing partial frame of the previous read: dropping it
+	// would shift the sample phase of every later chunk (audible as noise on
+	// formats whose frame size does not divide the read buffer, e.g. 24-bit).
+	carry := 0
 	for {
-		n, err := d.Read(buf)
+		n, err := d.Read(buf[carry:])
+		n += carry
+		carry = 0
 		if n > 0 {
 			usable := n - n%bpf
 			if usable > 0 {
@@ -66,6 +72,9 @@ func StreamFramesFrom(sink FrameSink, d Decoder, trackID string, seq uint32, sta
 					seq++
 					pts += uint64((usable - off) / bpf)
 				}
+			}
+			if carry = n - usable; carry > 0 {
+				copy(buf, buf[usable:n])
 			}
 		}
 		if err == io.EOF {

@@ -3,8 +3,10 @@ package api
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"hifihub/server/internal/library"
 	"hifihub/server/internal/zatserver"
@@ -128,12 +130,29 @@ func (a *API) scanMount(w http.ResponseWriter, r *http.Request) {
 		writeErrorCode(w, http.StatusBadRequest, "scan_mode_invalid", "扫描模式必须为 update 或 full")
 		return
 	}
-	result, err := a.lib.ScanChanges(r.Context(), r.PathValue("id"), mode == "full")
-	if err != nil {
-		fail(w, err)
+	id := r.PathValue("id")
+	if !a.lib.MarkScanStarted(id) {
+		writeErrorCode(w, http.StatusConflict, "scan_busy", "已有扫描进行中，请等待完成")
 		return
 	}
-	writeJSON(w, http.StatusOK, result)
+	// The scan outlives the request: disconnects and client timeouts must not
+	// abort a long NAS walk. Progress is polled via /scan/progress.
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
+		defer cancel()
+		if _, err := a.lib.ScanChanges(ctx, id, mode == "full"); err != nil {
+			slog.Warn("mount scan failed", "mount", id, "err", err)
+		}
+	}()
+	writeJSON(w, http.StatusAccepted, map[string]any{"started": true})
+}
+
+func (a *API) scanProgress(w http.ResponseWriter, r *http.Request) {
+	if a.lib == nil {
+		writeErrorCode(w, http.StatusServiceUnavailable, "library_unavailable", "媒体库未启用")
+		return
+	}
+	writeJSON(w, http.StatusOK, a.lib.ScanProgress())
 }
 
 func (a *API) archiveMount(w http.ResponseWriter, r *http.Request) {
@@ -175,6 +194,19 @@ func (a *API) getTrack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, t)
+}
+
+func (a *API) getTrackLyrics(w http.ResponseWriter, r *http.Request) {
+	if a.lib == nil {
+		writeErrorCode(w, http.StatusServiceUnavailable, "library_unavailable", "媒体库未启用")
+		return
+	}
+	l, err := a.lib.GetLyrics(r.Context(), r.PathValue("id"))
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, l)
 }
 
 // getCover serves content-addressed album art; hashes are immutable so clients

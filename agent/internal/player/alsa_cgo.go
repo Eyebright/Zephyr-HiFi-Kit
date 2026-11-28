@@ -137,6 +137,32 @@ func (p *alsaPlayer) openDevice(sf C.snd_pcm_format_t, rate, channels int, devic
 		C.snd_pcm_close(h)
 		return fmt.Errorf("player: snd_pcm_set_params(%s): %s", device, alsaErr(rc))
 	}
+	// snd_pcm_set_params leaves start_threshold at the full buffer, so after an
+	// underrun prepare (or a pause that drained the queue) sub-buffer writes
+	// never restart playback. Start on one period instead.
+	var bufSize, periodSize C.snd_pcm_uframes_t
+	if rc := C.snd_pcm_get_params(h, &bufSize, &periodSize); rc < 0 {
+		C.snd_pcm_close(h)
+		return fmt.Errorf("player: snd_pcm_get_params(%s): %s", device, alsaErr(rc))
+	}
+	var sw *C.snd_pcm_sw_params_t
+	if rc := C.snd_pcm_sw_params_malloc(&sw); rc < 0 {
+		C.snd_pcm_close(h)
+		return fmt.Errorf("player: sw_params_malloc: %s", alsaErr(rc))
+	}
+	defer C.snd_pcm_sw_params_free(sw)
+	if rc := C.snd_pcm_sw_params_current(h, sw); rc < 0 {
+		C.snd_pcm_close(h)
+		return fmt.Errorf("player: sw_params_current(%s): %s", device, alsaErr(rc))
+	}
+	if rc := C.snd_pcm_sw_params_set_start_threshold(h, sw, periodSize); rc < 0 {
+		C.snd_pcm_close(h)
+		return fmt.Errorf("player: set_start_threshold(%s): %s", device, alsaErr(rc))
+	}
+	if rc := C.snd_pcm_sw_params(h, sw); rc < 0 {
+		C.snd_pcm_close(h)
+		return fmt.Errorf("player: sw_params(%s): %s", device, alsaErr(rc))
+	}
 	p.handle = h
 	return nil
 }

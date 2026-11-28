@@ -113,6 +113,9 @@ func (s *Store) additiveMigrate() error {
 		{"app_versions", "apt_package", "TEXT NOT NULL DEFAULT ''"},
 		// apps: how the artifact is obtained (distro | vendor | self).
 		{"apps", "origin", "TEXT NOT NULL DEFAULT 'self'"},
+		{"apps", "role", "TEXT NOT NULL DEFAULT ''"},
+		{"apps", "archs", "TEXT NOT NULL DEFAULT ''"},
+		{"apps", "notes", "TEXT NOT NULL DEFAULT ''"},
 		{"sessions", "device_key", "TEXT NOT NULL DEFAULT ''"},
 		{"play_history", "device_key", "TEXT NOT NULL DEFAULT ''"},
 		{"node_devices", "reported_name", "TEXT NOT NULL DEFAULT ''"},
@@ -234,6 +237,9 @@ CREATE TABLE IF NOT EXISTS apps (
   maintainer_state    TEXT,
   self_build_required INTEGER NOT NULL DEFAULT 0,
   default_channel     TEXT,
+  role                TEXT NOT NULL DEFAULT '',
+  archs               TEXT NOT NULL DEFAULT '',
+  notes               TEXT NOT NULL DEFAULT '',
   created_at          INTEGER NOT NULL
 );
 
@@ -566,6 +572,17 @@ CREATE TABLE IF NOT EXISTS cover_variants (
   data       BLOB NOT NULL,
   created_at INTEGER NOT NULL,
   PRIMARY KEY (hash,size)
+);
+
+CREATE TABLE IF NOT EXISTS track_lyrics (
+  track_id        TEXT PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+  source          TEXT NOT NULL DEFAULT 'none',
+  synced          INTEGER NOT NULL DEFAULT 0,
+  text            TEXT NOT NULL DEFAULT '',
+  lines           TEXT NOT NULL DEFAULT '[]',
+  source_mtime_ns INTEGER NOT NULL DEFAULT 0,
+  source_size     INTEGER NOT NULL DEFAULT 0,
+  updated_at      INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS node_queue (

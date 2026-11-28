@@ -703,18 +703,32 @@ func (s *Service) RestoreLibrary(ctx context.Context, data []byte) error {
 func backupPlaceholders(n int) string { return strings.TrimSuffix(strings.Repeat("?,", n), ",") }
 
 type LibraryMaintenanceStats struct {
-	Tracks    int64 `json:"tracks"`
-	Mounts    int64 `json:"mounts"`
-	Playlists int64 `json:"playlists"`
-	History   int64 `json:"history"`
-	Covers    int64 `json:"covers"`
-	Audit     int64 `json:"audit"`
+	Tracks       int64 `json:"tracks"`
+	Mounts       int64 `json:"mounts"`
+	Playlists    int64 `json:"playlists"`
+	History      int64 `json:"history"`
+	Covers       int64 `json:"covers"`
+	Audit        int64 `json:"audit"`
+	CoversBytes  int64 `json:"covers_bytes"`
+	CoversOrphan int64 `json:"covers_orphan"`
+	Lyrics       int64 `json:"lyrics"`
+	LyricsBytes  int64 `json:"lyrics_bytes"`
+	LyricsSynced int64 `json:"lyrics_synced"`
+	Albums       int64 `json:"albums"`
 }
 
 func (s *Service) LibraryMaintenanceStatus() (LibraryMaintenanceStats, error) {
 	var out LibraryMaintenanceStats
 	// One statement obtains counts from a consistent SQLite read snapshot.
-	err := s.db.QueryRow(`SELECT (SELECT COUNT(*) FROM tracks),(SELECT COUNT(*) FROM mounts),(SELECT COUNT(*) FROM playlists),(SELECT COUNT(*) FROM play_history),(SELECT COUNT(*) FROM covers),(SELECT COUNT(*) FROM audit)`).Scan(&out.Tracks, &out.Mounts, &out.Playlists, &out.History, &out.Covers, &out.Audit)
+	err := s.db.QueryRow(`SELECT (SELECT COUNT(*) FROM tracks),(SELECT COUNT(*) FROM mounts),(SELECT COUNT(*) FROM playlists),(SELECT COUNT(*) FROM play_history),(SELECT COUNT(*) FROM covers),(SELECT COUNT(*) FROM audit),
+		(SELECT COALESCE(SUM(LENGTH(data)),0) FROM covers),
+		(SELECT COUNT(*) FROM covers c WHERE NOT EXISTS(SELECT 1 FROM tracks WHERE tracks.cover_hash=c.hash) AND NOT EXISTS(SELECT 1 FROM play_history WHERE play_history.cover_hash=c.hash) AND NOT EXISTS(SELECT 1 FROM favorites WHERE favorites.cover_hash=c.hash)),
+		(SELECT COUNT(*) FROM track_lyrics),
+		(SELECT COALESCE(SUM(LENGTH(text)),0) FROM track_lyrics),
+		(SELECT COALESCE(SUM(synced),0) FROM track_lyrics),
+		(SELECT COUNT(*) FROM (SELECT DISTINCT album, album_artist FROM tracks WHERE album<>''))`).
+		Scan(&out.Tracks, &out.Mounts, &out.Playlists, &out.History, &out.Covers, &out.Audit,
+			&out.CoversBytes, &out.CoversOrphan, &out.Lyrics, &out.LyricsBytes, &out.LyricsSynced, &out.Albums)
 	if err != nil {
 		return out, ErrLibraryMaintenance
 	}

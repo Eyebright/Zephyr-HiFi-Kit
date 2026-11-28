@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"hifihub/server/internal/library"
 )
@@ -147,20 +148,33 @@ func TestLocalMountScanModesAndArchiveAdminBoundary(t *testing.T) {
 		{"?mode=full", library.ScanResult{Count: 1, Updated: 1}},
 	} {
 		status, body := doJSON(t, "POST", mountURL+"/scan"+test.query, nil)
-		var result library.ScanResult
-		if status != http.StatusOK {
+		if status != http.StatusAccepted {
 			t.Fatalf("scan %q: %d %s", test.query, status, body)
 		}
-		if err := json.Unmarshal(body, &result); err != nil || result != test.want {
-			t.Fatalf("scan %q result: %+v %v, want %+v", test.query, result, err, test.want)
-		}
-		for _, field := range []string{"count", "added", "updated", "unchanged", "removed"} {
-			if _, ok := mustJSON(t, body)[field]; !ok {
-				t.Fatalf("scan JSON missing %s: %s", field, body)
+		var prog library.ScanProgress
+		deadline := time.Now().Add(15 * time.Second)
+		for {
+			st, pb := doJSON(t, "GET", mountURL+"/scan/progress", nil)
+			if st != http.StatusOK {
+				t.Fatalf("scan progress: %d %s", st, pb)
 			}
+			if err := json.Unmarshal(pb, &prog); err != nil {
+				t.Fatal(err)
+			}
+			if !prog.Running {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("scan %q did not finish: %+v", test.query, prog)
+			}
+			time.Sleep(50 * time.Millisecond)
 		}
-		if m := readMount(); m.LastScan == 0 || m.ScanResult != result {
-			t.Fatalf("mount did not expose last successful result: %+v", m)
+		if prog.Phase != "done" || prog.Walked != 1 {
+			t.Fatalf("scan %q progress: %+v", test.query, prog)
+		}
+		m := readMount()
+		if m.LastScan == 0 || m.ScanResult != test.want {
+			t.Fatalf("mount did not expose last successful result: %+v want %+v", m.ScanResult, test.want)
 		}
 	}
 	beforeMount, beforeTracks := readMount(), readTracks()
@@ -263,6 +277,14 @@ func TestCoverNotFound(t *testing.T) {
 	s, _ := doJSON(t, "GET", base+"/covers/0000000000000000000000000000000000000000000000000000000000000000", nil)
 	if s != 404 {
 		t.Fatalf("expected 404 for unknown cover, got %d", s)
+	}
+}
+
+func TestTrackLyricsNotFound(t *testing.T) {
+	base := setup(t, "dev")
+	s, _ := doJSON(t, "GET", base+"/tracks/trk-missing/lyrics", nil)
+	if s != 404 {
+		t.Fatalf("expected 404 for unknown track lyrics, got %d", s)
 	}
 }
 

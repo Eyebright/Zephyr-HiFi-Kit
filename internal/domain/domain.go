@@ -60,6 +60,9 @@ type App struct {
 	MaintainerState   string      `json:"maintainer_state"`
 	SelfBuildRequired bool        `json:"self_build_required"`
 	DefaultChannel    string      `json:"default_channel"`
+	Role              string      `json:"role"`
+	Archs             string      `json:"archs"`
+	Notes             string      `json:"notes"`
 	CreatedAt         int64       `json:"created_at"`
 }
 

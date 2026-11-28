@@ -1,6 +1,7 @@
 package update
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -21,8 +22,9 @@ var (
 
 // UpgradeNode issues one agent-upgrade command for a specific terminal,
 // independent of the ring policy. The command is idempotent while an upgrade
-// is in flight and never bypasses play protection.
-func (s *Service) UpgradeNode(nodeID string) (domain.NodeUpdateState, error) {
+// is in flight and never bypasses play protection. A missing distribution
+// package is fetched from the release feed on demand instead of refusing.
+func (s *Service) UpgradeNode(ctx context.Context, nodeID string) (domain.NodeUpdateState, error) {
 	if s == nil || s.nodes == nil || s.cmds == nil {
 		return domain.NodeUpdateState{}, ErrUpgradeUnavailable
 	}
@@ -52,14 +54,16 @@ func (s *Service) UpgradeNode(nodeID string) (domain.NodeUpdateState, error) {
 
 	sums := readDistSums(s.opt.DistDir)
 	deb := debName(target, n.Arch, n.BuildFlavor)
+	downloaded := false
 	if sums[deb] == "" {
-		st.State = "unsupported"
-		if n.BuildFlavor == FlavorAudio {
-			st.Detail = "服务端分发缺少音频包 " + deb + "，请导入对应版本的音频终端包"
-		} else {
-			st.Detail = "服务端分发缺少 " + deb
+		sum, err := s.ensureDistPackage(ctx, target, n.Arch, n.BuildFlavor)
+		if err != nil {
+			st.State = "unsupported"
+			st.Detail = "自动下载终端包失败：" + err.Error()
+			return st, fmt.Errorf("%w：%s", ErrNodePackageMissing, st.Detail)
 		}
-		return st, fmt.Errorf("%w：%s", ErrNodePackageMissing, st.Detail)
+		sums[deb] = sum
+		downloaded = true
 	}
 	if n.Playing && n.PlayProtect {
 		st.State = "waiting_idle"
@@ -86,6 +90,9 @@ func (s *Service) UpgradeNode(nodeID string) (domain.NodeUpdateState, error) {
 	st.LastAttempt = time.Now().Unix()
 	st.CommandID = cmd.ID
 	st.Detail = "已下发 agent-upgrade，等待终端执行"
+	if downloaded {
+		st.Detail = "已从更新源下载终端包并下发 agent-upgrade，等待终端执行"
+	}
 	s.mu.Lock()
 	s.saveRow(st)
 	s.mu.Unlock()

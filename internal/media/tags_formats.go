@@ -29,6 +29,9 @@ func preferTags(primary, fallback Tags) Tags {
 	if primary.Composer == "" {
 		primary.Composer = fallback.Composer
 	}
+	if primary.Lyrics == "" {
+		primary.Lyrics = fallback.Lyrics
+	}
 	if primary.Year == 0 {
 		primary.Year = fallback.Year
 	}

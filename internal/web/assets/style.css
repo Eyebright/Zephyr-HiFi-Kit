@@ -195,6 +195,16 @@ select.inp option { background: var(--card); color: var(--text); }
 .switch .track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 15px; height: 15px; border-radius: 50%; background: var(--faint); transition: all .18s; }
 .switch input:checked + .track { background: rgba(var(--green-rgb),.2); border-color: var(--green); }
 .switch input:checked + .track::after { left: 19px; background: var(--green); }
+button.switch { background: none; border: 0; padding: 0; font: inherit; color: inherit; }
+.switch[aria-checked="true"] .track { background: rgba(var(--green-rgb),.2); border-color: var(--green); }
+.switch[aria-checked="true"] .track::after { left: 19px; background: var(--green); }
+.switch:disabled { opacity: .45; cursor: not-allowed; }
+/* Console EQ pill: same shell as the bar popover icons, mini switch inside. */
+button.switch.ply-eq-pill { height: 32px; padding: 0 9px; border-radius: 10px; border: 1px solid var(--line); background: var(--soft); color: var(--muted); gap: 6px; }
+.ply-eq-pill .sw-lbl { font-size: 12px; color: inherit; }
+.ply-eq-pill .track { width: 26px; height: 14px; border-radius: 8px; }
+.ply-eq-pill .track::after { top: 2px; left: 2px; width: 8px; height: 8px; }
+.ply-eq-pill[aria-checked="true"] .track::after { left: 14px; }
 .switch .sw-lbl { font-size: 13px; color: var(--text); }
 .stepper { display: inline-flex; align-items: center; gap: 6px; }
 .stepper .inp { width: 96px; text-align: center; font-family: var(--mono); }
@@ -646,9 +656,9 @@ img.cover.lb-art, img.cover.big {
 /* Shared popover shell: playback device, volume, play mode and sleep
    timer all use this base plus one variant class. */
 .pop { position: relative; flex: none; }
-.pop > summary { list-style: none; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 9px; border-radius: 10px; border: 1px solid var(--line); background: var(--soft); color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; transition: color .15s, border-color .15s, background .15s; }
+.pop > summary, .pb-eq-btn { list-style: none; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 9px; border-radius: 10px; border: 1px solid var(--line); background: var(--soft); color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; transition: color .15s, border-color .15s, background .15s; }
 .pop > summary::-webkit-details-marker { display: none; }
-.pop > summary:hover { color: var(--text); border-color: var(--line-strong, rgba(var(--white-rgb),.18)); }
+.pop > summary:hover, .pb-eq-btn:hover { color: var(--text); border-color: var(--line-strong, rgba(var(--white-rgb),.18)); }
 .pop[open] > summary, .pb-sleep.active > summary { color: var(--gold); border-color: rgba(var(--gold-rgb),.5); background: rgba(var(--gold-rgb),.08); }
 .pop[data-disabled="1"] > summary { opacity: .4; pointer-events: none; }
 .pop-menu { position: absolute; right: 0; bottom: calc(100% + 8px); z-index: 70; min-width: 170px; padding: 6px; border: 1px solid var(--line); border-radius: 12px; background: rgba(var(--panel-rgb),.99); box-shadow: 0 14px 36px rgba(var(--black-rgb),.5); }

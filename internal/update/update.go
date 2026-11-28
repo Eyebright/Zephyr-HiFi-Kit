@@ -83,6 +83,8 @@ type Service struct {
 	policy domain.FleetUpdatePolicy
 	ring   int
 	rel    Release
+
+	distMu sync.Mutex // serializes on-demand terminal package downloads
 }
 
 // New builds the update service and restores persisted state.

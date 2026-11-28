@@ -130,6 +130,22 @@ type QueueState struct {
 	UpdatedAt int64        `json:"updated_at"`
 }
 
+// LyricsLine is one server-cached lyric line.
+type LyricsLine struct {
+	TimeMS int64  `json:"time_ms"`
+	Text   string `json:"text"`
+}
+
+// Lyrics is the server-cached lyric payload for the current track.
+type Lyrics struct {
+	TrackID   string       `json:"track_id"`
+	Source    string       `json:"source"`
+	Synced    bool         `json:"synced"`
+	Text      string       `json:"text,omitempty"`
+	Lines     []LyricsLine `json:"lines"`
+	UpdatedAt int64        `json:"updated_at,omitempty"`
+}
+
 // CommandParams carries optional command arguments. os-upgrade uses Packages;
 // agent-upgrade uses the exact signed-chain artifact the terminal must install.
 type CommandParams struct {
@@ -385,6 +401,13 @@ func (c *Client) Queue(ctx context.Context, nodeID string) (QueueState, error) {
 	var q QueueState
 	err := c.do(ctx, "GET", "/nodes/"+nodeID+"/queue", nil, &q)
 	return q, err
+}
+
+// TrackLyrics returns the server-cached lyrics for one library track.
+func (c *Client) TrackLyrics(ctx context.Context, trackID string) (Lyrics, error) {
+	var l Lyrics
+	err := c.do(ctx, "GET", "/tracks/"+trackID+"/lyrics", nil, &l)
+	return l, err
 }
 
 // QueueNext advances the server queue and starts the next track.

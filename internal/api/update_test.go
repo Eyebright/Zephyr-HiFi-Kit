@@ -220,8 +220,8 @@ func TestNodeUpgradeEndpoint(t *testing.T) {
 		t.Fatalf("playing upgrade: %d %s", s, b)
 	}
 	s, b = doJSON(t, "POST", base+"/nodes/audio/upgrade", map[string]any{})
-	if s != 409 || !strings.Contains(string(b), "音频包") {
-		t.Fatalf("audio without package: %d %s", s, b)
+	if s != 409 || !strings.Contains(string(b), "自动下载终端包失败") {
+		t.Fatalf("audio without package and offline feed: %d %s", s, b)
 	}
 	s, _ = doJSON(t, "POST", base+"/nodes/ghost/upgrade", map[string]any{})
 	if s != 404 {

@@ -116,6 +116,111 @@ func TestStreamS24RoundTrip(t *testing.T) {
 	}
 }
 
+func TestStreamS24MultiChunk(t *testing.T) {
+	// 6-byte frames do not divide the 64 KiB read buffer: every chunk ends with
+	// a partial frame that must be carried into the next read, not dropped.
+	frames := 40000
+	pcm := rampPCM(frames, 2, 3)
+	got, pts, total := streamAndCollect(t, pcm, zat.S24LE, 48000, 2)
+	if !bytes.Equal(got, pcm) {
+		t.Fatal("multi-chunk S24 reassembled PCM != source (partial frames dropped)")
+	}
+	if total != uint64(frames) {
+		t.Fatalf("total = %d want %d", total, frames)
+	}
+	bpf := 6
+	framesPerChunk := zat.MaxAudioPCM / bpf
+	for i, p := range pts {
+		if want := uint64(i * framesPerChunk); p != want {
+			t.Fatalf("pts[%d] = %d want %d", i, p, want)
+		}
+	}
+}
+
+func TestStreamS24MultiChunkOffset(t *testing.T) {
+	frames := 40000
+	pcm := rampPCM(frames, 2, 3)
+	path := buildWAV(t, zat.S24LE, 48000, 2, pcm)
+	d, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	const start = 20001 // mid-chunk, mid-partial-frame offset
+	var got []byte
+	sink := func(f zat.Frame) error {
+		ap, err := zat.DecodeAudio(f.Payload)
+		if err != nil {
+			return err
+		}
+		got = append(got, ap.PCM...)
+		return nil
+	}
+	end, err := StreamFramesFrom(sink, d, "trk-1", 0, start)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if end != uint64(frames) {
+		t.Fatalf("end = %d want %d", end, frames)
+	}
+	if !bytes.Equal(got, pcm[start*6:]) {
+		t.Fatalf("offset S24 PCM mismatch: got %d bytes want %d", len(got), len(pcm)-start*6)
+	}
+}
+
+// oddReader returns PCM in reads that never align to frame boundaries, like a
+// pipe-backed decoder (ffmpeg DSD fallback).
+type oddReader struct {
+	pcm  []byte
+	off  int
+	step int
+}
+
+func (r *oddReader) Read(p []byte) (int, error) {
+	if r.off >= len(r.pcm) {
+		return 0, io.EOF
+	}
+	n := r.step
+	if n > len(p) {
+		n = len(p)
+	}
+	if n > len(r.pcm)-r.off {
+		n = len(r.pcm) - r.off
+	}
+	copy(p, r.pcm[r.off:r.off+n])
+	r.off += n
+	return n, nil
+}
+
+type oddDecoder struct {
+	oddReader
+	format PCMFormat
+}
+
+func (d *oddDecoder) Format() PCMFormat    { return d.format }
+func (d *oddDecoder) TotalSamples() uint64 { return uint64(len(d.pcm) / 6) }
+func (d *oddDecoder) Close() error         { return nil }
+
+func TestStreamCarriesPartialFrames(t *testing.T) {
+	pcm := rampPCM(30000, 2, 3)
+	d := &oddDecoder{oddReader: oddReader{pcm: pcm, step: 1001}, format: PCMFormat{Format: zat.S24LE, Rate: 48000, Channels: 2}}
+	var got []byte
+	sink := func(f zat.Frame) error {
+		ap, err := zat.DecodeAudio(f.Payload)
+		if err != nil {
+			return err
+		}
+		got = append(got, ap.PCM...)
+		return nil
+	}
+	if _, err := StreamFramesFrom(sink, d, "trk-1", 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, pcm) {
+		t.Fatalf("unaligned reads lost bytes: got %d want %d", len(got), len(pcm))
+	}
+}
+
 func TestStreamWriterError(t *testing.T) {
 	pcm := rampPCM(100, 2, 2)
 	path := buildWAV(t, zat.S16LE, 44100, 2, pcm)

@@ -427,7 +427,7 @@ func TestLibraryCleanupPreservesHistoryAndPlaylists(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats != (LibraryMaintenanceStats{Tracks: 1, Mounts: 1, Playlists: 1, History: 1, Covers: 3, Audit: 1}) {
+	if stats != (LibraryMaintenanceStats{Tracks: 1, Mounts: 1, Playlists: 1, History: 1, Covers: 3, Audit: 1, CoversBytes: 222, CoversOrphan: 1, Albums: 1}) {
 		t.Fatalf("stats: %+v", stats)
 	}
 	n, err := s.CleanLibrary(context.Background(), "catalog", 0)
@@ -920,5 +920,26 @@ func TestBackupIdentityValidation(t *testing.T) {
 				t.Fatal("invalid identity restore changed catalog")
 			}
 		})
+	}
+}
+
+func TestScanProgressAndCacheStats(t *testing.T) {
+	s, _ := newService(t, &fakeRunner{}, t.TempDir())
+	target := t.TempDir()
+	m := addMountedLocalSource(t, s, target)
+	buildWAV(t, filepath.Join(target, "a.wav"))
+	if _, err := s.ScanChanges(context.Background(), m.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	p := s.ScanProgress()
+	if p.Running || p.Phase != "done" || p.Walked != 1 || p.MountID != m.ID {
+		t.Fatalf("progress after scan: %+v", p)
+	}
+	st, err := s.LibraryMaintenanceStatus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Tracks != 1 || st.Albums != 1 || st.Lyrics != 0 || st.CoversBytes != 0 {
+		t.Fatalf("cache stats: %+v", st)
 	}
 }

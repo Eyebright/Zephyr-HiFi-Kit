@@ -111,6 +111,7 @@ I18n.register("errors", {
   cross_origin_forbidden: ["不允许跨源请求。", "不允許跨來源請求。", "Cross-origin requests are not allowed."],
   cross_site_forbidden: ["不允许跨站请求。", "不允許跨網站請求。", "Cross-site requests are not allowed."],
   json_content_type_required: ["需要 application/json。", "需要 application/json。", "Content-Type must be application/json."],
+  scan_busy: ["已有扫描进行中，请等待完成。", "已有掃描進行中，請等待完成。", "A scan is already running; wait for it to finish."],
   scan_mode_invalid: ["扫描模式必须为 update 或 full。", "掃描模式必須為 update 或 full。", "Scan mode must be update or full."],
   playlist_position_invalid: ["播放列表位置无效。", "播放清單位置無效。", "The playlist position is invalid."],
   maintenance_playback_active: ["请先停止所有节点播放（包括暂停的会话）。", "請先停止所有節點播放（包括暫停的工作階段）。", "Stop playback on all endpoints first, including paused sessions."],

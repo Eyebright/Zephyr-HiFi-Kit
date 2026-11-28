@@ -77,6 +77,9 @@ func main() {
 	if err := cat.SeedCommercialApps(); err != nil {
 		logger.Warn("seed commercial apps", "err", err)
 	}
+	if err := cat.SeedComponentLibrary(); err != nil {
+		logger.Warn("seed component library", "err", err)
+	}
 	if err := cat.SeedAppOrigins(); err != nil {
 		logger.Warn("seed app origins", "err", err)
 	}
