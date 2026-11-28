@@ -3,6 +3,12 @@
 和风HiFi音乐播放套件。最新版本在前，版本号与 Git 标签、GitHub Releases 一致。
 Newest first; version numbers match Git tags and GitHub Releases.
 
+发布线约定：
+
+- 两段号标签（`v0.82`）= 完整发布：服务端、Linux 终端、音频包、容器镜像、安卓 APK 与智能体插件安装包全部重建。
+- 三段号标签（`v0.82.1`、`v0.82.2` …）= 安卓热修：只重建并发布 `Zephyr-HiFi-Kit-terminal-<版本>.apk`，服务端与终端沿用上一完整版；打标签前须把该版本同时写入 `agent/internal/androidcore/core.go` 与 `android/app/build.gradle.kts`，CI 会校验；发布后把 `docs/index.html`、`docs/zh.html` 的 APK 下载行改到新补丁号。安卓条目以 `## 0.82.1 — 安卓 …` 形式追加在本文件顶部。
+- 智能体播放插件（`plugins/hifihub-player`）随完整发布分发：`Zephyr-HiFi-Kit-mcp-plugin-<版本>-{windows-amd64,linux-amd64,linux-arm64}.zip`，插件自身保持独立 0.1.x 版本。
+
 ## 0.82 — 2026-11-28
 
 - 版本号统一：服务端此前停在 0.70，安卓终端已单独迭代到 0.80/0.81，现合并为单一发布号 0.82（`metrics.Version`、Linux Agent `BuildVersion`、安卓 `androidcore.Version` 与 APK `versionName/versionCode` 全部一致）；0.71–0.81 为未发布的安卓端内部版本，因此直接从 0.82 接续，保证终端升级只增不减。

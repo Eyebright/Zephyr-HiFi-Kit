@@ -5,7 +5,7 @@
 ## 组件
 
 - `skills/hifihub-player/SKILL.md`：播放控制工作流与安全边界。
-- `.mcp.json` + `bin/hifihub-mcp.exe`：stdio MCP server（Go 实现，源码在服务端仓库 `cmd/hifihub-mcp`），把 21 个播放类工具代理到服务端 admin HTTP API。
+- `.mcp.json` + `bin/hifihub-mcp[.exe]`：stdio MCP server（Go 实现，源码在服务端仓库 `cmd/hifihub-mcp`），把 21 个播放类工具代理到服务端 admin HTTP API。仓库内不含可执行文件，二进制由 CI 随 Release 分发（见下）。
 - 不含终端重启/关机、音乐源删除、管理员设置等高危能力。
 
 ## 工具一览
@@ -46,9 +46,27 @@
 }
 ```
 
-## 平台与重新构建
+## 安装
 
-`bin/hifihub-mcp.exe` 为 Windows amd64。其他平台在服务端仓库根目录构建后替换 `bin/` 内可执行文件并调整 `.mcp.json` 的 `command`：
+每次服务端发布都在同一个 GitHub Release 里附带三个平台安装包（本插件自身仍走 0.1.x 独立版本，安装包对应的服务端版本为 `@ZEPHYR_PRODUCT_VERSION@`，发布时由 `scripts/build-plugin.sh` 写入）：
+
+| 资产 | 平台 |
+| --- | --- |
+| `Zephyr-HiFi-Kit-mcp-plugin-<版本>-windows-amd64.zip` | Windows 10/11 x64 |
+| `Zephyr-HiFi-Kit-mcp-plugin-<版本>-linux-amd64.zip` | Linux x86_64 |
+| `Zephyr-HiFi-Kit-mcp-plugin-<版本>-linux-arm64.zip` | Linux arm64（树莓派 4/5、NAS ARM） |
+
+解压后把 `hifihub-player/` 目录放进 Qoder 插件目录即可；包内 `.mcp.json` 已按平台写好可执行文件名，`SHA256SUMS` 可校验完整性。其他 MCP 客户端只需把 `command` 指向包内 `bin/hifihub-mcp`。
+
+### 从源码构建
+
+服务端仓库根目录执行（产出上表的三个 zip）：
+
+```sh
+sh scripts/build-plugin.sh
+```
+
+只想手出一个二进制时：
 
 ```sh
 go build -o bin/hifihub-mcp ./cmd/hifihub-mcp          # linux/macOS

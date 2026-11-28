@@ -1,7 +1,7 @@
 {
   "name": "hifihub-player",
   "displayName": "Zephyr HiFi Kit 播放器控制",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "通过 MCP 让智能体检索曲库并控制 Zephyr HiFi Kit 终端播放（播放/暂停/seek/音量/队列/设备/EQ）。",
   "author": { "name": "Eyebright" },
   "keywords": ["qoder-plugin", "hifihub", "player", "mcp", "audio"]

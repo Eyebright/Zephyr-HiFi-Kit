@@ -11,7 +11,29 @@ permissions:
   packages: write
 
 jobs:
+  # A three-segment tag (v0.82.1) is an Android hotfix line: only the APK is
+  # rebuilt and published, because the server bundle, audio, Windows and NAS
+  # assets already exist in the v0.82 release and would be byte-identical here.
+  # Everything else (main branch, pull requests, v0.83) stays on the full line.
+  meta:
+    runs-on: ubuntu-latest
+    outputs:
+      android_only: ${{ steps.line.outputs.android_only }}
+    steps:
+      - name: Classify the release line
+        id: line
+        run: |
+          android_only=false
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            case "${GITHUB_REF_NAME#v}" in
+              *.*.*) android_only=true ;;
+            esac
+          fi
+          echo "android_only=$android_only" >> "$GITHUB_OUTPUT"
+          echo "android_only=$android_only"
+
   build:
+    needs: meta
     runs-on: ubuntu-latest
     # Management bundle is pure-Go: the CGO libFLAC/ALSA audio backend is built
     # and tested separately in the audio job. Without this, Linux defaults to
@@ -45,6 +67,7 @@ jobs:
         run: sh scripts/smoke-test.sh
 
       - name: Build release bundle
+        if: needs.meta.outputs.android_only != 'true'
         run: |
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             VERSION="${GITHUB_REF_NAME#v}"
@@ -53,8 +76,18 @@ jobs:
           fi
           VERSION="$VERSION" sh scripts/build-release.sh
 
+      - name: Package the MCP player plugin
+        if: needs.meta.outputs.android_only != 'true'
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="0.68"
+          fi
+          VERSION="$VERSION" sh scripts/build-plugin.sh
+
       - name: Prepare draft GitHub Release
-        if: github.ref_type == 'tag'
+        if: github.ref_type == 'tag' && needs.meta.outputs.android_only != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -65,6 +98,7 @@ jobs:
               release/Zephyr-HiFi-Kit-server-*-windows-amd64.zip \
               release/Zephyr-HiFi-Kit-terminal-*-linux.tar.gz \
               release/Zephyr-HiFi-Kit-terminal-*-linux-*.deb \
+              release/Zephyr-HiFi-Kit-mcp-plugin-*.zip \
               --clobber
           else
             gh release create "$GITHUB_REF_NAME" \
@@ -72,12 +106,14 @@ jobs:
               release/Zephyr-HiFi-Kit-server-*-windows-amd64.zip \
               release/Zephyr-HiFi-Kit-terminal-*-linux.tar.gz \
               release/Zephyr-HiFi-Kit-terminal-*-linux-*.deb \
+              release/Zephyr-HiFi-Kit-mcp-plugin-*.zip \
               --draft --verify-tag \
               --title "Zephyr HiFi Kit $GITHUB_REF_NAME" \
               --generate-notes
           fi
 
       - name: Upload management artifacts
+        if: needs.meta.outputs.android_only != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: Zephyr-HiFi-Kit-management
@@ -86,13 +122,15 @@ jobs:
             release/Zephyr-HiFi-Kit-server-*-windows-amd64.zip
             release/Zephyr-HiFi-Kit-terminal-*-linux.tar.gz
             release/Zephyr-HiFi-Kit-terminal-*-linux-*.deb
+            release/Zephyr-HiFi-Kit-mcp-plugin-*.zip
           if-no-files-found: error
           retention-days: 7
 
   # Run the exact Linux-cross-built release executable on a real Windows host.
   # No failure is optional: publish-release depends on this job succeeding.
   windows:
-    needs: build
+    needs: [meta, build]
+    if: needs.meta.outputs.android_only != 'true'
     runs-on: windows-latest
     env:
       CGO_ENABLED: 0
@@ -204,7 +242,8 @@ jobs:
   # round-trip asserts bit-exact PCM. armhf audio is built by
   # scripts/build-audio-cross.sh on a provisioned host (no native runner).
   audio:
-    needs: build
+    needs: [meta, build]
+    if: needs.meta.outputs.android_only != 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -305,6 +344,19 @@ jobs:
         env:
           CGO_ENABLED: 0
         run: go test ./internal/androidcore/...
+
+      # The APK bakes the tag version via ldflags and -PzephyrVersion, but the
+      # committed defaults must match it too, otherwise the fleet's version
+      # reporting and any local build diverge from the release. Fail closed if the
+      # constants were not bumped in the same commit as the tag.
+      - name: Assert committed Android versions match the tag
+        if: github.ref_type == 'tag'
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          COMMITTED=$(grep -m1 'var Version = ' agent/internal/androidcore/core.go | sed -E 's/.*"(.*)".*/\1/')
+          [ "$COMMITTED" = "$VERSION" ] || { echo "::error::androidcore.Version is $COMMITTED but tag is $VERSION; commit the matching constant before tagging"; exit 1; }
+          GRADLE=$(grep -m1 'zephyrVersion' android/app/build.gradle.kts | sed -E 's/.*orElse\("(.*)"\).*/\1/')
+          [ "$GRADLE" = "$VERSION" ] || { echo "::error::build.gradle.kts zephyrVersion default is $GRADLE but tag is $VERSION"; exit 1; }
 
       - name: Build APK (NDK c-shared + AAudio + Gradle assembleRelease)
         env:
@@ -425,7 +477,8 @@ jobs:
   # pushed to GHCR per-arch; nas-manifest joins them into a multi-arch index.
   # Offline NAS hosts get docker-save tarballs as release assets instead.
   nas-image:
-    needs: build
+    needs: [meta, build]
+    if: needs.meta.outputs.android_only != 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -515,8 +568,8 @@ jobs:
           gh release upload "$GITHUB_REF_NAME" "release/Zephyr-HiFi-Kit-server-${VERSION}-docker-${ARCH}.tar.gz" --clobber
 
   nas-manifest:
-    needs: nas-image
-    if: github.ref_type == 'tag'
+    needs: [meta, nas-image]
+    if: github.ref_type == 'tag' && needs.meta.outputs.android_only != 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Join arch images into a multi-arch index
@@ -542,8 +595,8 @@ jobs:
           grep -q arm64 /tmp/index.json && grep -q amd64 /tmp/index.json
 
   publish-release:
-    needs: [build, windows, audio, android, android-aaudio, nas-manifest]
-    if: github.ref_type == 'tag'
+    needs: [meta, build, windows, audio, android, android-aaudio, nas-manifest]
+    if: github.ref_type == 'tag' && needs.meta.outputs.android_only != 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Check all release assets and publish with SHA256SUMS
@@ -565,6 +618,10 @@ jobs:
           done
           for arch in amd64 arm64 armhf; do
             file="Zephyr-HiFi-Kit-terminal-$VERSION-linux-$arch.deb"
+            [ -s "$assets/$file" ] || { echo "Missing release asset: $file"; exit 1; }
+          done
+          for target in windows-amd64 linux-amd64 linux-arm64; do
+            file="Zephyr-HiFi-Kit-mcp-plugin-$VERSION-$target.zip"
             [ -s "$assets/$file" ] || { echo "Missing release asset: $file"; exit 1; }
           done
           for arch in amd64 arm64; do
@@ -589,4 +646,30 @@ jobs:
               | LC_ALL=C sort -z | xargs -0 sha256sum > SHA256SUMS )
           ( cd "$assets" && sha256sum --check --strict SHA256SUMS )
           gh release upload "$GITHUB_REF_NAME" "$assets/SHA256SUMS" "$assets/$legacy.tar.gz" --clobber
+          gh release edit "$GITHUB_REF_NAME" --draft=false
+
+  # Android hotfix line (v0.82.1-style tag): only the APK is produced and this job
+  # publishes that single asset. The build job's packaging steps, the management
+  # artifact and windows/audio/nas jobs are all skipped for this line, so the
+  # release would otherwise stay a draft forever.
+  publish-android-hotfix:
+    needs: [meta, build, android, android-aaudio]
+    if: github.ref_type == 'tag' && needs.meta.outputs.android_only == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish the APK-only release with SHA256SUMS
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          [ "$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)" = true ] || { echo "Refusing to modify a published release"; exit 1; }
+          VERSION="${GITHUB_REF_NAME#v}"
+          assets=$(mktemp -d "$RUNNER_TEMP/zephyr-hotfix-assets.XXXXXX")
+          gh release download "$GITHUB_REF_NAME" --dir "$assets"
+          apk="Zephyr-HiFi-Kit-terminal-$VERSION.apk"
+          [ -s "$assets/$apk" ] || { echo "Missing release asset: $apk"; exit 1; }
+          ( cd "$assets" && find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\0' \
+              | LC_ALL=C sort -z | xargs -0 sha256sum > SHA256SUMS )
+          ( cd "$assets" && sha256sum --check --strict SHA256SUMS )
+          gh release upload "$GITHUB_REF_NAME" "$assets/SHA256SUMS" --clobber
           gh release edit "$GITHUB_REF_NAME" --draft=false

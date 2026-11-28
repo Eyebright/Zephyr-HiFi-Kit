@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "hifihub-player": {
-      "command": "${QODER_PLUGIN_ROOT}/bin/hifihub-mcp.exe",
+      "command": "${QODER_PLUGIN_ROOT}/bin/hifihub-mcp",
       "env": {
         "HIFIHUB_BASE_URL": "http://127.0.0.1:8080"
       }

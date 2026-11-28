@@ -18,6 +18,10 @@ import (
 
 const protocolVersion = "2025-06-18"
 
+// pluginVersion is stamped by scripts/build-plugin.sh from
+// .qoder-plugin/plugin.json so the MCP handshake matches the shipped manifest.
+var pluginVersion = "0.1.1"
+
 type rpcReq struct {
 	JSONRPC string          `json:"jsonrpc"`
 	ID      json.RawMessage `json:"id,omitempty"`
@@ -75,7 +79,7 @@ func dispatch(c *client, method string, params json.RawMessage) (any, *rpcErr) {
 		return map[string]any{
 			"protocolVersion": protocolVersion,
 			"capabilities":    map[string]any{"tools": map[string]any{}},
-			"serverInfo":      map[string]any{"name": "hifihub-player", "version": "0.1.0"},
+			"serverInfo":      map[string]any{"name": "hifihub-player", "version": pluginVersion},
 		}, nil
 	case "ping":
 		return map[string]any{}, nil
